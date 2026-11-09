@@ -5,6 +5,15 @@ import path from "node:path";
 import os from "node:os";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import type { RepoItem } from "../shared/git-contracts";
+import { existsSync } from "node:fs";
+
+/** glab: PASEO_GLAB_BIN → ~/.local/bin/glab (if present) → "glab" from PATH. */
+export function glabBin(): string {
+  const fromEnv = process.env.PASEO_GLAB_BIN;
+  if (fromEnv) return fromEnv;
+  const local = path.join(os.homedir(), ".local/bin/glab");
+  return existsSync(local) ? local : "glab";
+}
 
 const exec = promisify(execFile);
 
@@ -76,7 +85,7 @@ export async function checkGitLabAuth(gitlabUrl?: string): Promise<{
 }> {
   const host = parseGitLabHost(gitlabUrl);
   try {
-    const { stdout, stderr } = await exec(path.join(os.homedir(), ".local/bin/glab"), ["auth", "status", "--hostname", host]);
+    const { stdout, stderr } = await exec(glabBin(), ["auth", "status", "--hostname", host]);
     const output = `${stdout}\n${stderr}`;
     const userMatch = output.match(/Logged in to [^ ]+ as ([^ (]+)/i);
     return {
@@ -260,7 +269,7 @@ export async function fetchGitLabRepos(
         ? `projects?search=${encodeURIComponent(query.trim())}&membership=true&per_page=30`
         : `projects?membership=true&order_by=last_activity_at&per_page=30`;
 
-    const { stdout } = await exec(path.join(os.homedir(), ".local/bin/glab"), [
+    const { stdout } = await exec(glabBin(), [
       "api",
       apiPath,
       "--hostname",
@@ -299,7 +308,10 @@ export async function fetchGitLabRepos(
 
     return results;
   } catch (err: unknown) {
-    console.error("fetchGitLabRepos error:", err);
+    const code = typeof err === "object" && err !== null && "code" in err ? String(err.code) : "";
+    // glab not installed: GitLab is simply unavailable, not an error worth logging.
+    if (code === "ENOENT") return [];
+    console.error("fetchGitLabRepos error:", err instanceof Error ? err.message.split("\n")[0] : String(err));
     return [];
   }
 }
