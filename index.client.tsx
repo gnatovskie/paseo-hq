@@ -1943,12 +1943,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                     {displayedChats.map((chat) => {
                       const bucket = resolveChatBucket(chat, agentBucketByWorkspace);
                       const isPinned = Boolean(serverState.pinnedSessions[chat.id]);
-                      const lastRunMs = chatLastRunningMs(
-                        chat,
-                        bucket,
-                        serverState.lastRunningAt,
-                        agentTurnFinishMap,
-                      );
                       const highlighted =
                         isPinned || bucket === "running" || bucket === "attention" || bucket === "needs_input";
                       const agent = latestAgentByWorkspace[chat.id];
@@ -2013,9 +2007,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                                     </Text>
                                   </View>
                                 ) : null}
-                                <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>
-                                  {bucket === "running" ? "сейчас" : relativeTime(lastRunMs)}
-                                </Text>
                                 {sessionCount > 1 ? (
                                   <View
                                     style={{

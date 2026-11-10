@@ -99,6 +99,8 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await areaTitle.waitFor();
           const area = areaTitle.locator("xpath=ancestor::*[@role='button'][1]");
           await area.getByText("2 сессии", { exact: true }).waitFor();
+          const activityTime = area.getByText(/^(?:сейчас|\d+ (?:мин|ч|д))$/);
+          assert.equal(await activityTime.count(), 0, "the area row should omit activity time");
           const [titleBox, statusBox, modelBox] = await Promise.all([
             areaTitle.boundingBox(),
             area.getByLabel(/^Статус области: /).boundingBox(),
