@@ -48,6 +48,7 @@ import { projectAgentConfig } from "./client/project-agent-config";
 import { compareProjectOrder } from "./shared/project-order";
 import { GENERATOR_TITLE, titleModelOptions } from "./shared/title-models";
 import { TitleModelPicker } from "./client/title-model-picker.client";
+import { TooltipPressable } from "./client/tooltip.client";
 import { HostMetricsBar } from "./client/host-widget";
 import { TeamSurface } from "./client/team-surface";
 
@@ -647,6 +648,39 @@ function openUsageLimits(serverId?: string) {
   }
 }
 
+function ChatActionButton({ label, icon, color, disabled, onPress, theme }: {
+  label: string;
+  icon: string;
+  color?: string;
+  disabled?: boolean;
+  onPress: () => void;
+  theme: PluginTheme;
+}) {
+  const c = theme.colors;
+  return (
+    <TooltipPressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      tooltip={label}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        width: 44,
+        height: 44,
+        borderRadius: 9,
+        borderWidth: 1,
+        borderColor: c.border,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: pressed ? c.surface1 : c.surface2,
+        opacity: disabled ? 0.5 : 1,
+      })}
+    >
+      <Icon name={icon} size={18} color={color ?? c.foreground} />
+    </TooltipPressable>
+  );
+}
+
 function ProjectHeaderPressable({
   group,
   isOpen,
@@ -850,10 +884,12 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const [draftChatTitle, setDraftChatTitle] = useState("");
   const [savingChat, setSavingChat] = useState(false);
   const [suggestingTitle, setSuggestingTitle] = useState(false);
+  const [chatTransferOpen, setChatTransferOpen] = useState(false);
   const [transferTargetProjectId, setTransferTargetProjectId] = useState<string>("");
   const [transferArchiveOriginal, setTransferArchiveOriginal] = useState<boolean>(true);
   const [transferIncludeHistory, setTransferIncludeHistory] = useState<boolean>(true);
   const [transferringChat, setTransferringChat] = useState<boolean>(false);
+  const chatMutationPending = savingChat || transferringChat;
 
   const c = theme.colors;
   const isWeb = layout.platform === "web" && typeof (globalThis as { document?: unknown }).document !== "undefined";
@@ -1069,6 +1105,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   );
 
   const editingChatPinned = editingChat ? Boolean(serverState.pinnedSessions[editingChat.id]) : false;
+  const editingChatAgent = editingChat ? latestAgentByWorkspace[editingChat.id] : undefined;
 
   const currentProjectGroup = useMemo(
     () => (editingChat ? allGroups.find((g) => g.id === editingChat.projectId) ?? null : null),
@@ -1345,18 +1382,19 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   };
 
   const openChatSettings = (chat: PaseoWorkspace) => {
+    if (chatMutationPending) return;
     setEditingChatId(chat.id);
+    setChatTransferOpen(false);
     const agent = latestAgentByWorkspace[chat.id];
     setDraftChatTitle(chatTitle(chat, agent));
     const others = allGroups.filter((g) => g.id !== chat.projectId);
     setTransferTargetProjectId(others[0]?.id || "");
     setTransferArchiveOriginal(true);
     setTransferIncludeHistory(true);
-    setTransferringChat(false);
   };
 
   const handleTransferChat = async () => {
-    if (!editingChat || transferringChat || !transferTargetProjectId) return;
+    if (!editingChat || chatMutationPending || !transferTargetProjectId) return;
     setTransferringChat(true);
     const targetGroup = allGroups.find((g) => g.id === transferTargetProjectId);
     const targetName = targetGroup ? (targetGroup.customName || targetGroup.name) : "новый проект";
@@ -1368,6 +1406,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
         includeHistory: transferIncludeHistory,
       });
       setExpandedProjectIds((prev) => ({ ...prev, [res.targetProjectId]: true }));
+      setChatTransferOpen(false);
       setEditingChatId(null);
       await reloadAll();
       toast.show(`Сессия перенесена в проект "${targetName}"`, { variant: "success" });
@@ -1380,7 +1419,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   };
 
   const handleRenameChat = async () => {
-    if (!editingChat || savingChat) return;
+    if (!editingChat || chatMutationPending) return;
     setSavingChat(true);
     try {
       const nextTitle = draftChatTitle.trim() || null;
@@ -1411,7 +1450,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   };
 
   const handleTogglePinChat = async () => {
-    if (!editingChat || savingChat) return;
+    if (!editingChat || chatMutationPending) return;
     const chatId = editingChat.id;
     const nextPinned = !serverState.pinnedSessions[chatId];
     setSavingChat(true);
@@ -1443,11 +1482,12 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   };
 
   const handleArchiveChat = async (chat: PaseoWorkspace) => {
-    if (savingChat) return;
+    if (chatMutationPending) return;
     setSavingChat(true);
     try {
       setArchivedIds((prev) => ({ ...prev, [chat.id]: true }));
-      await paseo.workspaces.archive(chat.id);
+      const { error } = await paseo.workspaces.archive(chat.id);
+      if (error) throw new Error(error);
       if (editingChatId === chat.id) {
         setEditingChatId(null);
       }
@@ -2714,6 +2754,56 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
         <Modal.Content>
           {editingChat ? (
             <View style={{ gap: 16 }}>
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                <ChatActionButton
+                  label={editingChatPinned ? "Открепить сессию" : "Закрепить сессию"}
+                  icon={editingChatPinned ? "PinOff" : "Pin"}
+                  color={editingChatPinned ? c.accent : undefined}
+                  disabled={chatMutationPending}
+                  onPress={() => void handleTogglePinChat()}
+                  theme={theme}
+                />
+                <ChatActionButton
+                  label="Скопировать ссылку на чат"
+                  icon="Link2"
+                  disabled={!editingChatAgent}
+                  onPress={() => {
+                    if (!editingChatAgent) return;
+                    const link = `paseo:///h/${host.id || "local"}/agent/${editingChatAgent.id}`;
+                    void copyText(link)
+                      .then(() => toast.show("Ссылка на чат скопирована", { variant: "info" }))
+                      .catch(() => toast.error("Не удалось скопировать ссылку"));
+                  }}
+                  theme={theme}
+                />
+                <ChatActionButton
+                  label="Скопировать путь к папке проекта"
+                  icon="Folders"
+                  onPress={() => {
+                    const path = currentProjectGroup?.rootPath || editingChat.workspaceDirectory;
+                    void copyText(path)
+                      .then(() => toast.show("Путь скопирован", { variant: "info" }))
+                      .catch(() => toast.error("Не удалось скопировать путь"));
+                  }}
+                  theme={theme}
+                />
+                <ChatActionButton
+                  label="Перенести в проект"
+                  icon="ArrowRightLeft"
+                  disabled={chatMutationPending}
+                  onPress={() => setChatTransferOpen(true)}
+                  theme={theme}
+                />
+                <ChatActionButton
+                  label="Архивировать сессию"
+                  icon="Archive"
+                  color={c.statusDanger}
+                  disabled={chatMutationPending}
+                  onPress={() => void handleArchiveChat(editingChat)}
+                  theme={theme}
+                />
+              </View>
+
               <View
                 style={{
                   padding: 12,
@@ -2779,7 +2869,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                 })()}
                 <Pressable
                   accessibilityRole="button"
-                  disabled={savingChat}
+                  disabled={chatMutationPending}
                   onPress={() => void handleRenameChat()}
                   style={({ pressed }) => ({
                     paddingVertical: 11,
@@ -2787,239 +2877,11 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                     alignItems: "center",
                     justifyContent: "center",
                     backgroundColor: c.accent,
-                    opacity: savingChat ? 0.5 : pressed ? 0.85 : 1,
+                    opacity: chatMutationPending ? 0.5 : pressed ? 0.85 : 1,
                   })}
                 >
                   <Text style={{ color: "#FFFFFF", fontSize: 14, fontWeight: "600" }}>
                     Сохранить название
-                  </Text>
-                </Pressable>
-              </View>
-
-              {/* Перенос сессии в другой проект */}
-              <View
-                style={{
-                  padding: 12,
-                  borderRadius: 12,
-                  backgroundColor: c.surface2,
-                  borderWidth: 1,
-                  borderColor: c.border,
-                  gap: 12,
-                }}
-              >
-                <View style={{ gap: 4 }}>
-                  <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>
-                    Проект и рабочий корень
-                  </Text>
-                  <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>
-                    Текущий проект:{" "}
-                    <Text style={{ color: c.foreground, fontWeight: "600" }}>
-                      {currentProjectGroup?.customName || currentProjectGroup?.name || "Неизвестный проект"}
-                    </Text>
-                  </Text>
-                  <Text numberOfLines={1} style={{ color: c.foregroundMuted, fontSize: 11 }}>
-                    {editingChat.workspaceDirectory}
-                  </Text>
-                </View>
-
-                {availableTargetProjects.length > 0 ? (
-                  <>
-                    <View style={{ height: 1, backgroundColor: c.border }} />
-
-                    <SettingsSelect
-                      label="Перенести в проект"
-                      hint="Рабочий корень сессии будет переназначен на выбранный проект"
-                      value={transferTargetProjectId}
-                      options={availableTargetProjects.map((p) => ({
-                        label: p.customName || p.name,
-                        value: p.id,
-                      }))}
-                      onValueChange={(val) => setTransferTargetProjectId(val)}
-                    />
-
-                    <SettingsSwitch
-                      label="Архивировать исходную сессию"
-                      hint="Скрыть старую сессию в исходном проекте после переноса"
-                      value={transferArchiveOriginal}
-                      onValueChange={setTransferArchiveOriginal}
-                    />
-
-                    <SettingsSwitch
-                      label="Перенести историю диалога (fork)"
-                      hint="Прикрепить предыдущие сообщения и контекст к новой сессии"
-                      value={transferIncludeHistory}
-                      onValueChange={setTransferIncludeHistory}
-                    />
-
-                    <Pressable
-                      accessibilityRole="button"
-                      disabled={transferringChat || !transferTargetProjectId}
-                      onPress={() => void handleTransferChat()}
-                      style={({ pressed }) => ({
-                        flexDirection: "row",
-                        gap: 8,
-                        paddingVertical: 11,
-                        borderRadius: 9,
-                        alignItems: "center",
-                        justifyContent: "center",
-                        backgroundColor: c.accent,
-                        opacity: transferringChat || !transferTargetProjectId ? 0.5 : pressed ? 0.85 : 1,
-                      })}
-                    >
-                      <Icon name="ArrowRightLeft" size={15} color="#FFFFFF" />
-                      <Text style={{ color: "#FFFFFF", fontSize: 14, fontWeight: "600" }}>
-                        {transferringChat ? "Переношу сессию…" : "Перенести в проект"}
-                      </Text>
-                    </Pressable>
-                  </>
-                ) : (
-                  <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>
-                    Нет других проектов в Штабе для переноса.
-                  </Text>
-                )}
-              </View>
-
-              <View
-                style={{
-                  borderRadius: 12,
-                  backgroundColor: c.surface2,
-                  borderWidth: 1,
-                  borderColor: c.border,
-                  overflow: "hidden",
-                }}
-              >
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={savingChat}
-                  onPress={() => void handleTogglePinChat()}
-                  style={({ pressed }) => ({
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 10,
-                    paddingHorizontal: 14,
-                    paddingVertical: 13,
-                    backgroundColor: pressed ? c.surface1 : undefined,
-                  })}
-                >
-                  <Icon name="Pin" size={16} color={editingChatPinned ? c.accent : c.foreground} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ color: c.foreground, fontSize: 14 }}>
-                      {editingChatPinned ? "Открепить сессию в панели" : "Закрепить сессию наверху"}
-                    </Text>
-                    <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>
-                      Действует только внутри нашего блока проектов
-                    </Text>
-                  </View>
-                </Pressable>
-
-                <View style={{ height: 1, backgroundColor: c.border }} />
-
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => {
-                    const ag = latestAgentByWorkspace[editingChat.id];
-                    if (!ag) return;
-                    const link = `paseo:///h/${host.id || "local"}/agent/${ag.id}`;
-                    void copyText(link)
-                      .then(() => toast.show("Ссылка на чат скопирована", { variant: "info" }))
-                      .catch(() => toast.error("Не удалось скопировать ссылку"));
-                  }}
-                  style={({ pressed }) => ({
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 10,
-                    paddingHorizontal: 14,
-                    paddingVertical: 13,
-                    backgroundColor: pressed ? c.surface1 : undefined,
-                  })}
-                >
-                  <Icon name="ExternalLink" size={16} color={c.accent} />
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={{ color: c.foreground, fontSize: 14, fontWeight: "500" }}>
-                      Скопировать ссылку на чат
-                    </Text>
-                    <Text numberOfLines={1} style={{ color: c.foregroundMuted, fontSize: 11 }}>
-                      {latestAgentByWorkspace[editingChat.id]
-                        ? `paseo:///h/${host.id || "local"}/agent/${latestAgentByWorkspace[editingChat.id]!.id}`
-                        : "Нет активного чата"}
-                    </Text>
-                  </View>
-                </Pressable>
-
-                <View style={{ height: 1, backgroundColor: c.border }} />
-
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => {
-                    const ag = latestAgentByWorkspace[editingChat.id];
-                    if (!ag) return;
-                    void copyText(ag.id)
-                      .then(() => toast.show("ID чата скопирован", { variant: "info" }))
-                      .catch(() => toast.error("Не удалось скопировать ID"));
-                  }}
-                  style={({ pressed }) => ({
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 10,
-                    paddingHorizontal: 14,
-                    paddingVertical: 13,
-                    backgroundColor: pressed ? c.surface1 : undefined,
-                  })}
-                >
-                  <Icon name="Copy" size={16} color={c.foreground} />
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={{ color: c.foreground, fontSize: 14 }}>Скопировать ID чата (Agent ID)</Text>
-                    <Text numberOfLines={1} style={{ color: c.foregroundMuted, fontSize: 11 }}>
-                      {latestAgentByWorkspace[editingChat.id]?.id || ""}
-                    </Text>
-                  </View>
-                </Pressable>
-
-                <View style={{ height: 1, backgroundColor: c.border }} />
-
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => {
-                    void copyText(editingChat.workspaceDirectory)
-                      .then(() => toast.show("Путь скопирован", { variant: "info" }))
-                      .catch(() => toast.error("Не удалось скопировать путь"));
-                  }}
-                  style={({ pressed }) => ({
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 10,
-                    paddingHorizontal: 14,
-                    paddingVertical: 13,
-                    backgroundColor: pressed ? c.surface1 : undefined,
-                  })}
-                >
-                  <Icon name="Copy" size={16} color={c.foreground} />
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={{ color: c.foreground, fontSize: 14 }}>Скопировать рабочую папку</Text>
-                    <Text numberOfLines={1} style={{ color: c.foregroundMuted, fontSize: 11 }}>
-                      {editingChat.workspaceDirectory}
-                    </Text>
-                  </View>
-                </Pressable>
-
-                <View style={{ height: 1, backgroundColor: c.border }} />
-
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={savingChat}
-                  onPress={() => void handleArchiveChat(editingChat)}
-                  style={({ pressed }) => ({
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 10,
-                    paddingHorizontal: 14,
-                    paddingVertical: 13,
-                    backgroundColor: pressed ? c.surface1 : undefined,
-                  })}
-                >
-                  <Icon name="Archive" size={16} color={c.statusDanger} />
-                  <Text style={{ flex: 1, color: c.statusDanger, fontSize: 14, fontWeight: "600" }}>
-                    Архивировать сессию
                   </Text>
                 </Pressable>
               </View>
@@ -3101,30 +2963,103 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                         >
                           <Text style={{ color: c.foreground, fontSize: 11, fontWeight: "500" }}>Ссылка</Text>
                         </Pressable>
-                        <Pressable
-                          accessibilityRole="button"
-                          onPress={() => {
-                            void copyText(ag.id)
-                              .then(() => toast.show("ID скопирован", { variant: "info" }))
-                              .catch(() => toast.error("Не удалось скопировать ID"));
-                          }}
-                          style={({ pressed }) => ({
-                            paddingHorizontal: 8,
-                            paddingVertical: 5,
-                            borderRadius: 6,
-                            backgroundColor: c.surface2,
-                            borderWidth: 1,
-                            borderColor: c.border,
-                            opacity: pressed ? 0.7 : 1,
-                          })}
-                        >
-                          <Text style={{ color: c.foreground, fontSize: 11, fontWeight: "500" }}>ID</Text>
-                        </Pressable>
                       </View>
                     );
                   })}
                 </View>
               ) : null}
+            </View>
+          ) : null}
+        </Modal.Content>
+      </Modal>
+
+      <Modal
+        title="Перенос в проект"
+        open={Boolean(editingChat && chatTransferOpen)}
+        onOpenChange={setChatTransferOpen}
+      >
+        <Modal.Content>
+          {editingChat && chatTransferOpen ? (
+            <View
+              style={{
+                padding: 12,
+                borderRadius: 12,
+                backgroundColor: c.surface2,
+                borderWidth: 1,
+                borderColor: c.border,
+                gap: 12,
+              }}
+            >
+              <View style={{ gap: 4 }}>
+                <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>
+                  Проект и рабочий корень
+                </Text>
+                <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>
+                  Текущий проект:{" "}
+                  <Text style={{ color: c.foreground, fontWeight: "600" }}>
+                    {currentProjectGroup?.customName || currentProjectGroup?.name || "Неизвестный проект"}
+                  </Text>
+                </Text>
+                <Text numberOfLines={1} style={{ color: c.foregroundMuted, fontSize: 11 }}>
+                  {editingChat.workspaceDirectory}
+                </Text>
+              </View>
+
+              {availableTargetProjects.length > 0 ? (
+                <>
+                  <View style={{ height: 1, backgroundColor: c.border }} />
+
+                  <SettingsSelect
+                    label="Целевой проект"
+                    hint="Рабочий корень сессии будет переназначен на выбранный проект"
+                    value={transferTargetProjectId}
+                    options={availableTargetProjects.map((p) => ({
+                      label: p.customName || p.name,
+                      value: p.id,
+                    }))}
+                    onValueChange={(val) => setTransferTargetProjectId(val)}
+                  />
+
+                  <SettingsSwitch
+                    label="Архивировать исходную сессию"
+                    hint="Скрыть старую сессию в исходном проекте после переноса"
+                    value={transferArchiveOriginal}
+                    onValueChange={setTransferArchiveOriginal}
+                  />
+
+                  <SettingsSwitch
+                    label="Перенести историю диалога (fork)"
+                    hint="Прикрепить предыдущие сообщения и контекст к новой сессии"
+                    value={transferIncludeHistory}
+                    onValueChange={setTransferIncludeHistory}
+                  />
+
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={transferringChat || !transferTargetProjectId}
+                    onPress={() => void handleTransferChat()}
+                    style={({ pressed }) => ({
+                      flexDirection: "row",
+                      gap: 8,
+                      paddingVertical: 11,
+                      borderRadius: 9,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      backgroundColor: c.accent,
+                      opacity: transferringChat || !transferTargetProjectId ? 0.5 : pressed ? 0.85 : 1,
+                    })}
+                  >
+                    <Icon name="ArrowRightLeft" size={15} color="#FFFFFF" />
+                    <Text style={{ color: "#FFFFFF", fontSize: 14, fontWeight: "600" }}>
+                      {transferringChat ? "Переношу сессию…" : "Перенести в проект"}
+                    </Text>
+                  </Pressable>
+                </>
+              ) : (
+                <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>
+                  Нет других проектов в Штабе для переноса.
+                </Text>
+              )}
             </View>
           ) : null}
         </Modal.Content>

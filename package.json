@@ -31,6 +31,7 @@
     "test": "npm run test:hq && npm run test:limits && npm run test:genui && npm run test:git",
     "test:genui": "vitest run shared/genui server/genui client/genui-integration.test.ts --maxWorkers=1 --no-file-parallelism",
     "smoke:genui": "node tests/genui/smoke.mjs",
+    "smoke:sessions": "node --test tests/session-settings/smoke.mjs",
     "test:hq": "node --test shared/*.test.mjs server/*.test.mjs client/*.test.mjs",
     "check:genui-client": "node tests/genui/registration.mjs",
     "check:genui-hermes": "node tests/genui/hermes-loaders.mjs",
