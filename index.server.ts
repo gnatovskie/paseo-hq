@@ -10,6 +10,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import {
+  chatRenameRpc,
   hostStatsRpc,
   panelSettingsRpc,
   pluginSyncRpc,
@@ -727,6 +728,18 @@ export default function contribute(server: PluginServerContext) {
     const model = (await readStored()).projects[projectId]?.sessionTitleModel;
     if (!model) throw new Error("В настройках проекта не выбрана модель названия");
     return { title: await suggestTitle(paseo, workspaceId, agentId, model) };
+  });
+
+  server.handle(chatRenameRpc, async ({ workspaceId, agentId, title }, { paseo }) => {
+    const result = await paseo.agents.ref(agentId).refresh();
+    const agent = result?.agent;
+    if (!agent || agent.id !== agentId || agent.workspaceId !== workspaceId || agent.archivedAt || agent.internal) {
+      throw new Error("Чат не найден в этом воркспейсе");
+    }
+    await execFileAsync("paseo", ["agent", "update", "--home", paseoHome, `--name=${title}`, "--", agentId], {
+      timeout: 15_000,
+    });
+    return {};
   });
 
   server.handle(sessionPinRpc, async ({ workspaceId, pinned, projectIds }) => {

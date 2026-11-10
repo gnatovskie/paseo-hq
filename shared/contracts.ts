@@ -165,6 +165,16 @@ export const sessionTitleSuggestRpc = defineRpc({
   output: z.object({ title: z.string() }),
 });
 
+export const chatRenameRpc = defineRpc({
+  name: "sidebar.chat-rename",
+  input: z.object({
+    workspaceId: z.string().min(1),
+    agentId: z.string().min(1),
+    title: z.string().trim().min(1).max(200),
+  }),
+  output: z.object({}),
+});
+
 export const sessionPinRpc = defineRpc({
   name: "sidebar.pin",
   input: z.object({

@@ -29,7 +29,8 @@ test("HQ session settings in compact and desktop Paseo", async (t) => {
   const endpoint = `127.0.0.1:${port}`;
   const source = join(home, "source");
   const target = join(home, "target");
-  const env = { ...process.env, PASEO_HOME: home };
+  const stateFile = join(home, "hq-state.json");
+  const env = { ...process.env, PASEO_HOME: home, PASEO_HQ_STATE_FILE: stateFile };
   const paseo = (...args) => execFileSync("paseo", [...args, "--home", home], { env, encoding: "utf8" });
   let client;
   let browser;
@@ -62,6 +63,7 @@ test("HQ session settings in compact and desktop Paseo", async (t) => {
     const { projects } = await client.projects.list({});
     const targetProject = projects.find((project) => project.projectRootPath === target);
     assert(targetProject);
+    await writeFile(stateFile, JSON.stringify({ projects: { [workspace.projectId]: { sessionTitleModel: "first_line" } } }));
 
     browser = await chromium.launch({ executablePath: process.env.PASEO_CHROMIUM_EXECUTABLE });
     for (const width of [390, 1280]) {
@@ -103,9 +105,29 @@ test("HQ session settings in compact and desktop Paseo", async (t) => {
           }));
           assert(boxes.every((box, index) => box && box.y === boxes[0].y && (!index || box.x > boxes[index - 1].x)));
           assert(boxes[0].y + boxes[0].height < (await draft.boundingBox()).y);
-          await page.getByText("Все чаты в этом воркспейсе (2)", { exact: true }).waitFor();
+          await page.getByText("Чаты", { exact: true }).waitFor();
+          const chatRows = page.getByRole("button", { name: /^Открыть чат / });
+          assert.equal(await chatRows.count(), 2);
           assert.equal(await page.getByRole("button", { name: /^(ID|Скопировать ID.*)$/ }).count(), 0);
+          assert.equal(await page.getByText(/^ID: [a-f\d]{8}/).count(), 0);
           await capture("session-settings");
+
+          const generate = button("Сгенерировать название");
+          const fieldBox = await draft.boundingBox();
+          const generateBox = await generate.boundingBox();
+          assert(generateBox.x >= fieldBox.x + fieldBox.width);
+          assert(Math.abs(generateBox.y + generateBox.height / 2 - fieldBox.y - fieldBox.height / 2) < 2);
+          const firstChatLabel = await chatRows.first().getAttribute("aria-label");
+          const firstChat = firstChatLabel === "Открыть чат Fixture chat" ? chat : secondChat;
+          assert(daemonSocket);
+          const [generationFrame] = await Promise.all([
+            daemonSocket.waitForEvent("framesent", {
+              predicate: ({ payload }) => JSON.parse(String(payload)).message?.method === "sidebar.title-suggest",
+            }),
+            generate.click(),
+          ]);
+          assert.equal(JSON.parse(String(generationFrame.payload)).message.input.agentId, firstChat.id);
+          await generate.click({ trial: true });
 
           await actions[1].click();
           await page.getByText("Ссылка на чат скопирована", { exact: true }).waitFor();
@@ -129,7 +151,56 @@ test("HQ session settings in compact and desktop Paseo", async (t) => {
           await archive.waitFor({ state: "hidden" });
           assert.equal(await draft.inputValue(), "Unsaved title");
 
+          const selectedChat = link.endsWith(`/${chat.id}`) ? secondChat : chat;
+          let selectedTitle = selectedChat.id === chat.id ? "Fixture chat" : "Second fixture chat";
+          await button(`Меню чата ${selectedTitle}`).click();
+          await button("Перезагрузить чат").waitFor();
           if (width === 1280) {
+            await button("Переименовать чат").click();
+            selectedTitle = "Renamed fixture chat";
+            await page.getByPlaceholder("Название чата", { exact: true }).fill(selectedTitle);
+            await button("Переименовать").click();
+            await page.getByText("Чат переименован", { exact: true }).waitFor();
+            assert.equal((await client.agents.ref(selectedChat.id).refresh()).agent.title, selectedTitle);
+          } else {
+            const reloadChat = button("Перезагрузить чат");
+            const [reloadFrame] = await Promise.all([
+              daemonSocket.waitForEvent("framesent", {
+                predicate: ({ payload }) => JSON.parse(String(payload)).message?.type === "refresh_agent_request",
+              }),
+              reloadChat.click(),
+            ]);
+            assert.equal(JSON.parse(String(reloadFrame.payload)).message.agentId, selectedChat.id);
+            const reloadResult = page.getByText(/Чат перезагружен|thread\/items\/list is not supported yet/);
+            await reloadResult.waitFor();
+            if (await reloadChat.isVisible()) {
+              await button("Close").last().click();
+              await reloadChat.waitFor({ state: "hidden" });
+            }
+          }
+          const openChat = button(`Открыть чат ${selectedTitle}`);
+          assert.equal(await openChat.count(), 1, "each listed chat should be openable");
+          await button(`Скопировать ссылку на чат ${selectedTitle}`).click();
+          await page.waitForFunction(
+            async (expected) => await navigator.clipboard.readText() === expected,
+            link.replace(/[^/]+$/, selectedChat.id),
+          );
+          assert(await draft.isVisible(), "copying a chat link should keep session settings open");
+          assert(daemonSocket);
+          await Promise.all([
+            daemonSocket.waitForEvent("framesent", {
+              predicate: ({ payload }) => {
+                const message = JSON.parse(String(payload)).message;
+                return message?.type === "fetch_agent_timeline_request" && message.agentId === selectedChat.id;
+              },
+            }),
+            openChat.click(),
+          ]);
+          await draft.waitFor({ state: "hidden" });
+          await page.getByText("Start chatting with this agent...", { exact: true }).waitFor();
+
+          if (width === 1280) {
+            await openSettings();
             await actions[0].click();
             await draft.waitFor({ state: "hidden" });
             await openSettings();
@@ -144,6 +215,8 @@ test("HQ session settings in compact and desktop Paseo", async (t) => {
             assert(!entries.some((entry) => entry.id === workspace.id));
             await page.waitForURL((url) => url.pathname.endsWith(`/workspace/${moved.id}`));
             await openSettings();
+            await page.getByText("Чаты", { exact: true }).waitFor();
+            assert.equal(await page.getByRole("button", { name: /^Открыть чат / }).count(), 1);
             assert(daemonSocket);
             const [archiveFrame] = await Promise.all([
               daemonSocket.waitForEvent("framereceived", {

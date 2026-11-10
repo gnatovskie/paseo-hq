@@ -29,6 +29,7 @@ import {
 } from "@getpaseo/plugin/client/react-native";
 import type { PaseoProviderSnapshotResult, PaseoAgentListResult, PaseoProject, PaseoWorkspace } from "@getpaseo/client";
 import {
+  chatRenameRpc,
   panelSettingsRpc,
   pluginSyncRpc,
   projectAddRpc,
@@ -802,6 +803,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const saveProject = useRpc(projectSaveRpc);
   const pinSession = useRpc(sessionPinRpc);
   const suggestSessionTitle = useRpc(sessionTitleSuggestRpc);
+  const renameAgent = useRpc(chatRenameRpc);
   const loadCandidates = useRpc(projectCandidatesRpc);
   const addProjectRpc = useRpc(projectAddRpc);
   const removeProject = useRpc(projectRemoveRpc);
@@ -884,6 +886,8 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const [draftChatTitle, setDraftChatTitle] = useState("");
   const [savingChat, setSavingChat] = useState(false);
   const [suggestingTitle, setSuggestingTitle] = useState(false);
+  const [agentMenuId, setAgentMenuId] = useState<string | null>(null);
+  const [draftAgentTitle, setDraftAgentTitle] = useState<string | null>(null);
   const [chatTransferOpen, setChatTransferOpen] = useState(false);
   const [transferTargetProjectId, setTransferTargetProjectId] = useState<string>("");
   const [transferArchiveOriginal, setTransferArchiveOriginal] = useState<boolean>(true);
@@ -1106,6 +1110,11 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
 
   const editingChatPinned = editingChat ? Boolean(serverState.pinnedSessions[editingChat.id]) : false;
   const editingChatAgent = editingChat ? latestAgentByWorkspace[editingChat.id] : undefined;
+  const editingChatEntries = (editingChat ? agentsByWorkspace.get(editingChat.id) : undefined) ?? [];
+  const titleSourceAgent = editingChatEntries[0]?.agent;
+  const titleModel = editingChat ? serverState.projects[editingChat.projectId]?.sessionTitleModel : null;
+  const canSuggestTitle = Boolean(titleModel && titleSourceAgent) && !suggestingTitle && !chatMutationPending;
+  const agentMenuChat = editingChatEntries.find(({ agent }) => agent.id === agentMenuId)?.agent;
 
   const currentProjectGroup = useMemo(
     () => (editingChat ? allGroups.find((g) => g.id === editingChat.projectId) ?? null : null),
@@ -1384,6 +1393,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const openChatSettings = (chat: PaseoWorkspace) => {
     if (chatMutationPending) return;
     setEditingChatId(chat.id);
+    setAgentMenuId(null);
     setChatTransferOpen(false);
     const agent = latestAgentByWorkspace[chat.id];
     setDraftChatTitle(chatTitle(chat, agent));
@@ -1436,16 +1446,40 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
 
   // Предлагает название моделью проекта по последнему промпту и ответу; сохраняет Руслан.
   const handleSuggestTitle = async () => {
-    const agent = editingChat ? latestAgentByWorkspace[editingChat.id] : undefined;
-    if (!editingChat || !agent || suggestingTitle) return;
+    if (!editingChat || !titleSourceAgent || !canSuggestTitle) return;
     setSuggestingTitle(true);
     try {
-      const { title } = await suggestSessionTitle({ workspaceId: editingChat.id, agentId: agent.id, projectId: editingChat.projectId });
+      const { title } = await suggestSessionTitle({
+        workspaceId: editingChat.id,
+        agentId: titleSourceAgent.id,
+        projectId: editingChat.projectId,
+      });
       setDraftChatTitle(title);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Не удалось сгенерировать название");
     } finally {
       setSuggestingTitle(false);
+    }
+  };
+
+  const handleAgentMenuAction = async (action: "rename" | "reload") => {
+    if (!editingChat || !agentMenuChat || chatMutationPending) return;
+    const title = draftAgentTitle?.trim();
+    if (action === "rename" && !title) return;
+    setSavingChat(true);
+    try {
+      if (action === "rename" && title) {
+        await renameAgent({ workspaceId: editingChat.id, agentId: agentMenuChat.id, title });
+      } else {
+        await paseo.agents.ref(agentMenuChat.id).reload();
+      }
+      await reloadAll();
+      setAgentMenuId(null);
+      toast.show(action === "rename" ? "Чат переименован" : "Чат перезагружен", { variant: "success" });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Не удалось обновить чат");
+    } finally {
+      setSavingChat(false);
     }
   };
 
@@ -2815,58 +2849,39 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                 }}
               >
                 <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Название сессии</Text>
-                <TextInput
-                  value={draftChatTitle}
-                  onChangeText={setDraftChatTitle}
-                  placeholder="Новая сессия"
-                  placeholderTextColor={c.foregroundMuted}
-                  onSubmitEditing={() => void handleRenameChat()}
-                  style={{
-                    paddingHorizontal: 12,
-                    paddingVertical: 10,
-                    borderRadius: 9,
-                    backgroundColor: c.surface1,
-                    borderWidth: 1,
-                    borderColor: c.border,
-                    color: c.foreground,
-                    fontSize: 14,
-                  }}
-                />
-                {(() => {
-                  const titleModel = serverState.projects[editingChat.projectId]?.sessionTitleModel ?? null;
-                  const canSuggest = Boolean(titleModel && latestAgentByWorkspace[editingChat.id]) && !suggestingTitle;
-                  return (
-                    <View style={{ gap: 4 }}>
-                      <Pressable
-                        accessibilityRole="button"
-                        disabled={!canSuggest}
-                        onPress={() => void handleSuggestTitle()}
-                        style={({ pressed }) => ({
-                          flexDirection: "row",
-                          gap: 6,
-                          paddingVertical: 9,
-                          borderRadius: 9,
-                          alignItems: "center",
-                          justifyContent: "center",
-                          borderWidth: 1,
-                          borderColor: c.border,
-                          backgroundColor: c.surface1,
-                          opacity: !canSuggest ? 0.5 : pressed ? 0.85 : 1,
-                        })}
-                      >
-                        <Icon name="Sparkles" size={14} color={c.foreground} />
-                        <Text style={{ color: c.foreground, fontSize: 13 }}>
-                          {suggestingTitle ? "Генерирую…" : "Сгенерировать название"}
-                        </Text>
-                      </Pressable>
-                      <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>
-                        {titleModel
-                          ? `${titleModel}, по последнему промпту и ответу. Проверь и сохрани`
-                          : "Выбери модель названия в настройках проекта"}
-                      </Text>
-                    </View>
-                  );
-                })()}
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <TextInput
+                    value={draftChatTitle}
+                    onChangeText={setDraftChatTitle}
+                    placeholder="Новая сессия"
+                    placeholderTextColor={c.foregroundMuted}
+                    onSubmitEditing={() => void handleRenameChat()}
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      paddingHorizontal: 12,
+                      paddingVertical: 10,
+                      borderRadius: 9,
+                      backgroundColor: c.surface1,
+                      borderWidth: 1,
+                      borderColor: c.border,
+                      color: c.foreground,
+                      fontSize: 14,
+                    }}
+                  />
+                  <ChatActionButton
+                    label={suggestingTitle ? "Генерирую название" : "Сгенерировать название"}
+                    icon={suggestingTitle ? "LoaderCircle" : "Sparkles"}
+                    disabled={!canSuggestTitle}
+                    onPress={() => void handleSuggestTitle()}
+                    theme={theme}
+                  />
+                </View>
+                {!titleModel ? (
+                  <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>
+                    Выбери модель названия в настройках проекта
+                  </Text>
+                ) : null}
                 <Pressable
                   accessibilityRole="button"
                   disabled={chatMutationPending}
@@ -2886,7 +2901,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                 </Pressable>
               </View>
 
-              {agentsByWorkspace.get(editingChat.id) && agentsByWorkspace.get(editingChat.id)!.length > 1 ? (
+              {editingChatEntries.length > 0 ? (
                 <View
                   style={{
                     borderRadius: 12,
@@ -2898,14 +2913,14 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                   }}
                 >
                   <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>
-                    {`Все чаты в этом воркспейсе (${agentsByWorkspace.get(editingChat.id)!.length})`}
+                    Чаты
                   </Text>
-                  {agentsByWorkspace.get(editingChat.id)!.map((entry) => {
+                  {editingChatEntries.map((entry) => {
                     const ag = entry.agent;
                     const agFamily = resolveModelFamilyBadge(ag);
                     const agTitle = ag.title || "Чат без названия";
                     const link = `paseo:///h/${host.id || "local"}/agent/${ag.id}`;
-                    const isCurrent = latestAgentByWorkspace[editingChat.id]?.id === ag.id;
+                    const isCurrent = editingChatAgent?.id === ag.id;
                     return (
                       <View
                         key={ag.id}
@@ -2913,21 +2928,41 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                           flexDirection: "row",
                           alignItems: "center",
                           gap: 8,
-                          padding: 10,
+                          paddingRight: 10,
                           borderRadius: 8,
                           backgroundColor: c.surface1,
                           borderWidth: 1,
                           borderColor: isCurrent ? c.accent : c.border,
                         }}
                       >
-                        <View style={{ flex: 1, minWidth: 0 }}>
-                          <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 13, fontWeight: "500" }}>
-                            {agTitle}
-                          </Text>
-                          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2 }}>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel={`Открыть чат ${agTitle}`}
+                          onPress={() => {
+                            setEditingChatId(null);
+                            openScreen({ screenId: "jump", params: { agentId: ag.id, t: String(Date.now()) } });
+                          }}
+                          style={({ pressed }) => ({
+                            flex: 1,
+                            minWidth: 0,
+                            minHeight: 44,
+                            flexDirection: "row",
+                            alignItems: "center",
+                            gap: 6,
+                            paddingHorizontal: 10,
+                            paddingVertical: 8,
+                            opacity: pressed ? 0.7 : 1,
+                          })}
+                        >
+                          <View style={{ flex: 1, minWidth: 0 }}>
+                            <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 13, fontWeight: "500" }}>
+                              {agTitle}
+                            </Text>
                             {agFamily ? (
                               <View
                                 style={{
+                                  alignSelf: "flex-start",
+                                  marginTop: 2,
                                   paddingHorizontal: 4,
                                   paddingVertical: 1,
                                   borderRadius: 3,
@@ -2939,13 +2974,12 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                                 </Text>
                               </View>
                             ) : null}
-                            <Text numberOfLines={1} style={{ color: c.foregroundMuted, fontSize: 10.5 }}>
-                              {`ID: ${ag.id.slice(0, 8)}...`}
-                            </Text>
                           </View>
-                        </View>
+                          <Icon name="ChevronRight" size={14} color={c.foregroundMuted} />
+                        </Pressable>
                         <Pressable
                           accessibilityRole="button"
+                          accessibilityLabel={`Скопировать ссылку на чат ${agTitle}`}
                           onPress={() => {
                             void copyText(link)
                               .then(() => toast.show("Ссылка на чат скопирована", { variant: "info" }))
@@ -2963,6 +2997,16 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                         >
                           <Text style={{ color: c.foreground, fontSize: 11, fontWeight: "500" }}>Ссылка</Text>
                         </Pressable>
+                        <ChatActionButton
+                          label={`Меню чата ${agTitle}`}
+                          icon="MoreHorizontal"
+                          disabled={chatMutationPending}
+                          onPress={() => {
+                            setDraftAgentTitle(null);
+                            setAgentMenuId(ag.id);
+                          }}
+                          theme={theme}
+                        />
                       </View>
                     );
                   })}
@@ -2970,6 +3014,82 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
               ) : null}
             </View>
           ) : null}
+        </Modal.Content>
+      </Modal>
+
+      <Modal
+        title={draftAgentTitle === null ? "Действия с чатом" : "Переименовать чат"}
+        open={Boolean(agentMenuChat)}
+        onOpenChange={(open) => {
+          if (!open) setAgentMenuId(null);
+        }}
+      >
+        <Modal.Content>
+          {agentMenuChat && (draftAgentTitle === null ? (
+            <View style={{ gap: 8 }}>
+              {[
+                { label: "Переименовать чат", icon: "Pencil", onPress: () => setDraftAgentTitle(agentMenuChat.title ?? "") },
+                { label: "Перезагрузить чат", icon: "RefreshCw", onPress: () => void handleAgentMenuAction("reload") },
+              ].map(({ label, icon, onPress }) => (
+                <Pressable
+                  key={label}
+                  accessibilityRole="button"
+                  disabled={chatMutationPending}
+                  onPress={onPress}
+                  style={({ pressed }) => ({
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 10,
+                    minHeight: 44,
+                    paddingHorizontal: 12,
+                    borderRadius: 9,
+                    backgroundColor: pressed ? c.surface1 : c.surface2,
+                    opacity: chatMutationPending ? 0.5 : 1,
+                  })}
+                >
+                  <Icon name={icon} size={16} color={c.foreground} />
+                  <Text style={{ color: c.foreground, fontSize: 14 }}>{label}</Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : (
+            <View style={{ gap: 10 }}>
+              <TextInput
+                accessibilityLabel="Название чата"
+                placeholder="Название чата"
+                placeholderTextColor={c.foregroundMuted}
+                value={draftAgentTitle}
+                onChangeText={setDraftAgentTitle}
+                onSubmitEditing={() => void handleAgentMenuAction("rename")}
+                maxLength={200}
+                editable={!chatMutationPending}
+                style={{
+                  paddingHorizontal: 12,
+                  paddingVertical: 10,
+                  borderRadius: 9,
+                  backgroundColor: c.surface1,
+                  borderWidth: 1,
+                  borderColor: c.border,
+                  color: c.foreground,
+                  fontSize: 14,
+                }}
+              />
+              <Pressable
+                accessibilityRole="button"
+                disabled={chatMutationPending || !draftAgentTitle.trim()}
+                onPress={() => void handleAgentMenuAction("rename")}
+                style={({ pressed }) => ({
+                  alignItems: "center",
+                  paddingVertical: 11,
+                  borderRadius: 9,
+                  backgroundColor: c.accent,
+                  opacity: chatMutationPending || !draftAgentTitle.trim() ? 0.5 : pressed ? 0.85 : 1,
+                })}
+              >
+                <Text style={{ color: c.accentForeground, fontSize: 14, fontWeight: "600" }}>Переименовать</Text>
+              </Pressable>
+            </View>
+          ))}
         </Modal.Content>
       </Modal>
 
@@ -3211,14 +3331,17 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
 
 function JumpBridgeScreen({ navigation, params }: PluginScreenProps) {
   const handledRef = useRef<string | null>(null);
+  const { agentId, jump: workspaceId, t } = params;
 
   useEffect(() => {
-    const key = params?.jump ? `${params.jump}:${params.t ?? ""}` : null;
-    if (key && params?.jump && handledRef.current !== key) {
-      handledRef.current = key;
-      navigation?.openWorkspace({ workspaceId: params.jump });
-    }
-  }, [params, navigation]);
+    const targetId = agentId || workspaceId;
+    if (!navigation || !targetId) return;
+    const key = `${agentId ? "agent" : "workspace"}:${targetId}:${t ?? ""}`;
+    if (handledRef.current === key) return;
+    handledRef.current = key;
+    if (agentId) navigation.openAgent({ agentId });
+    else navigation.openWorkspace({ workspaceId: targetId });
+  }, [agentId, workspaceId, t, navigation]);
 
   return <View />;
 }
