@@ -44,6 +44,7 @@ import {
   type ProjectMeta,
   type SidebarState,
 } from "./shared/contracts";
+import { projectAgentConfig } from "./client/project-agent-config";
 import { compareProjectOrder } from "./shared/project-order";
 import { GENERATOR_TITLE, titleModelOptions } from "./shared/title-models";
 import { TitleModelPicker } from "./client/title-model-picker.client";
@@ -1098,7 +1099,9 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     if (creatingId) return;
     setCreatingId(group.id);
     try {
+      const config = await projectAgentConfig(paseo, group, agents);
       const created = await paseo.workspaces.create({
+        agent: { config, cwd: group.rootPath },
         source:
           group.meta.newSessionMode === "worktree"
             ? { kind: "worktree", cwd: group.rootPath, projectId: group.id }
