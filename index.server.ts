@@ -1,6 +1,7 @@
 import v8 from "node:v8";
 v8.setFlagsFromString("--no-maglev");
 
+import type { PaseoApi } from "@getpaseo/client";
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -10,6 +11,9 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import {
+  areaPreferencesSchema,
+  areaSettingsRpc,
+  areaSessionCreateRpc,
   chatRenameRpc,
   hostStatsRpc,
   panelSettingsRpc,
@@ -37,6 +41,9 @@ import {
   type ProjectMeta,
   type SidebarState,
 } from "./shared/contracts";
+import { currentGitBranch, localGitBranches } from "./server/area-git.server";
+import { projectAgentConfig } from "./shared/project-agent-config";
+import { GENERATOR_TITLE } from "./shared/title-models";
 import { ArtifactsService } from "./server/artifacts-service.server";
 import {
   EMPTY_BOARD,
@@ -91,7 +98,14 @@ const stateFile =
 const MAX_AVATAR_BYTES = 8 * 1024 * 1024;
 const MAX_HISTORY_ENTRIES = 500;
 
+type AreaPreferences = ReturnType<typeof areaPreferencesSchema.parse>;
+
+function emptyAreaPreferences(): AreaPreferences {
+  return { icon: null, defaultBranch: null, launchBranches: {} };
+}
+
 interface StoredData {
+  areaPreferences: Record<string, AreaPreferences>;
   projects: Record<string, ProjectMeta>;
   lastRunningAt: Record<string, number>;
   pinnedSessions: Record<string, number>;
@@ -152,7 +166,15 @@ async function readStored(): Promise<StoredData> {
         }
       }
     }
+    const areaPreferences: StoredData["areaPreferences"] = {};
+    if (raw.areaPreferences && typeof raw.areaPreferences === "object") {
+      for (const [id, entry] of Object.entries(raw.areaPreferences)) {
+        const parsed = areaPreferencesSchema.safeParse(entry);
+        if (parsed.success) areaPreferences[id] = parsed.data;
+      }
+    }
     return {
+      areaPreferences,
       projects,
       lastRunningAt: parseNumberMap(raw.lastRunningAt),
       pinnedSessions: parseNumberMap(raw.pinnedSessions),
@@ -166,6 +188,7 @@ async function readStored(): Promise<StoredData> {
     };
   } catch {
     return {
+      areaPreferences: {},
       projects: {},
       lastRunningAt: {},
       pinnedSessions: {},
@@ -183,6 +206,7 @@ async function saveStored(data: StoredData): Promise<void> {
     .sort((a, b) => b[1] - a[1])
     .slice(0, MAX_HISTORY_ENTRIES);
   const trimmed: StoredData = {
+    areaPreferences: data.areaPreferences,
     projects: data.projects,
     lastRunningAt: Object.fromEntries(runningEntries),
     pinnedSessions: data.pinnedSessions,
@@ -196,6 +220,24 @@ async function saveStored(data: StoredData): Promise<void> {
   const tmp = `${stateFile}.${process.pid}.${Date.now()}.tmp`;
   await writeFile(tmp, JSON.stringify(trimmed, null, 2), { encoding: "utf8", mode: 0o600 });
   await rename(tmp, stateFile);
+}
+
+async function requireArea(paseo: PaseoApi, workspaceId: string) {
+  const area = await paseo.workspaces.ref(workspaceId).refresh();
+  if (!area || area.archivingAt) throw new Error("Область не найдена");
+  return area;
+}
+
+async function recordSessionLaunchBranch(workspaceId: string, agentId: string, cwd: string) {
+  const branch = await currentGitBranch(cwd);
+  if (!branch) return;
+  await serializeWrite(async () => {
+    const stored = await readStored();
+    const area = stored.areaPreferences[workspaceId] ??= emptyAreaPreferences();
+    if (Object.hasOwn(area.launchBranches, agentId)) return;
+    area.launchBranches[agentId] = branch;
+    await saveStored(stored);
+  });
 }
 
 async function recordWorkspaceRunning(workspaceId: string | null | undefined): Promise<void> {
@@ -378,6 +420,9 @@ async function buildState(projectIds: string[]): Promise<SidebarState> {
   return {
     projects: stored.projects,
     nativeIcons,
+    areaIcons: Object.fromEntries(
+      Object.entries(stored.areaPreferences).flatMap(([id, preferences]) => preferences.icon ? [[id, preferences.icon]] : []),
+    ),
     lastRunningAt: stored.lastRunningAt,
     pinnedSessions: stored.pinnedSessions,
     showHostMetrics: stored.showHostMetrics,
@@ -571,6 +616,17 @@ export default function contribute(server: PluginServerContext) {
     console.warn("[artifacts] Init failed:", err);
   });
 
+  const disposeLaunchBranch = server.before("agent.session_open", async ({ request }) => {
+    if (request.reason === "create" && request.workspaceId && request.title !== GENERATOR_TITLE) {
+      try {
+        await recordSessionLaunchBranch(request.workspaceId, request.agentId, request.cwd);
+      } catch (error) {
+        console.warn("[sidebar] Failed to record session launch branch:", error);
+      }
+    }
+    return request;
+  });
+
   // Отслеживаем начало и завершение running-ходов всех агентов для точной сортировки по последнему running
   const disposeTurnBefore = server.addHook("agent.turn.before", async ({ agent }) => {
     await recordWorkspaceRunning(agent.workspaceId);
@@ -728,6 +784,39 @@ export default function contribute(server: PluginServerContext) {
     const model = (await readStored()).projects[projectId]?.sessionTitleModel;
     if (!model) throw new Error("В настройках проекта не выбрана модель названия");
     return { title: await suggestTitle(paseo, workspaceId, agentId, model) };
+  });
+
+  server.handle(areaSettingsRpc, async ({ workspaceId, defaultBranch, icon }, { paseo }) => {
+    const area = await requireArea(paseo, workspaceId);
+    const [currentBranch, branches]: [string | null, string[]] = area.projectKind === "git"
+      ? await Promise.all([currentGitBranch(area.workspaceDirectory), localGitBranches(area.workspaceDirectory)])
+      : [null, []];
+    if (defaultBranch !== undefined || icon !== undefined) {
+      if (defaultBranch && !branches.includes(defaultBranch)) {
+        throw new Error("Ветка не найдена в этой области");
+      }
+      await serializeWrite(async () => {
+        const stored = await readStored();
+        const preferences = stored.areaPreferences[workspaceId] ??= emptyAreaPreferences();
+        if (defaultBranch !== undefined) preferences.defaultBranch = defaultBranch;
+        if (icon !== undefined) preferences.icon = icon;
+        await saveStored(stored);
+      });
+    }
+    const preferences = (await readStored()).areaPreferences[workspaceId] ?? emptyAreaPreferences();
+    return { ...preferences, currentBranch, branches };
+  });
+
+  server.handle(areaSessionCreateRpc, async ({ workspaceId }, { paseo }) => {
+    const area = await requireArea(paseo, workspaceId);
+    const { entries } = await paseo.agents.list({});
+    const config = await projectAgentConfig(paseo, { rootPath: area.workspaceDirectory, chats: [area] }, entries);
+    const branch = (await readStored()).areaPreferences[workspaceId]?.defaultBranch;
+    if (branch && await currentGitBranch(area.workspaceDirectory) !== branch) {
+      throw new Error(`Переключите область на ветку «${branch}», чтобы создать сессию`);
+    }
+    const agent = await paseo.workspaces.ref(area).agents.create({ config });
+    return { agentId: agent.id };
   });
 
   server.handle(chatRenameRpc, async ({ workspaceId, agentId, title }, { paseo }) => {
@@ -1141,6 +1230,7 @@ export default function contribute(server: PluginServerContext) {
     disposeTitles();
     disposeTurnBefore();
     disposeTurnAfter();
+    disposeLaunchBranch();
     if (sampler) {
       sampler.stop();
       sampler = null;

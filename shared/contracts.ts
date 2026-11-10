@@ -10,6 +10,7 @@ export type { ProjectMeta } from "./project-meta";
 export const sidebarStateSchema = z.object({
   projects: z.record(z.string(), projectMetaSchema),
   nativeIcons: z.record(z.string(), z.string()),
+  areaIcons: z.record(z.string(), z.string()).default({}),
   lastRunningAt: z.record(z.string(), z.number()),
   pinnedSessions: z.record(z.string(), z.number()),
   showHostMetrics: z.boolean().default(true),
@@ -173,6 +174,31 @@ export const chatRenameRpc = defineRpc({
     title: z.string().trim().min(1).max(200),
   }),
   output: z.object({}),
+});
+
+export const areaPreferencesSchema = z.object({
+  icon: z.string().nullable().default(null),
+  defaultBranch: z.string().nullable().default(null),
+  launchBranches: z.record(z.string(), z.string()).default({}),
+});
+
+export const areaSettingsRpc = defineRpc({
+  name: "sidebar.area-settings",
+  input: z.object({
+    workspaceId: z.string().min(1),
+    defaultBranch: z.string().min(1).nullable().optional(),
+    icon: z.string().trim().min(1).max(16).nullable().optional(),
+  }),
+  output: areaPreferencesSchema.extend({
+    currentBranch: z.string().nullable(),
+    branches: z.array(z.string()),
+  }),
+});
+
+export const areaSessionCreateRpc = defineRpc({
+  name: "sidebar.area-session-create",
+  input: z.object({ workspaceId: z.string().min(1) }),
+  output: z.object({ agentId: z.string() }),
 });
 
 export const sessionPinRpc = defineRpc({

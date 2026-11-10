@@ -3,6 +3,7 @@ import {
   Animated,
   Easing,
   Image,
+  Linking,
   Pressable,
   ScrollView,
   Text,
@@ -27,8 +28,10 @@ import {
   TextInput,
   useToast,
 } from "@getpaseo/plugin/client/react-native";
-import type { PaseoProviderSnapshotResult, PaseoAgentListResult, PaseoProject, PaseoWorkspace } from "@getpaseo/client";
+import type { PaseoProviderSnapshotResult, PaseoAgentListResult, PaseoProject, PaseoTerminal, PaseoWorkspace } from "@getpaseo/client";
 import {
+  areaSettingsRpc,
+  areaSessionCreateRpc,
   chatRenameRpc,
   panelSettingsRpc,
   pluginSyncRpc,
@@ -45,7 +48,7 @@ import {
   type ProjectMeta,
   type SidebarState,
 } from "./shared/contracts";
-import { projectAgentConfig } from "./client/project-agent-config";
+import { projectAgentConfig } from "./shared/project-agent-config";
 import { compareProjectOrder } from "./shared/project-order";
 import { GENERATOR_TITLE, titleModelOptions } from "./shared/title-models";
 import { TitleModelPicker } from "./client/title-model-picker.client";
@@ -81,6 +84,7 @@ import { Markdown } from "@getpaseo/plugin/client/ui";
 
 
 const EMOJI_PRESETS = ["🚀", "⚡", "🛠", "📦", "🧠", "🌐", "💳", "🎨", "🔒", "📱", "🤖", "🔥"];
+const AREA_ICONS = ["📁", "💻", "🛠", "📦", "🚀", "🧪", "📝", "🎨"];
 const COLOR_PRESETS = ["#3B82F6", "#8B5CF6", "#10B981", "#F59E0B", "#EF4444", "#EC4899", "#06B6D4", "#64748B"];
 
 const DEFAULT_META: ProjectMeta = {
@@ -392,7 +396,7 @@ function pickWebImageAsDataUri(): Promise<string | null> {
   });
 }
 
-const AREA_STATUS_LABEL: Record<UiSessionBucket, string> = {
+const SESSION_STATUS_LABEL: Record<UiSessionBucket, string> = {
   running: "в работе",
   attention: "требует внимания",
   needs_input: "ожидает ввода",
@@ -779,36 +783,91 @@ function ProjectHeaderPressable({
   );
 }
 
-function SessionRowPressable({
-  onJump,
-  theme,
-  layout,
-  children,
-}: {
-  onJump: () => void;
+function sessionTitle(agent: AgentEntry["agent"]): string {
+  return agent.title?.trim() || "Сессия без названия";
+}
+
+function SessionSummary({ agent, branch, theme, platform }: {
+  agent: AgentEntry["agent"];
+  branch?: string;
   theme: PluginTheme;
-  layout: PluginSidebarItemProps["layout"];
-  children: React.ReactNode;
+  platform: PluginSidebarItemProps["layout"]["platform"];
+}) {
+  const c = theme.colors;
+  const family = resolveModelFamilyBadge(agent);
+  const bucket = deriveAgentBucket(agent);
+  return (
+    <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+      <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 13, lineHeight: 18, fontWeight: "500" }}>
+        {sessionTitle(agent)}
+      </Text>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, minHeight: 16 }}>
+        <View accessible accessibilityLabel={`Статус сессии: ${SESSION_STATUS_LABEL[bucket]}`}>
+          <SessionStatusIndicator bucket={bucket} theme={theme} platform={platform} size={14} />
+        </View>
+        {family ? (
+          <View style={{ paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4, backgroundColor: family.bg }}>
+            <Text numberOfLines={1} style={{ fontSize: 10, fontWeight: "600", color: family.text }}>
+              {family.label}
+            </Text>
+          </View>
+        ) : null}
+        {branch ? (
+          <View
+            accessible
+            accessibilityLabel={`Ветка при запуске: ${branch}`}
+            style={{ flexShrink: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 3,
+              borderRadius: 4, backgroundColor: c.surface2, paddingHorizontal: 4, paddingVertical: 1 }}
+          >
+            <Icon name="GitBranch" size={11} color={c.foregroundMuted} />
+            <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 10, color: c.foregroundMuted }}>{branch}</Text>
+          </View>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+function openTerminalTab(hostId: string, terminal: PaseoTerminal, platform: PluginSidebarItemProps["layout"]["platform"]) {
+  const target = `/h/${encodeURIComponent(hostId)}/workspace/${encodeURIComponent(terminal.workspaceId)}?open=${encodeURIComponent(`terminal:${terminal.id}`)}`;
+  if (platform === "web" && typeof window !== "undefined") {
+    window.location.assign(target);
+    return Promise.resolve();
+  }
+  return Linking.openURL(`paseo://${target}`);
+}
+
+function TerminalRow({ terminal, onOpen, theme }: {
+  terminal: PaseoTerminal;
+  onOpen: () => void;
+  theme: PluginTheme;
 }) {
   const c = theme.colors;
   return (
     <Pressable
       accessibilityRole="button"
-      onPress={onJump}
+      accessibilityLabel={`Открыть терминал ${terminal.name}`}
+      onPress={onOpen}
       style={({ pressed }) => ({
-        flex: 1,
-        minWidth: 0,
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 8,
-        paddingVertical: layout.compact ? 11 : 9,
-        paddingLeft: 9,
-        paddingRight: 8,
-        borderRadius: 9,
+        flexDirection: "row", alignItems: "flex-start", minHeight: 44, gap: 7,
+        paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
         backgroundColor: pressed ? c.surface2 : undefined,
       })}
     >
-      {children}
+      <View style={{ paddingTop: 2 }}>
+        <Icon name="Terminal" size={14} color={c.foregroundMuted} />
+      </View>
+      <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+        <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 13, lineHeight: 18 }}>{terminal.name}</Text>
+        <Text
+          numberOfLines={1}
+          ellipsizeMode="middle"
+          accessibilityLabel={`Корень терминала: ${terminal.cwd}`}
+          style={{ color: c.foregroundMuted, fontSize: 10, fontFamily: "monospace" }}
+        >
+          {terminal.cwd}
+        </Text>
+      </View>
     </Pressable>
   );
 }
@@ -817,6 +876,8 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const paseo = usePaseo();
   const toast = useToast();
   const readSidebar = useRpc(sidebarReadRpc);
+  const readAreaSettings = useRpc(areaSettingsRpc);
+  const createAreaSession = useRpc(areaSessionCreateRpc);
   const saveProject = useRpc(projectSaveRpc);
   const pinSession = useRpc(sessionPinRpc);
   const suggestSessionTitle = useRpc(sessionTitleSuggestRpc);
@@ -831,10 +892,13 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const [projects, setProjects] = useState<PaseoProject[]>([]);
   const [workspaces, setWorkspaces] = useState<PaseoWorkspace[]>([]);
   const [agents, setAgents] = useState<AgentEntry[]>([]);
+  const [terminals, setTerminals] = useState<PaseoTerminal[]>([]);
+  const [terminalListFailed, setTerminalListFailed] = useState(false);
   const [archivedIds, setArchivedIds] = useState<Record<string, boolean>>({});
   const [serverState, setServerState] = useState<SidebarState>({
     projects: {},
     nativeIcons: {},
+    areaIcons: {},
     lastRunningAt: {},
     pinnedSessions: {},
     showHostMetrics: true,
@@ -867,9 +931,18 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     }
   };
   const [expandedProjectIds, setExpandedProjectIds] = useState<Record<string, boolean>>({});
+  const [expandedAreaIds, setExpandedAreaIds] = useState<Record<string, boolean>>({});
+  const [creatingAreaIds, setCreatingAreaIds] = useState<Record<string, boolean>>({});
   const [expandedAllChats, setExpandedAllChats] = useState<Record<string, boolean>>({});
   const [showHiddenProjects, setShowHiddenProjects] = useState(false);
   const [creatingId, setCreatingId] = useState<string | null>(null);
+  const [creatingTerminalId, setCreatingTerminalId] = useState<string | null>(null);
+  const [newArea, setNewArea] = useState<{
+    projectId: string;
+    name: string;
+    firstTab: "session" | "terminal";
+    workspaceId?: string;
+  } | null>(null);
 
   // Модалка добавления нового проекта
   const [addModalOpen, setAddModalOpen] = useState(false);
@@ -902,6 +975,9 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const [editingChatId, setEditingChatId] = useState<string | null>(null);
   const [draftChatTitle, setDraftChatTitle] = useState("");
   const [savingChat, setSavingChat] = useState(false);
+  const [areaSettings, setAreaSettings] = useState<z.infer<typeof areaSettingsRpc.output> | null>(null);
+  const [areaSettingsError, setAreaSettingsError] = useState<string | null>(null);
+  const [savingAreaSettings, setSavingAreaSettings] = useState(false);
   const [suggestingTitle, setSuggestingTitle] = useState(false);
   const [agentMenuId, setAgentMenuId] = useState<string | null>(null);
   const [draftAgentTitle, setDraftAgentTitle] = useState<string | null>(null);
@@ -910,13 +986,18 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const [transferArchiveOriginal, setTransferArchiveOriginal] = useState<boolean>(true);
   const [transferIncludeHistory, setTransferIncludeHistory] = useState<boolean>(true);
   const [transferringChat, setTransferringChat] = useState<boolean>(false);
-  const chatMutationPending = savingChat || transferringChat;
+  const chatMutationPending = savingChat || transferringChat || savingAreaSettings;
 
   const c = theme.colors;
   const isWeb = layout.platform === "web" && typeof (globalThis as { document?: unknown }).document !== "undefined";
   const btnSize = layout.compact ? 36 : 30;
 
   const reloadAll = useCallback(async () => {
+    const terminalRefresh = paseo.terminals.list()
+      .then(({ entries }) => {
+        setTerminals(entries);
+        setTerminalListFailed(false);
+      }, () => setTerminalListFailed(true));
     try {
       const [projRes, wsRes, agRes] = await Promise.all([
         paseo.projects.list({}),
@@ -939,6 +1020,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     } catch {
       // Сохраняем прошлый снимок при временной сетевой ошибке.
     }
+    await terminalRefresh;
   }, [paseo, readSidebar]);
 
   useEffect(() => {
@@ -1125,9 +1207,22 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     [workspaces, editingChatId],
   );
 
+  useEffect(() => {
+    if (!editingChatId) return;
+    let live = true;
+    void readAreaSettings({ workspaceId: editingChatId }).then(
+      (info) => { if (live) setAreaSettings(info); },
+      (error: unknown) => {
+        if (live) setAreaSettingsError(error instanceof Error ? error.message : "Не удалось загрузить настройки области");
+      },
+    );
+    return () => { live = false; };
+  }, [editingChatId, readAreaSettings]);
+
   const editingChatPinned = editingChat ? Boolean(serverState.pinnedSessions[editingChat.id]) : false;
   const editingChatAgent = editingChat ? latestAgentByWorkspace[editingChat.id] : undefined;
   const editingChatEntries = (editingChat ? agentsByWorkspace.get(editingChat.id) : undefined) ?? [];
+  const editingChatTerminals = terminals.filter((terminal) => terminal.workspaceId === editingChatId);
   const titleSourceAgent = editingChatEntries[0]?.agent;
   const titleModel = editingChat ? serverState.projects[editingChat.projectId]?.sessionTitleModel : null;
   const canSuggestTitle = Boolean(titleModel && titleSourceAgent) && !suggestingTitle && !chatMutationPending;
@@ -1158,22 +1253,90 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     [openScreen],
   );
 
-  const createNewChat = async (group: ProjectGroup) => {
-    if (creatingId) return;
+  const jumpToAgent = (agentId: string) => {
+    openScreen({ screenId: "jump", params: { agentId, t: String(Date.now()) } });
+  };
+
+  const handleCreateAreaSession = async (workspaceId: string) => {
+    if (creatingAreaIds[workspaceId]) return;
+    setCreatingAreaIds((prev) => ({ ...prev, [workspaceId]: true }));
+    try {
+      const { agentId } = await createAreaSession({ workspaceId });
+      setExpandedAreaIds((prev) => ({ ...prev, [workspaceId]: true }));
+      setEditingChatId((current) => current === workspaceId ? null : current);
+      jumpToAgent(agentId);
+      void reloadAll();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Не удалось создать сессию");
+    } finally {
+      setCreatingAreaIds((prev) => {
+        const next = { ...prev };
+        delete next[workspaceId];
+        return next;
+      });
+    }
+  };
+
+  const openAreaTerminal = (terminal: PaseoTerminal) => {
+    void openTerminalTab(host.id, terminal, layout.platform).catch(() => {
+      toast.error("Не удалось открыть терминал");
+    });
+  };
+
+  const handleCreateAreaTerminal = async (workspaceId: string) => {
+    if (creatingTerminalId) return;
+    setCreatingTerminalId(workspaceId);
+    try {
+      const terminal = await paseo.workspaces.ref(workspaceId).terminals.create();
+      const snapshot = terminal.current();
+      if (!snapshot) throw new Error("Терминал создан, но его данные недоступны");
+      setExpandedAreaIds((prev) => ({ ...prev, [workspaceId]: true }));
+      setEditingChatId((current) => current === workspaceId ? null : current);
+      openAreaTerminal(snapshot);
+      void reloadAll();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Не удалось создать терминал");
+    } finally {
+      setCreatingTerminalId(null);
+    }
+  };
+
+  const createNewArea = async () => {
+    if (!newArea || creatingId) return;
+    const group = allGroups.find((item) => item.id === newArea.projectId);
+    if (!group) return;
     setCreatingId(group.id);
     try {
-      const config = await projectAgentConfig(paseo, group, agents);
-      const created = await paseo.workspaces.create({
-        agent: { config, cwd: group.rootPath },
-        source:
-          group.meta.newSessionMode === "worktree"
+      let workspaceId = newArea.workspaceId;
+      if (!workspaceId) {
+        const agent = newArea.firstTab === "session"
+          ? { config: await projectAgentConfig(paseo, group, agents), cwd: group.rootPath }
+          : undefined;
+        const created = await paseo.workspaces.create({
+          title: newArea.name.trim() || "Новая сессия",
+          agent,
+          source: group.meta.newSessionMode === "worktree"
             ? { kind: "worktree", cwd: group.rootPath, projectId: group.id }
             : { kind: "directory", path: group.rootPath, projectId: group.id },
-      });
+        });
+        workspaceId = created.id;
+        setNewArea({ ...newArea, workspaceId });
+      }
+
       setExpandedProjectIds((prev) => ({ ...prev, [group.id]: true }));
-      jumpToWorkspace(created.id);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Не удалось создать область");
+      setExpandedAreaIds((prev) => ({ ...prev, [workspaceId]: true }));
+      if (newArea.firstTab === "terminal") {
+        const terminal = await paseo.workspaces.ref(workspaceId).terminals.create();
+        const snapshot = terminal.current();
+        if (!snapshot) throw new Error("Терминал создан, но его данные недоступны");
+        openAreaTerminal(snapshot);
+      } else {
+        jumpToWorkspace(workspaceId);
+      }
+      setNewArea(null);
+      void reloadAll();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Не удалось создать область");
     } finally {
       setCreatingId(null);
     }
@@ -1409,6 +1572,8 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
 
   const openChatSettings = (chat: PaseoWorkspace) => {
     if (chatMutationPending) return;
+    setAreaSettings(null);
+    setAreaSettingsError(null);
     setEditingChatId(chat.id);
     setAgentMenuId(null);
     setChatTransferOpen(false);
@@ -1418,6 +1583,28 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     setTransferTargetProjectId(others[0]?.id || "");
     setTransferArchiveOriginal(true);
     setTransferIncludeHistory(true);
+  };
+
+  const handleSaveAreaSettings = async (change: { defaultBranch?: string | null; icon?: string | null }) => {
+    if (!editingChat || chatMutationPending) return;
+    const workspaceId = editingChat.id;
+    setSavingAreaSettings(true);
+    try {
+      const settings = await readAreaSettings({ workspaceId, ...change });
+      setAreaSettings(settings);
+      if (change.icon !== undefined) {
+        setServerState((prev) => {
+          const areaIcons = { ...prev.areaIcons };
+          if (settings.icon) areaIcons[workspaceId] = settings.icon;
+          else delete areaIcons[workspaceId];
+          return { ...prev, areaIcons };
+        });
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Не удалось сохранить настройки области");
+    } finally {
+      setSavingAreaSettings(false);
+    }
   };
 
   const handleTransferChat = async () => {
@@ -1914,7 +2101,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                     accessibilityRole="button"
                     accessibilityLabel={`Новая область в проекте ${group.name}`}
                     disabled={busy}
-                    onPress={() => void createNewChat(group)}
+                    onPress={() => setNewArea({ projectId: group.id, name: "Новая сессия", firstTab: "session" })}
                     style={({ pressed }) => ({
                       width: btnSize,
                       height: btnSize,
@@ -1943,109 +2130,90 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                     {displayedChats.map((chat) => {
                       const bucket = resolveChatBucket(chat, agentBucketByWorkspace);
                       const isPinned = Boolean(serverState.pinnedSessions[chat.id]);
-                      const highlighted =
-                        isPinned || bucket === "running" || bucket === "attention" || bucket === "needs_input";
-                      const agent = latestAgentByWorkspace[chat.id];
-                      const family = resolveModelFamilyBadge(agent);
-                      const title = chatTitle(chat, agent);
-                      const sessionCount = agentsByWorkspace.get(chat.id)?.length ?? 0;
+                      const title = chatTitle(chat, latestAgentByWorkspace[chat.id]);
+                      const expanded = Boolean(expandedAreaIds[chat.id]);
+                      const areaIcon = serverState.areaIcons[chat.id];
+                      const sessions = agentsByWorkspace.get(chat.id) ?? [];
+                      const areaTerminals = terminals.filter((terminal) => terminal.workspaceId === chat.id);
 
                       return (
-                        <View
-                          key={chat.id}
-                          style={{
-                            flexDirection: "row",
-                            alignItems: "center",
-                            borderRadius: 9,
-                            gap: 2,
-                          }}
-                        >
-                          <SessionRowPressable
-                            onJump={() => jumpToWorkspace(chat.id)}
-                            theme={theme}
-                            layout={layout}
-                          >
-                            <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
-                              <Text
-                                numberOfLines={1}
-                                style={{
-                                  color: c.foreground,
-                                  fontSize: 14,
-                                  lineHeight: 19,
-                                  fontWeight: highlighted ? "600" : "400",
-                                }}
-                              >
+                        <View key={chat.id}>
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+                            <Pressable
+                              accessibilityRole="button"
+                              accessibilityLabel={`Сессии области ${title}`}
+                              aria-expanded={expanded}
+                              onPress={() => setExpandedAreaIds((prev) => ({ ...prev, [chat.id]: !prev[chat.id] }))}
+                              style={({ pressed }) => ({
+                                flex: 1, minWidth: 0, minHeight: 42, flexDirection: "row", alignItems: "center",
+                                gap: 7, paddingHorizontal: 7, borderRadius: 8,
+                                backgroundColor: pressed ? c.surface2 : undefined,
+                              })}
+                            >
+                              <Icon name={expanded ? "ChevronDown" : "ChevronRight"} size={14}
+                                color={expanded || bucket === "running" ? c.accent : c.foregroundMuted} />
+                              {areaIcon ? <Text style={{ fontSize: 14 }}>{areaIcon}</Text> : null}
+                              <Text numberOfLines={1} style={{ flex: 1, color: c.foreground, fontSize: 14, fontWeight: "600" }}>
                                 {title}
                               </Text>
-                              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, minHeight: 18 }}>
-                                <View accessible accessibilityLabel={`Статус области: ${AREA_STATUS_LABEL[bucket]}`}>
-                                  <SessionStatusIndicator
-                                    bucket={bucket}
-                                    theme={theme}
-                                    platform={layout.platform}
-                                    size={14}
-                                  />
-                                </View>
-                                {family ? (
-                                  <View
-                                    style={{
-                                      paddingHorizontal: 5,
-                                      paddingVertical: 1,
-                                      borderRadius: 4,
-                                      backgroundColor: family.bg,
-                                    }}
-                                  >
-                                    <Text
-                                      style={{
-                                        fontSize: 10,
-                                        fontWeight: "600",
-                                        color: family.text,
-                                        letterSpacing: 0.2,
-                                      }}
-                                    >
-                                      {family.label}
-                                    </Text>
-                                  </View>
-                                ) : null}
-                                {sessionCount > 1 ? (
-                                  <View
-                                    style={{
-                                      paddingHorizontal: 4,
-                                      paddingVertical: 1,
-                                      borderRadius: 3,
-                                      backgroundColor: c.surface2,
-                                      borderWidth: 1,
-                                      borderColor: c.border,
-                                    }}
-                                  >
-                                    <Text style={{ fontSize: 9.5, fontWeight: "600", color: c.foregroundMuted }}>
-                                      {formatRussianCount(sessionCount, "сессия", "сессии", "сессий")}
-                                    </Text>
-                                  </View>
-                                ) : null}
-                              </View>
+                              {isPinned ? <Icon name="Pin" size={12} color={c.accent} /> : null}
+                            </Pressable>
+                            <Pressable
+                              accessibilityRole="button"
+                              accessibilityLabel={`Настройки области ${title}`}
+                              onPress={() => openChatSettings(chat)}
+                              style={({ pressed }) => ({
+                                width: btnSize, height: btnSize, borderRadius: 8,
+                                alignItems: "center", justifyContent: "center",
+                                backgroundColor: pressed ? c.surface2 : undefined,
+                              })}
+                            >
+                              <Icon name="MoreHorizontal" size={16} color={c.foregroundMuted} />
+                            </Pressable>
+                            <Pressable
+                              accessibilityRole="button"
+                              accessibilityLabel={`Новая сессия в области ${title}`}
+                              disabled={Boolean(creatingAreaIds[chat.id])}
+                              onPress={() => void handleCreateAreaSession(chat.id)}
+                              style={({ pressed }) => ({
+                                width: btnSize, height: btnSize, borderRadius: 8,
+                                alignItems: "center", justifyContent: "center",
+                                backgroundColor: pressed ? c.surface2 : undefined,
+                                opacity: creatingAreaIds[chat.id] ? 0.5 : 1,
+                              })}
+                            >
+                              <Icon name="Plus" size={16} color={c.accent} />
+                            </Pressable>
+                          </View>
+                          {expanded ? (
+                            <View style={{ marginLeft: areaIcon ? 30 : 20, marginBottom: 4, paddingLeft: areaIcon ? 13 : 9, paddingRight: 3,
+                              borderLeftWidth: 1, borderLeftColor: c.border, gap: 2 }}>
+                              {sessions.map(({ agent }) => (
+                                <Pressable
+                                  key={agent.id}
+                                  accessibilityRole="button"
+                                  accessibilityLabel={`Открыть сессию ${sessionTitle(agent)}`}
+                                  onPress={() => jumpToAgent(agent.id)}
+                                  style={({ pressed }) => ({
+                                    flexDirection: "row", alignItems: "center", paddingHorizontal: 10,
+                                    paddingVertical: 5, minHeight: 44, borderRadius: 8,
+                                    backgroundColor: pressed ? c.surface2 : undefined,
+                                  })}
+                                >
+                                  <SessionSummary agent={agent} theme={theme} platform={layout.platform} />
+                                </Pressable>
+                              ))}
+                              {areaTerminals.map((terminal) => (
+                                <TerminalRow key={terminal.id} terminal={terminal} theme={theme}
+                                  onOpen={() => openAreaTerminal(terminal)} />
+                              ))}
+                              {terminalListFailed || (!sessions.length && !areaTerminals.length) ? (
+                                <Text style={{ padding: 8, color: c.foregroundMuted, fontSize: 12 }}>
+                                  {terminalListFailed ? "Не удалось загрузить терминалы" : "Нет сессий и терминалов"}
+                                </Text>
+                              ) : null}
                             </View>
-                            {isPinned ? (
-                              <Icon name="Pin" size={13} color={c.accent} />
-                            ) : null}
-                          </SessionRowPressable>
-
-                          <Pressable
-                            accessibilityRole="button"
-                            accessibilityLabel={`Настройки области ${title}`}
-                            hitSlop={6}
-                            onPress={() => openChatSettings(chat)}
-                            style={({ pressed }) => ({
-                              width: layout.compact ? 34 : 30,
-                              height: layout.compact ? 34 : 30,
-                              borderRadius: 8,
-                              alignItems: "center",
-                              justifyContent: "center",
-                              backgroundColor: pressed ? c.surface2 : undefined,
-                            })}
-                          >
-                            <Icon name="MoreHorizontal" size={16} color={c.foregroundMuted} />
-                          </Pressable>
+                          ) : null}
                         </View>
                       );
                     })}
@@ -2706,7 +2874,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                   }}
                 >
                   <SettingsSelect
-                    label="Кнопка + создает область"
+                    label="Рабочая папка новой области"
                     hint="Выберите общую папку репозитория или изолированный git worktree"
                     value={draftNewMode}
                     options={[
@@ -2781,6 +2949,46 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                   {confirmRemoveProject
                     ? "Нажмите еще раз, чтобы убрать проект из Paseo (файлы останутся)"
                     : "Убрать проект из списка Paseo"}
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
+        </Modal.Content>
+      </Modal>
+
+      <Modal title="Новая область" open={Boolean(newArea)} onOpenChange={(open) => {
+        if (!open && !creatingId) setNewArea(null);
+      }}>
+        <Modal.Content>
+          {newArea ? (
+            <View style={{ gap: 14 }}>
+              <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Название области</Text>
+              <TextInput
+                accessibilityLabel="Название новой области"
+                value={newArea.name}
+                editable={!creatingId && !newArea.workspaceId}
+                onChangeText={(name) => setNewArea({ ...newArea, name })}
+                style={{ borderWidth: 1, borderColor: c.border, borderRadius: 8,
+                  color: c.foreground, backgroundColor: c.surface1, padding: 10 }}
+              />
+              <SettingsSelect<"session" | "terminal">
+                label="Открыть в новой области"
+                value={newArea.firstTab}
+                options={[{ value: "session", label: "Сессия" }, { value: "terminal", label: "Терминал" }]}
+                disabled={Boolean(creatingId || newArea.workspaceId)}
+                onValueChange={(firstTab) => setNewArea({ ...newArea, firstTab })}
+              />
+              <Pressable
+                accessibilityRole="button"
+                disabled={Boolean(creatingId)}
+                onPress={() => void createNewArea()}
+                style={({ pressed }) => ({
+                  padding: 11, alignItems: "center", borderRadius: 8, backgroundColor: c.accent,
+                  opacity: creatingId || pressed ? 0.7 : 1,
+                })}
+              >
+                <Text style={{ color: c.accentForeground, fontSize: 14, fontWeight: "600" }}>
+                  {creatingId ? "Создаю…" : newArea.workspaceId ? "Создать терминал" : "Создать область"}
                 </Text>
               </Pressable>
             </View>
@@ -2912,117 +3120,149 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                 </Pressable>
               </View>
 
-              {editingChatEntries.length > 0 ? (
-                <View
-                  style={{
-                    borderRadius: 12,
-                    backgroundColor: c.surface2,
-                    borderWidth: 1,
-                    borderColor: c.border,
-                    padding: 12,
-                    gap: 10,
-                  }}
-                >
-                  <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>
-                    Сессии
+              <View style={{ padding: 12, borderRadius: 12, backgroundColor: c.surface2, borderWidth: 1, borderColor: c.border, gap: 8 }}>
+                {areaSettings ? (
+                  <>
+                    <SettingsSelect
+                      label="Иконка области"
+                      value={areaSettings.icon ?? ""}
+                      options={[
+                        { value: "", label: "Без иконки" },
+                        ...AREA_ICONS.map((icon) => ({ value: icon, label: icon })),
+                      ]}
+                      disabled={chatMutationPending}
+                      onValueChange={(value) => void handleSaveAreaSettings({ icon: value || null })}
+                    />
+                    {editingChat.projectKind === "git" ? (
+                      <SettingsSelect
+                        label="Ветка по умолчанию"
+                        hint="Рабочая папка общая для всех сессий. Перед созданием сессии переключите область на выбранную ветку."
+                        value={areaSettings.defaultBranch ?? ""}
+                        options={[
+                          { value: "", label: areaSettings.currentBranch ? `Текущая ветка · ${areaSettings.currentBranch}` : "Текущий checkout" },
+                          ...Array.from(new Set([
+                            ...areaSettings.branches,
+                            ...(areaSettings.defaultBranch ? [areaSettings.defaultBranch] : []),
+                          ])).map((branch) => ({ value: branch, label: branch })),
+                        ]}
+                        disabled={chatMutationPending}
+                        onValueChange={(value) => void handleSaveAreaSettings({ defaultBranch: value || null })}
+                      />
+                    ) : null}
+                  </>
+                ) : (
+                  <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>
+                    {areaSettingsError ?? "Загружаю настройки области…"}
                   </Text>
-                  {editingChatEntries.map((entry) => {
-                    const ag = entry.agent;
-                    const agFamily = resolveModelFamilyBadge(ag);
-                    const agTitle = ag.title || "Сессия без названия";
-                    const link = `paseo:///h/${host.id || "local"}/agent/${ag.id}`;
-                    const isCurrent = editingChatAgent?.id === ag.id;
-                    return (
-                      <View
-                        key={ag.id}
-                        style={{
+                )}
+              </View>
+
+              <View
+                style={{
+                  borderRadius: 12,
+                  backgroundColor: c.surface2,
+                  borderWidth: 1,
+                  borderColor: c.border,
+                  padding: 12,
+                  gap: 10,
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Text style={{ flex: 1, color: c.foreground, fontSize: 13, fontWeight: "600" }}>Сессии и терминалы</Text>
+                  <ChatActionButton label="Новая сессия" icon="Plus"
+                    disabled={chatMutationPending || Boolean(creatingAreaIds[editingChat.id])}
+                    onPress={() => void handleCreateAreaSession(editingChat.id)} theme={theme} />
+                  <ChatActionButton label="Новый терминал" icon="Terminal"
+                    disabled={chatMutationPending || Boolean(creatingTerminalId)}
+                    onPress={() => void handleCreateAreaTerminal(editingChat.id)} theme={theme} />
+                </View>
+                {editingChatEntries.map((entry) => {
+                  const ag = entry.agent;
+                  const agTitle = sessionTitle(ag);
+                  const link = `paseo:///h/${host.id || "local"}/agent/${ag.id}`;
+                  const isCurrent = editingChatAgent?.id === ag.id;
+                  return (
+                    <View
+                      key={ag.id}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 8,
+                        paddingRight: 10,
+                        borderRadius: 8,
+                        backgroundColor: c.surface1,
+                        borderWidth: 1,
+                        borderColor: isCurrent ? c.accent : c.border,
+                      }}
+                    >
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Открыть сессию ${agTitle}`}
+                        onPress={() => {
+                          setEditingChatId(null);
+                          jumpToAgent(ag.id);
+                        }}
+                        style={({ pressed }) => ({
+                          flex: 1,
+                          minWidth: 0,
+                          minHeight: 44,
                           flexDirection: "row",
                           alignItems: "center",
-                          gap: 8,
-                          paddingRight: 10,
-                          borderRadius: 8,
-                          backgroundColor: c.surface1,
-                          borderWidth: 1,
-                          borderColor: isCurrent ? c.accent : c.border,
-                        }}
+                          gap: 6,
+                          paddingHorizontal: 10,
+                          paddingVertical: 8,
+                          opacity: pressed ? 0.7 : 1,
+                        })}
                       >
-                        <Pressable
-                          accessibilityRole="button"
-                          accessibilityLabel={`Открыть сессию ${agTitle}`}
-                          onPress={() => {
-                            setEditingChatId(null);
-                            openScreen({ screenId: "jump", params: { agentId: ag.id, t: String(Date.now()) } });
-                          }}
-                          style={({ pressed }) => ({
-                            flex: 1,
-                            minWidth: 0,
-                            minHeight: 44,
-                            flexDirection: "row",
-                            alignItems: "center",
-                            gap: 6,
-                            paddingHorizontal: 10,
-                            paddingVertical: 8,
-                            opacity: pressed ? 0.7 : 1,
-                          })}
-                        >
-                          <View style={{ flex: 1, minWidth: 0 }}>
-                            <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 13, fontWeight: "500" }}>
-                              {agTitle}
-                            </Text>
-                            {agFamily ? (
-                              <View
-                                style={{
-                                  alignSelf: "flex-start",
-                                  marginTop: 2,
-                                  paddingHorizontal: 4,
-                                  paddingVertical: 1,
-                                  borderRadius: 3,
-                                  backgroundColor: agFamily.bg,
-                                }}
-                              >
-                                <Text style={{ fontSize: 9.5, fontWeight: "600", color: agFamily.text }}>
-                                  {agFamily.label}
-                                </Text>
-                              </View>
-                            ) : null}
-                          </View>
-                          <Icon name="ChevronRight" size={14} color={c.foregroundMuted} />
-                        </Pressable>
-                        <Pressable
-                          accessibilityRole="button"
-                          accessibilityLabel={`Скопировать ссылку на сессию ${agTitle}`}
-                          onPress={() => {
-                            void copyText(link)
-                              .then(() => toast.show("Ссылка на сессию скопирована", { variant: "info" }))
-                              .catch(() => toast.error("Не удалось скопировать ссылку"));
-                          }}
-                          style={({ pressed }) => ({
-                            paddingHorizontal: 8,
-                            paddingVertical: 5,
-                            borderRadius: 6,
-                            backgroundColor: c.surface2,
-                            borderWidth: 1,
-                            borderColor: c.border,
-                            opacity: pressed ? 0.7 : 1,
-                          })}
-                        >
-                          <Text style={{ color: c.foreground, fontSize: 11, fontWeight: "500" }}>Ссылка</Text>
-                        </Pressable>
-                        <ChatActionButton
-                          label={`Меню сессии ${agTitle}`}
-                          icon="MoreHorizontal"
-                          disabled={chatMutationPending}
-                          onPress={() => {
-                            setDraftAgentTitle(null);
-                            setAgentMenuId(ag.id);
-                          }}
+                        <SessionSummary
+                          agent={ag}
+                          branch={areaSettings?.launchBranches[ag.id]}
                           theme={theme}
+                          platform={layout.platform}
                         />
-                      </View>
-                    );
-                  })}
-                </View>
-              ) : null}
+                        <Icon name="ChevronRight" size={14} color={c.foregroundMuted} />
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Скопировать ссылку на сессию ${agTitle}`}
+                        onPress={() => {
+                          void copyText(link)
+                            .then(() => toast.show("Ссылка на сессию скопирована", { variant: "info" }))
+                            .catch(() => toast.error("Не удалось скопировать ссылку"));
+                        }}
+                        style={({ pressed }) => ({
+                          paddingHorizontal: 8,
+                          paddingVertical: 5,
+                          borderRadius: 6,
+                          backgroundColor: c.surface2,
+                          borderWidth: 1,
+                          borderColor: c.border,
+                          opacity: pressed ? 0.7 : 1,
+                        })}
+                      >
+                        <Text style={{ color: c.foreground, fontSize: 11, fontWeight: "500" }}>Ссылка</Text>
+                      </Pressable>
+                      <ChatActionButton
+                        label={`Меню сессии ${agTitle}`}
+                        icon="MoreHorizontal"
+                        disabled={chatMutationPending}
+                        onPress={() => {
+                          setDraftAgentTitle(null);
+                          setAgentMenuId(ag.id);
+                        }}
+                        theme={theme}
+                      />
+                    </View>
+                  );
+                })}
+                {editingChatTerminals.map((terminal) => (
+                  <TerminalRow key={terminal.id} terminal={terminal} theme={theme}
+                    onOpen={() => {
+                      setEditingChatId(null);
+                      openAreaTerminal(terminal);
+                    }} />
+                ))}
+              </View>
             </View>
           ) : null}
         </Modal.Content>
