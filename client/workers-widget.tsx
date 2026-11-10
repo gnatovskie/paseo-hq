@@ -191,7 +191,7 @@ export function WorkersUsagePopover({ theme, layout }: PluginPopoverProps) {
           const isOnline = w.stats.available;
           const statusText = isOnline
             ? w.status === "active"
-              ? "В работе (агент)"
+              ? "Сессия в работе"
               : "В сети"
             : "Офлайн";
           const statusColor = isOnline
@@ -249,7 +249,7 @@ export function WorkersUsagePopover({ theme, layout }: PluginPopoverProps) {
                     Процессы: {w.stats.processes ?? "—"} (контейнер {w.container})
                   </Text>
 
-                  {/* Активность агентов Paseo */}
+                  {/* Активность сессий Paseo */}
                   <View
                     style={{
                       marginTop: 4,
@@ -260,7 +260,7 @@ export function WorkersUsagePopover({ theme, layout }: PluginPopoverProps) {
                     }}
                   >
                     <Text style={{ color: c.foregroundMuted, fontSize: 11.5 }}>
-                      Агенты Paseo за 24ч: {duration(w.activity.agentMs)}
+                      Время работы сессий за 24 ч: {duration(w.activity.agentMs)}
                     </Text>
                     <Text style={{ color: c.foregroundMuted, fontSize: 11.5 }}>
                       Последний запрос: {when(w.activity.lastMessage)}
@@ -362,7 +362,7 @@ export function WorkersSurface({ theme, layout }: PluginSurfaceProps) {
           const isOnline = w.stats.available;
           const statusText = isOnline
             ? w.status === "active"
-              ? "В работе (агент)"
+              ? "Сессия в работе"
               : "В сети (свободен)"
             : "Офлайн";
           const statusColor = isOnline
@@ -508,7 +508,7 @@ export function WorkersSurface({ theme, layout }: PluginSurfaceProps) {
                       </Text>
                     </View>
                     <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                      <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Агенты Paseo за 24 ч</Text>
+                      <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Время работы сессий за 24 ч</Text>
                       <Text style={{ color: c.foreground, fontSize: 12, fontWeight: "600" }}>
                         {duration(w.activity.agentMs)}
                       </Text>

@@ -2219,7 +2219,7 @@ function ProviderEditor({
                   styles={styles}
                 />
                 <Choice
-                  label="Match the agent"
+                  label="Match the session"
                   selected={editor.pillVisibility === "matching"}
                   disabled={!editor.pillEnabled || saving}
                   onPress={choosePillMatching}

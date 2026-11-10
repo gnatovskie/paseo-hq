@@ -140,7 +140,7 @@ function SettingsEditor({
           />
 
           <SettingsSelect<"worktree" | "local">
-            label="Тип рабочего пространства"
+            label="Тип области"
             value={draft.defaultIsolation}
             options={[
               { label: "Worktree (рекомендуется)", value: "worktree" },

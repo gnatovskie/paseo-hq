@@ -9,7 +9,7 @@ import { createPaseoClient } from "@getpaseo/client";
 import { chromium } from "playwright-core";
 
 const root = resolve(import.meta.dirname, "../..");
-const title = "HQ session settings fixture";
+const title = "HQ area settings fixture";
 const output = process.env.BB_THREAD_STORAGE;
 
 async function localPort() {
@@ -23,7 +23,7 @@ async function localPort() {
   return port;
 }
 
-test("HQ session settings in compact and desktop Paseo", async (t) => {
+test("HQ area and session controls in compact and desktop Paseo", async (t) => {
   const home = await mkdtemp(join(tmpdir(), "hq-session-settings-"));
   const port = await localPort();
   const endpoint = `127.0.0.1:${port}`;
@@ -81,22 +81,41 @@ test("HQ session settings in compact and desktop Paseo", async (t) => {
           if (new URL(socket.url()).pathname === "/ws") daemonSocket = socket;
         });
         const button = (name) => page.getByRole("button", { name, exact: true });
-        const openSettings = () => button(`Настройки сессии ${title}`).click();
+        const areaSettings = button(`Настройки области ${title}`);
+        const openSettings = () => areaSettings.click();
         const transfer = button("Перенести в проект");
-        const archive = page.getByRole("switch", { name: "Архивировать исходную сессию", exact: true });
-        const history = page.getByRole("switch", { name: "Перенести историю диалога (fork)", exact: true });
-        const draft = page.getByPlaceholder("Новая сессия", { exact: true });
+        const archive = page.getByRole("switch", { name: "Архивировать исходную область", exact: true });
+        const history = page.getByRole("switch", { name: "Перенести историю последней сессии", exact: true });
+        const draft = page.getByPlaceholder("Новая область", { exact: true });
         const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
         const capture = (name) => output && page.screenshot({ path: join(output, `${name}-${width}.png`) });
 
         try {
           await page.goto(`http://${endpoint}/`);
           if (width === 390) await button("Open menu").click();
+          const project = button("Новая область в проекте source").locator("../..");
+          await project.getByText(/^1 область(?: · .+)?$/).waitFor();
+          const areaTitle = areaSettings.locator("..").getByText(title, { exact: true });
+          await areaTitle.waitFor();
+          const area = areaTitle.locator("xpath=ancestor::*[@role='button'][1]");
+          await area.getByText("2 сессии", { exact: true }).waitFor();
+          const [titleBox, statusBox, modelBox] = await Promise.all([
+            areaTitle.boundingBox(),
+            area.getByLabel(/^Статус области: /).boundingBox(),
+            area.getByText("Codex", { exact: true }).locator("..").boundingBox(),
+          ]);
+          assert(titleBox && statusBox && modelBox, "area title, status and model should be visible");
+          assert.equal(statusBox.width, 14);
+          assert.equal(statusBox.x, titleBox.x, "the title and lower row share the left edge");
+          assert(statusBox.y >= titleBox.y + titleBox.height, "status belongs on the lower row");
+          assert(modelBox.x >= statusBox.x + statusBox.width + 4, "status comes before the model with a gap");
+          assert(Math.abs(modelBox.y + modelBox.height / 2 - statusBox.y - statusBox.height / 2) < 2);
+          if (output) await project.screenshot({ path: join(output, `hq-area-sidebar-${width}.png`) });
           await openSettings();
           await draft.waitFor();
           assert.equal(await archive.count(), 0, "transfer options should open only after pressing the icon");
-          const actions = ["Закрепить сессию", "Скопировать ссылку на чат", "Скопировать путь к папке проекта",
-            "Перенести в проект", "Архивировать сессию"].map(button);
+          const actions = ["Закрепить область", "Скопировать ссылку на сессию", "Скопировать путь к папке проекта",
+            "Перенести в проект", "Архивировать область"].map(button);
           await actions[0].click({ trial: true });
           const boxes = await Promise.all(actions.map(async (action) => {
             assert.equal((await action.textContent()).trim(), "");
@@ -105,8 +124,8 @@ test("HQ session settings in compact and desktop Paseo", async (t) => {
           }));
           assert(boxes.every((box, index) => box && box.y === boxes[0].y && (!index || box.x > boxes[index - 1].x)));
           assert(boxes[0].y + boxes[0].height < (await draft.boundingBox()).y);
-          await page.getByText("Чаты", { exact: true }).waitFor();
-          const chatRows = page.getByRole("button", { name: /^Открыть чат / });
+          await page.getByText("Сессии", { exact: true }).waitFor();
+          const chatRows = page.getByRole("button", { name: /^Открыть сессию / });
           assert.equal(await chatRows.count(), 2);
           assert.equal(await page.getByRole("button", { name: /^(ID|Скопировать ID.*)$/ }).count(), 0);
           assert.equal(await page.getByText(/^ID: [a-f\d]{8}/).count(), 0);
@@ -118,7 +137,7 @@ test("HQ session settings in compact and desktop Paseo", async (t) => {
           assert(generateBox.x >= fieldBox.x + fieldBox.width);
           assert(Math.abs(generateBox.y + generateBox.height / 2 - fieldBox.y - fieldBox.height / 2) < 2);
           const firstChatLabel = await chatRows.first().getAttribute("aria-label");
-          const firstChat = firstChatLabel === "Открыть чат Fixture chat" ? chat : secondChat;
+          const firstChat = firstChatLabel === "Открыть сессию Fixture chat" ? chat : secondChat;
           assert(daemonSocket);
           const [generationFrame] = await Promise.all([
             daemonSocket.waitForEvent("framesent", {
@@ -130,7 +149,7 @@ test("HQ session settings in compact and desktop Paseo", async (t) => {
           await generate.click({ trial: true });
 
           await actions[1].click();
-          await page.getByText("Ссылка на чат скопирована", { exact: true }).waitFor();
+          await page.getByText("Ссылка на сессию скопирована", { exact: true }).waitFor();
           const link = await clipboard();
           assert.match(link, /^paseo:\/\/\/h\/[^/]+\/agent\//);
           assert([chat.id, secondChat.id].includes(link.split("/").at(-1)));
@@ -140,7 +159,7 @@ test("HQ session settings in compact and desktop Paseo", async (t) => {
 
           await draft.fill("Unsaved title");
           await transfer.click();
-          await page.getByText("Перенос в проект", { exact: true }).waitFor();
+          await page.getByText("Перенос области в проект", { exact: true }).waitFor();
           await button("Целевой проект: target").waitFor();
           assert.equal(await archive.getAttribute("aria-checked"), "true");
           assert.equal(await history.getAttribute("aria-checked"), "true");
@@ -153,17 +172,17 @@ test("HQ session settings in compact and desktop Paseo", async (t) => {
 
           const selectedChat = link.endsWith(`/${chat.id}`) ? secondChat : chat;
           let selectedTitle = selectedChat.id === chat.id ? "Fixture chat" : "Second fixture chat";
-          await button(`Меню чата ${selectedTitle}`).click();
-          await button("Перезагрузить чат").waitFor();
+          await button(`Меню сессии ${selectedTitle}`).click();
+          await button("Перезагрузить сессию").waitFor();
           if (width === 1280) {
-            await button("Переименовать чат").click();
+            await button("Переименовать сессию").click();
             selectedTitle = "Renamed fixture chat";
-            await page.getByPlaceholder("Название чата", { exact: true }).fill(selectedTitle);
+            await page.getByPlaceholder("Название сессии", { exact: true }).fill(selectedTitle);
             await button("Переименовать").click();
-            await page.getByText("Чат переименован", { exact: true }).waitFor();
+            await page.getByText("Сессия переименована", { exact: true }).waitFor();
             assert.equal((await client.agents.ref(selectedChat.id).refresh()).agent.title, selectedTitle);
           } else {
-            const reloadChat = button("Перезагрузить чат");
+            const reloadChat = button("Перезагрузить сессию");
             const [reloadFrame] = await Promise.all([
               daemonSocket.waitForEvent("framesent", {
                 predicate: ({ payload }) => JSON.parse(String(payload)).message?.type === "refresh_agent_request",
@@ -171,21 +190,21 @@ test("HQ session settings in compact and desktop Paseo", async (t) => {
               reloadChat.click(),
             ]);
             assert.equal(JSON.parse(String(reloadFrame.payload)).message.agentId, selectedChat.id);
-            const reloadResult = page.getByText(/Чат перезагружен|thread\/items\/list is not supported yet/);
+            const reloadResult = page.getByText(/Сессия перезагружена|thread\/items\/list is not supported yet/);
             await reloadResult.waitFor();
             if (await reloadChat.isVisible()) {
               await button("Close").last().click();
               await reloadChat.waitFor({ state: "hidden" });
             }
           }
-          const openChat = button(`Открыть чат ${selectedTitle}`);
-          assert.equal(await openChat.count(), 1, "each listed chat should be openable");
-          await button(`Скопировать ссылку на чат ${selectedTitle}`).click();
+          const openChat = button(`Открыть сессию ${selectedTitle}`);
+          assert.equal(await openChat.count(), 1, "each listed session should be openable");
+          await button(`Скопировать ссылку на сессию ${selectedTitle}`).click();
           await page.waitForFunction(
             async (expected) => await navigator.clipboard.readText() === expected,
             link.replace(/[^/]+$/, selectedChat.id),
           );
-          assert(await draft.isVisible(), "copying a chat link should keep session settings open");
+          assert(await draft.isVisible(), "copying a session link should keep area settings open");
           assert(daemonSocket);
           await Promise.all([
             daemonSocket.waitForEvent("framesent", {
@@ -204,19 +223,19 @@ test("HQ session settings in compact and desktop Paseo", async (t) => {
             await actions[0].click();
             await draft.waitFor({ state: "hidden" });
             await openSettings();
-            await button("Открепить сессию").waitFor();
+            await button("Открепить область").waitFor();
             await transfer.click();
             await history.click();
             await transfer.last().click();
-            await page.getByText('Сессия перенесена в проект "target"', { exact: true }).waitFor();
+            await page.getByText('Область перенесена в проект "target"', { exact: true }).waitFor();
             const { entries } = await client.workspaces.list({});
             const moved = entries.find((entry) => entry.projectId === targetProject.projectId && entry.title === title);
             assert.equal(moved?.workspaceDirectory, target);
             assert(!entries.some((entry) => entry.id === workspace.id));
             await page.waitForURL((url) => url.pathname.endsWith(`/workspace/${moved.id}`));
             await openSettings();
-            await page.getByText("Чаты", { exact: true }).waitFor();
-            assert.equal(await page.getByRole("button", { name: /^Открыть чат / }).count(), 1);
+            await page.getByText("Сессии", { exact: true }).waitFor();
+            assert.equal(await page.getByRole("button", { name: /^Открыть сессию / }).count(), 1);
             assert(daemonSocket);
             const [archiveFrame] = await Promise.all([
               daemonSocket.waitForEvent("framereceived", {

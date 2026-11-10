@@ -70,7 +70,7 @@ export default function contribute(client: PluginClientContext) {
 
   client.addSlashCommand({
     name: "genui",
-    description: "Enable Generative UI inline components for this agent",
+    description: "Enable Generative UI inline components for this session",
     argumentHint: "[prompt]",
     context: "agent",
     async onSubmit({ args, paseo, agent }) {
@@ -83,7 +83,7 @@ export default function contribute(client: PluginClientContext) {
 
   client.addSlashCommand({
     name: "genui-demo",
-    description: "Insert a live interactive Gen-UI block into this chat",
+    description: "Insert a live interactive Gen-UI block into this session",
     argumentHint: "[ComponentName]",
     context: "agent",
     async onSubmit({ args, rpc, agent }) {
@@ -117,7 +117,7 @@ export default function contribute(client: PluginClientContext) {
 
   client.addCommandCenterItem({
     id: "open-workspace-gallery",
-    title: "Gen-UI: Open Gallery Panel in Workspace",
+    title: "Gen-UI: Open Gallery Panel in the Area",
     icon: "LayoutGrid",
     keywords: ["genui", "panel", "playground"],
     context: "workspace",

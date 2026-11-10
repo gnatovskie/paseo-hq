@@ -42,7 +42,7 @@ export function TitleModelPicker({ theme, options, value, hint, onValueChange }:
 
   return (
     <View style={{ gap: 8 }}>
-      <Text style={{ fontSize: 13, fontWeight: "600", color: c.foreground }}>Название новых сессий</Text>
+      <Text style={{ fontSize: 13, fontWeight: "600", color: c.foreground }}>Модель для названий областей</Text>
       <Text style={{ fontSize: 12, color: c.foregroundMuted }}>{hint}</Text>
       <View style={{ padding: 10, borderRadius: 9, borderWidth: 1, borderColor: c.accent, backgroundColor: c.surface1, gap: 2 }}>
         {current?.providerLabel ? <Text style={{ fontSize: 11, color: c.foregroundMuted }}>{current.providerLabel}</Text> : null}

@@ -152,7 +152,7 @@ export function GitWorkspaceSurface({ theme, layout }: PluginSurfaceProps) {
         cloneDir,
       });
 
-      toast.show(`Рабочее пространство создано: ${res.title}`, { variant: "success" });
+      toast.show(`Область создана: ${res.title}`, { variant: "success" });
 
       setRepos((prev) =>
         prev.map((r) => (r.id === repo.id ? { ...r, isLocal: true, localPath: res.localPath } : r)),

@@ -212,14 +212,14 @@ function chatTitle(w: PaseoWorkspace, agent?: AgentEntry["agent"]): string {
   const ag = agent as { title?: string | null; name?: string | null } | undefined;
   const agTitle = (ag?.title || ag?.name || "").trim();
   if (agTitle) return agTitle;
-  return "Новая сессия";
+  return "Новая область";
 }
 
 /**
- * Время последнего running сессии:
+ * Время последнего запуска в области:
  * берется из серверного журнала хуков agent.turn.before/after, времени завершения/запроса агента,
- * а для прямо сейчас работающих сессий - статус-таймштамп активного хода.
- * Простой просмотр сессии это время не меняет.
+ * а для областей с активным ходом - статус-таймштамп активного хода.
+ * Простой просмотр области это время не меняет.
  */
 function chatLastRunningMs(
   w: PaseoWorkspace,
@@ -238,13 +238,22 @@ function chatLastRunningMs(
 }
 
 /**
- * Порядок сессий и проектов - только по последнему отправленному промпту.
+ * Порядок областей и проектов - только по последнему отправленному промпту.
  * Ответы и работа агентов порядок не меняют, иначе раскрытые проекты скачут.
  */
 function chatLastPromptMs(w: PaseoWorkspace, agentPromptMap: Record<string, number>): number {
-  // Сводное время рабочего пространства учитывает и служебный генератор названия,
-  // поэтому оно лишь запасное, когда агентов сессии нет в списке.
+  // Сводное время области учитывает и служебный генератор названия,
+  // поэтому оно лишь запасное, когда сессий области нет в списке.
   return agentPromptMap[w.id] || parseIsoMs(w.lastUserMessageAt) || parseIsoMs(w.createdAt);
+}
+
+function formatRussianCount(count: number, one: string, few: string, many: string): string {
+  const lastDigit = count % 10;
+  const lastTwoDigits = count % 100;
+  if (lastTwoDigits >= 11 && lastTwoDigits <= 14) return `${count} ${many}`;
+  if (lastDigit === 1) return `${count} ${one}`;
+  if (lastDigit >= 2 && lastDigit <= 4) return `${count} ${few}`;
+  return `${count} ${many}`;
 }
 
 function relativeTime(ms: number): string {
@@ -382,6 +391,14 @@ function pickWebImageAsDataUri(): Promise<string | null> {
     input.click();
   });
 }
+
+const AREA_STATUS_LABEL: Record<UiSessionBucket, string> = {
+  running: "в работе",
+  attention: "требует внимания",
+  needs_input: "ожидает ввода",
+  failed: "ошибка",
+  done: "нет активной работы",
+};
 
 function SessionStatusIndicator({
   bucket,
@@ -734,8 +751,8 @@ function ProjectHeaderPressable({
         </View>
         <Text numberOfLines={1} style={{ color: c.foregroundMuted, fontSize: 11 }}>
           {group.chats.length === 0
-            ? "нет активных сессий"
-            : `${group.chats.length} сесс.${
+            ? "нет активных областей"
+            : `${formatRussianCount(group.chats.length, "область", "области", "областей")}${
                 group.hasRunning
                   ? " · в работе"
                   : group.lastRunningAt
@@ -881,7 +898,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const [confirmRemoveProject, setConfirmRemoveProject] = useState(false);
   const [savingProject, setSavingProject] = useState(false);
 
-  // Модалка настроек сессии
+  // Модалка настроек области
   const [editingChatId, setEditingChatId] = useState<string | null>(null);
   const [draftChatTitle, setDraftChatTitle] = useState("");
   const [savingChat, setSavingChat] = useState(false);
@@ -1156,7 +1173,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       setExpandedProjectIds((prev) => ({ ...prev, [group.id]: true }));
       jumpToWorkspace(created.id);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Не удалось создать сессию");
+      toast.error(err instanceof Error ? err.message : "Не удалось создать область");
     } finally {
       setCreatingId(null);
     }
@@ -1419,10 +1436,10 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       setChatTransferOpen(false);
       setEditingChatId(null);
       await reloadAll();
-      toast.show(`Сессия перенесена в проект "${targetName}"`, { variant: "success" });
+      toast.show(`Область перенесена в проект "${targetName}"`, { variant: "success" });
       jumpToWorkspace(res.newWorkspaceId);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Не удалось перенести сессию");
+      toast.error(err instanceof Error ? err.message : "Не удалось перенести область");
     } finally {
       setTransferringChat(false);
     }
@@ -1436,9 +1453,9 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       await paseo.workspaces.ref(editingChat.id).setTitle(nextTitle);
       await reloadAll();
       setEditingChatId(null);
-      toast.show("Название сессии обновлено", { variant: "success" });
+      toast.show("Название области обновлено", { variant: "success" });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Не удалось переименовать сессию");
+      toast.error(err instanceof Error ? err.message : "Не удалось переименовать область");
     } finally {
       setSavingChat(false);
     }
@@ -1475,9 +1492,9 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       }
       await reloadAll();
       setAgentMenuId(null);
-      toast.show(action === "rename" ? "Чат переименован" : "Чат перезагружен", { variant: "success" });
+      toast.show(action === "rename" ? "Сессия переименована" : "Сессия перезагружена", { variant: "success" });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Не удалось обновить чат");
+      toast.error(err instanceof Error ? err.message : "Не удалось обновить сессию");
     } finally {
       setSavingChat(false);
     }
@@ -1506,7 +1523,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       });
       setServerState(updated);
       setEditingChatId(null);
-      toast.show(nextPinned ? "Сессия закреплена наверху" : "Сессия откреплена", { variant: "info" });
+      toast.show(nextPinned ? "Область закреплена наверху" : "Область откреплена", { variant: "info" });
     } catch (err) {
       await reloadAll();
       toast.error(err instanceof Error ? err.message : "Не удалось изменить закрепление");
@@ -1525,7 +1542,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       if (editingChatId === chat.id) {
         setEditingChatId(null);
       }
-      toast.show("Сессия отправлена в архив", { variant: "success" });
+      toast.show("Область отправлена в архив", { variant: "success" });
       void reloadAll();
     } catch (err) {
       setArchivedIds((prev) => {
@@ -1533,7 +1550,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
         delete copy[chat.id];
         return copy;
       });
-      toast.error(err instanceof Error ? err.message : "Не удалось архивировать сессию");
+      toast.error(err instanceof Error ? err.message : "Не удалось архивировать область");
     } finally {
       setSavingChat(false);
     }
@@ -1818,7 +1835,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
         />
       ) : null}
 
-      {/* Раскрывающийся список проектов и сессий */}
+      {/* Раскрывающийся список проектов и областей */}
       {!collapsed ? (
         <ScrollView
           ref={listRef}
@@ -1895,7 +1912,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
 
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel={`Новая сессия в проекте ${group.name}`}
+                    accessibilityLabel={`Новая область в проекте ${group.name}`}
                     disabled={busy}
                     onPress={() => void createNewChat(group)}
                     style={({ pressed }) => ({
@@ -1912,7 +1929,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                   </Pressable>
                 </View>
 
-                {/* Укрупненные строки сессий внутри раскрытого проекта */}
+                {/* Строки областей внутри раскрытого проекта */}
                 {isOpen && group.chats.length > 0 ? (
                   <View
                     style={{
@@ -1923,7 +1940,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                       gap: 4,
                     }}
                   >
-                    {displayedChats.map((chat, chatIdx) => {
+                    {displayedChats.map((chat) => {
                       const bucket = resolveChatBucket(chat, agentBucketByWorkspace);
                       const isPinned = Boolean(serverState.pinnedSessions[chat.id]);
                       const lastRunMs = chatLastRunningMs(
@@ -1937,6 +1954,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                       const agent = latestAgentByWorkspace[chat.id];
                       const family = resolveModelFamilyBadge(agent);
                       const title = chatTitle(chat, agent);
+                      const sessionCount = agentsByWorkspace.get(chat.id)?.length ?? 0;
 
                       return (
                         <View
@@ -1953,12 +1971,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                             theme={theme}
                             layout={layout}
                           >
-                            <SessionStatusIndicator
-                              bucket={bucket}
-                              theme={theme}
-                              platform={layout.platform}
-                              size={18}
-                            />
                             <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
                               <Text
                                 numberOfLines={1}
@@ -1971,7 +1983,15 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                               >
                                 {title}
                               </Text>
-                              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, minHeight: 18 }}>
+                                <View accessible accessibilityLabel={`Статус области: ${AREA_STATUS_LABEL[bucket]}`}>
+                                  <SessionStatusIndicator
+                                    bucket={bucket}
+                                    theme={theme}
+                                    platform={layout.platform}
+                                    size={14}
+                                  />
+                                </View>
                                 {family ? (
                                   <View
                                     style={{
@@ -1996,7 +2016,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                                 <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>
                                   {bucket === "running" ? "сейчас" : relativeTime(lastRunMs)}
                                 </Text>
-                                {agentsByWorkspace.get(chat.id) && agentsByWorkspace.get(chat.id)!.length > 1 ? (
+                                {sessionCount > 1 ? (
                                   <View
                                     style={{
                                       paddingHorizontal: 4,
@@ -2008,7 +2028,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                                     }}
                                   >
                                     <Text style={{ fontSize: 9.5, fontWeight: "600", color: c.foregroundMuted }}>
-                                      {`${agentsByWorkspace.get(chat.id)!.length} чата`}
+                                      {formatRussianCount(sessionCount, "сессия", "сессии", "сессий")}
                                     </Text>
                                   </View>
                                 ) : null}
@@ -2021,7 +2041,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
 
                           <Pressable
                             accessibilityRole="button"
-                            accessibilityLabel={`Настройки сессии ${title}`}
+                            accessibilityLabel={`Настройки области ${title}`}
                             hitSlop={6}
                             onPress={() => openChatSettings(chat)}
                             style={({ pressed }) => ({
@@ -2695,7 +2715,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                   }}
                 >
                   <SettingsSelect
-                    label="Кнопка + создает сессию"
+                    label="Кнопка + создает область"
                     hint="Выберите общую папку репозитория или изолированный git worktree"
                     value={draftNewMode}
                     options={[
@@ -2777,9 +2797,9 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
         </Modal.Content>
       </Modal>
 
-      {/* Модальное окно настроек отдельной сессии */}
+      {/* Модальное окно настроек области */}
       <Modal
-        title="Настройки сессии"
+        title="Настройки области"
         open={Boolean(editingChat)}
         onOpenChange={(open) => {
           if (!open) setEditingChatId(null);
@@ -2790,7 +2810,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
             <View style={{ gap: 16 }}>
               <View style={{ flexDirection: "row", gap: 8 }}>
                 <ChatActionButton
-                  label={editingChatPinned ? "Открепить сессию" : "Закрепить сессию"}
+                  label={editingChatPinned ? "Открепить область" : "Закрепить область"}
                   icon={editingChatPinned ? "PinOff" : "Pin"}
                   color={editingChatPinned ? c.accent : undefined}
                   disabled={chatMutationPending}
@@ -2798,14 +2818,14 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                   theme={theme}
                 />
                 <ChatActionButton
-                  label="Скопировать ссылку на чат"
+                  label="Скопировать ссылку на сессию"
                   icon="Link2"
                   disabled={!editingChatAgent}
                   onPress={() => {
                     if (!editingChatAgent) return;
                     const link = `paseo:///h/${host.id || "local"}/agent/${editingChatAgent.id}`;
                     void copyText(link)
-                      .then(() => toast.show("Ссылка на чат скопирована", { variant: "info" }))
+                      .then(() => toast.show("Ссылка на сессию скопирована", { variant: "info" }))
                       .catch(() => toast.error("Не удалось скопировать ссылку"));
                   }}
                   theme={theme}
@@ -2829,7 +2849,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                   theme={theme}
                 />
                 <ChatActionButton
-                  label="Архивировать сессию"
+                  label="Архивировать область"
                   icon="Archive"
                   color={c.statusDanger}
                   disabled={chatMutationPending}
@@ -2848,12 +2868,12 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                   gap: 10,
                 }}
               >
-                <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Название сессии</Text>
+                <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Название области</Text>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                   <TextInput
                     value={draftChatTitle}
                     onChangeText={setDraftChatTitle}
-                    placeholder="Новая сессия"
+                    placeholder="Новая область"
                     placeholderTextColor={c.foregroundMuted}
                     onSubmitEditing={() => void handleRenameChat()}
                     style={{
@@ -2913,12 +2933,12 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                   }}
                 >
                   <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>
-                    Чаты
+                    Сессии
                   </Text>
                   {editingChatEntries.map((entry) => {
                     const ag = entry.agent;
                     const agFamily = resolveModelFamilyBadge(ag);
-                    const agTitle = ag.title || "Чат без названия";
+                    const agTitle = ag.title || "Сессия без названия";
                     const link = `paseo:///h/${host.id || "local"}/agent/${ag.id}`;
                     const isCurrent = editingChatAgent?.id === ag.id;
                     return (
@@ -2937,7 +2957,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                       >
                         <Pressable
                           accessibilityRole="button"
-                          accessibilityLabel={`Открыть чат ${agTitle}`}
+                          accessibilityLabel={`Открыть сессию ${agTitle}`}
                           onPress={() => {
                             setEditingChatId(null);
                             openScreen({ screenId: "jump", params: { agentId: ag.id, t: String(Date.now()) } });
@@ -2979,10 +2999,10 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                         </Pressable>
                         <Pressable
                           accessibilityRole="button"
-                          accessibilityLabel={`Скопировать ссылку на чат ${agTitle}`}
+                          accessibilityLabel={`Скопировать ссылку на сессию ${agTitle}`}
                           onPress={() => {
                             void copyText(link)
-                              .then(() => toast.show("Ссылка на чат скопирована", { variant: "info" }))
+                              .then(() => toast.show("Ссылка на сессию скопирована", { variant: "info" }))
                               .catch(() => toast.error("Не удалось скопировать ссылку"));
                           }}
                           style={({ pressed }) => ({
@@ -2998,7 +3018,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                           <Text style={{ color: c.foreground, fontSize: 11, fontWeight: "500" }}>Ссылка</Text>
                         </Pressable>
                         <ChatActionButton
-                          label={`Меню чата ${agTitle}`}
+                          label={`Меню сессии ${agTitle}`}
                           icon="MoreHorizontal"
                           disabled={chatMutationPending}
                           onPress={() => {
@@ -3018,7 +3038,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       </Modal>
 
       <Modal
-        title={draftAgentTitle === null ? "Действия с чатом" : "Переименовать чат"}
+        title={draftAgentTitle === null ? "Действия с сессией" : "Переименовать сессию"}
         open={Boolean(agentMenuChat)}
         onOpenChange={(open) => {
           if (!open) setAgentMenuId(null);
@@ -3028,8 +3048,8 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           {agentMenuChat && (draftAgentTitle === null ? (
             <View style={{ gap: 8 }}>
               {[
-                { label: "Переименовать чат", icon: "Pencil", onPress: () => setDraftAgentTitle(agentMenuChat.title ?? "") },
-                { label: "Перезагрузить чат", icon: "RefreshCw", onPress: () => void handleAgentMenuAction("reload") },
+                { label: "Переименовать сессию", icon: "Pencil", onPress: () => setDraftAgentTitle(agentMenuChat.title ?? "") },
+                { label: "Перезагрузить сессию", icon: "RefreshCw", onPress: () => void handleAgentMenuAction("reload") },
               ].map(({ label, icon, onPress }) => (
                 <Pressable
                   key={label}
@@ -3055,8 +3075,8 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           ) : (
             <View style={{ gap: 10 }}>
               <TextInput
-                accessibilityLabel="Название чата"
-                placeholder="Название чата"
+                accessibilityLabel="Название сессии"
+                placeholder="Название сессии"
                 placeholderTextColor={c.foregroundMuted}
                 value={draftAgentTitle}
                 onChangeText={setDraftAgentTitle}
@@ -3094,7 +3114,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       </Modal>
 
       <Modal
-        title="Перенос в проект"
+        title="Перенос области в проект"
         open={Boolean(editingChat && chatTransferOpen)}
         onOpenChange={setChatTransferOpen}
       >
@@ -3131,7 +3151,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
 
                   <SettingsSelect
                     label="Целевой проект"
-                    hint="Рабочий корень сессии будет переназначен на выбранный проект"
+                    hint="Область будет создана в выбранном проекте"
                     value={transferTargetProjectId}
                     options={availableTargetProjects.map((p) => ({
                       label: p.customName || p.name,
@@ -3141,15 +3161,15 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                   />
 
                   <SettingsSwitch
-                    label="Архивировать исходную сессию"
-                    hint="Скрыть старую сессию в исходном проекте после переноса"
+                    label="Архивировать исходную область"
+                    hint="Скрыть область в исходном проекте после переноса"
                     value={transferArchiveOriginal}
                     onValueChange={setTransferArchiveOriginal}
                   />
 
                   <SettingsSwitch
-                    label="Перенести историю диалога (fork)"
-                    hint="Прикрепить предыдущие сообщения и контекст к новой сессии"
+                    label="Перенести историю последней сессии"
+                    hint="Прикрепить сообщения и контекст к сессии в новой области"
                     value={transferIncludeHistory}
                     onValueChange={setTransferIncludeHistory}
                   />
@@ -3171,7 +3191,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                   >
                     <Icon name="ArrowRightLeft" size={15} color="#FFFFFF" />
                     <Text style={{ color: "#FFFFFF", fontSize: 14, fontWeight: "600" }}>
-                      {transferringChat ? "Переношу сессию…" : "Перенести в проект"}
+                      {transferringChat ? "Переношу область…" : "Перенести в проект"}
                     </Text>
                   </Pressable>
                 </>
@@ -3350,7 +3370,7 @@ export default function contribute(client: PluginClientContext) {
   const removeGenui = contributeGenuiClient(client);
   const disposeScreen = client.addScreen({
     id: "jump",
-    title: "Переход к сессии",
+    title: (params) => (params?.agentId ? "Переход к сессии" : "Переход к области"),
     Component: JumpBridgeScreen,
   });
 
@@ -3444,10 +3464,10 @@ export default function contribute(client: PluginClientContext) {
 
   const removeGitCommand = client.addCommandCenterItem({
     id: "create-from-git",
-    title: "Создать рабочее пространство из GitHub / GitLab",
+    title: "Создать область из GitHub / GitLab",
     icon: "FolderGit2",
     context: "global",
-    keywords: ["git", "github", "gitlab", "clone", "repo", "workspace", "проект", "клонировать"],
+    keywords: ["git", "github", "gitlab", "clone", "repo", "workspace", "область", "проект", "клонировать"],
     onSelect({ openSurface }) {
       openSurface("git-workspace");
     },
@@ -3455,7 +3475,7 @@ export default function contribute(client: PluginClientContext) {
 
   const removeGitSlash = client.addSlashCommand({
     name: "git",
-    description: "Поиск, клонирование и создание рабочего пространства",
+    description: "Поиск репозиториев, клонирование и создание области",
     argumentHint: "",
     context: "workspace",
     onSubmit({ openSurface }) {

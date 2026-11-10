@@ -29,11 +29,11 @@ export function GenUiSettingsScreen({ theme }: PluginSurfaceProps) {
 
   return (
     <View style={{ gap: 16 }}>
-      <SettingsSection title="Agent instructions">
+      <SettingsSection title="Session instructions">
         <SettingsCard>
           <SettingsSwitch
-            label="Automatically teach new agents Generative UI"
-            hint="Appends the 86-component ```ui and ```app reference to new agents' system prompt on creation."
+            label="Enable Generative UI for new sessions"
+            hint="Appends the 86-component ```ui and ```app reference to the system prompt when a session is created."
             value={values.autoInstructions}
             onValueChange={(autoInstructions) => {
               void save({ ...values, autoInstructions }, revision);
@@ -59,7 +59,7 @@ export function GenUiSettingsScreen({ theme }: PluginSurfaceProps) {
         <SettingsCard>
           <SettingsInput
             label="Extra folders"
-            hint="Comma-separated folders, besides the workspace, thread storage and /tmp, that Load, Snippet and Image can read."
+            hint="Comma-separated folders, besides the area, session storage and /tmp, that Load, Snippet and Image can read."
             initialValue={values.extraFolders}
             placeholder="~/dev/scratch"
             onChangeText={setFolders}

@@ -239,7 +239,7 @@ function SmallButton({ label, primary = false, onPress }: { label: string; prima
 export function Other({ props }: { props: Props }) {
   const { theme, run, setQueued, queued: queuedText, answer, superseded } = useUiRuntime();
   const label = optionalText(props.label) ?? "Other…";
-  const placeholder = optionalText(props.placeholder) ?? "Tell the agent something else";
+  const placeholder = optionalText(props.placeholder) ?? "Add more feedback";
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const id = `other:${label}`;

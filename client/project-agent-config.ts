@@ -15,7 +15,7 @@ export async function projectAgentConfig(
 
   const snapshot = await paseo.providers.waitForReady({ cwd: project.rootPath });
   const provider = snapshot.entries.find(entry => entry.enabled && entry.status === "ready");
-  if (!provider) throw new Error("Нет доступного провайдера для нового агента");
+  if (!provider) throw new Error("Нет доступного провайдера для новой сессии");
   const selectable = provider.models?.filter(model => model.isSelectable !== false);
   const model = selectable?.find(model => model.isDefault) ?? selectable?.[0];
   return {

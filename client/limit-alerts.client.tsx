@@ -751,7 +751,7 @@ export function LimitAlertCallout({
           </Text>
           {alert?.handoff === null || alert?.handoff === undefined ? null : (
             <Text selectable style={styles.detail}>
-              {`Continues in agent ${alert.handoff.agentId}`}
+              {`Continues in session ${alert.handoff.agentId}`}
             </Text>
           )}
         </>

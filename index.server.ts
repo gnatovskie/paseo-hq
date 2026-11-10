@@ -734,7 +734,7 @@ export default function contribute(server: PluginServerContext) {
     const result = await paseo.agents.ref(agentId).refresh();
     const agent = result?.agent;
     if (!agent || agent.id !== agentId || agent.workspaceId !== workspaceId || agent.archivedAt || agent.internal) {
-      throw new Error("Чат не найден в этом воркспейсе");
+      throw new Error("Сессия не найдена в этой области");
     }
     await execFileAsync("paseo", ["agent", "update", "--home", paseoHome, `--name=${title}`, "--", agentId], {
       timeout: 15_000,
@@ -969,7 +969,7 @@ export default function contribute(server: PluginServerContext) {
       const workspacesRes = await paseo.workspaces.list();
       const sourceWs = (workspacesRes.entries ?? []).find((w) => w.id === workspaceId);
       if (!sourceWs) {
-        throw new Error("Исходная сессия не найдена");
+        throw new Error("Исходная область не найдена");
       }
 
       const agentsRes = await paseo.agents.list({}).catch(() => ({ entries: [] as { agent: any }[] }));
@@ -996,7 +996,7 @@ export default function contribute(server: PluginServerContext) {
       const targetMeta = stored.projects[targetProjectId];
       const newSessionMode = targetMeta?.newSessionMode ?? "directory";
 
-      const title = sourceWs.title || sourceWs.projectDisplayName || "Сессия";
+      const title = sourceWs.title || sourceWs.projectDisplayName || "Область";
       const targetPath = targetProject.projectRootPath;
 
       let agentPayload: any = undefined;
