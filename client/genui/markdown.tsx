@@ -1,9 +1,11 @@
 // Modified by GNATOVSKIE for integration into Paseo HQ, 2026-11-10.
 import type { PluginTheme } from "@getpaseo/plugin";
 import { openExternalUrl } from "@getpaseo/plugin/client";
-import React, { useMemo } from "react";
+import React, { useMemo, useContext } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { parseInline, parseMarkdown, type Block, type Inline } from "../../shared/genui/diagram/markdown";
+
+import { TextSelectionContext, SelectionText } from "./text-selection";
 
 export function MarkdownText({
   text,
@@ -17,6 +19,18 @@ export function MarkdownText({
   color?: string;
 }) {
   const blocks = useMemo(() => parseMarkdown(text), [text]);
+  const selection = useContext(TextSelectionContext);
+  if (selection) {
+    const plain = blocks.map(block => {
+      if (block.kind === "rule") return "";
+      if (block.kind === "code") return block.text;
+      if (block.kind === "bullet" || block.kind === "ordered") {
+        return block.items.map((item, index) => `${block.kind === "bullet" ? "•" : `${block.start + index}.`} ${item.map(span => span.text).join("")}`).join("\n");
+      }
+      return block.content.map(span => span.text).join("");
+    }).join("\n\n");
+    return <SelectionText text={plain} theme={theme} />;
+  }
   return (
     <View style={{ gap: compact ? 6 : 8 }}>
       {blocks.map((block, index) => (

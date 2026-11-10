@@ -83,6 +83,21 @@ try {
       return selection.toString();
     });
     assert.equal(selected, "важный фрагмент");
+    await page.getByRole("button", { name: "Выделить текст", exact: true }).first().click();
+    const selectableBody = page.getByRole("textbox", { name: "Текст для выделения" }).first();
+    assert.equal(await selectableBody.inputValue(), "Выделяем важный фрагмент и обычный текст");
+    assert.equal(await selectableBody.getAttribute("readonly"), "");
+    assert.equal(await selectableBody.evaluate(el => {
+      el.focus();
+      el.setSelectionRange(9, 24);
+      return el.value.slice(el.selectionStart, el.selectionEnd);
+    }), "важный фрагмент");
+    await page.getByRole("button", { name: "Копировать текст блока", exact: true }).first().click();
+    assert.equal(await page.locator("#copied").textContent(), "Выделяем важный фрагмент и обычный текст");
+    await page.locator("#copied").evaluate(el => el.remove());
+    await page.screenshot({ path: join(output, `${name}-selection.png`), fullPage: true });
+    await page.getByRole("button", { name: "Вернуть оформление", exact: true }).first().click();
+    assert.equal(await selectableBody.count(), 0);
     await page.getByRole("button", { name: "Проверки", exact: true }).click();
     await page.getByText("Multiple files stay separate", { exact: true }).waitFor();
     await page.getByText("Provider message loaded as text", { exact: true }).waitFor();
@@ -91,7 +106,7 @@ try {
     await page.getByRole("button", { name: "/tmp/opencode/hq-genui/draft.txt", exact: true }).click();
     await page.getByRole("button", { name: "Закрыть файл", exact: true }).waitFor();
     assert.equal(page.url(), beforeFileUrl, "file preview must not navigate the workspace");
-    assert.equal(await page.getByText("Provider message loaded as text", { exact: true }).count(), 2);
+    await page.getByText("Provider message loaded as text", { exact: true }).nth(1).waitFor();
     await page.getByRole("button", { name: "Закрыть файл", exact: true }).click();
     await page.getByRole("button", { name: "/etc/passwd", exact: true }).click();
     await page.getByText(/outside|allowed|permitted|workspace/i).last().waitFor();
@@ -113,7 +128,7 @@ try {
     assert(!registrations.addSidebarHeaderItem?.includes("gallery"));
     assert.deepEqual(errors, []);
     await page.screenshot({ path: join(output, `${name}.png`), fullPage: true });
-    results.push({ name: `${name}: multiple Load, Acceptance, Draft, state, Send, sandbox, file preview/close/access denial, no navigation or overflow`, status: "passed" });
+    results.push({ name: `${name}: text selection mode, fragment and block copy, formatting restored, Load, state, Send, sandbox, file preview, no overflow`, status: "passed" });
     await page.close();
   }
   const galleryPage = await browser.newPage({ viewport: { width: 390, height: 900 } });

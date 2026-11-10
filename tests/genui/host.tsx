@@ -12,7 +12,11 @@ export const SettingsInput = TextInput;
 export const SettingsSwitch = View;
 export const SettingsAction = View;
 export const Modal = ({ visible, children }: { visible: boolean; children: React.ReactNode }) => visible ? <View>{children}</View> : null;
-export const copyText = async () => {};
+export const copyText = async (text: string) => {
+  let output = document.getElementById("copied");
+  if (!output) { output = document.createElement("div"); output.id = "copied"; document.body.appendChild(output); }
+  output.textContent = text;
+};
 export const useToast = () => ({ show() {} });
 export const useRevealedText = (text: string) => text;
 export const openExternalUrl = async () => {};

@@ -6,13 +6,18 @@ import { finiteNumber, list, nodes, optionalText, text, type Props } from "../..
 import { isButtonLike, RenderNode, RenderNodes } from "../node-renderer";
 import { CardDepthContext, propsKey, usePersistedState, useUiRuntime } from "../runtime";
 
+import { TextSelectionContext } from "../text-selection";
+
 export function Card({ props }: { props: Props }) {
   const { theme, compact } = useUiRuntime();
   const depth = useContext(CardDepthContext);
+  const inheritedSelection = useContext(TextSelectionContext);
+  const [selection, setSelection] = useState(false);
   const title = optionalText(props.title);
   const children = nodes(props.children);
 
   return (
+    <TextSelectionContext.Provider value={selection || inheritedSelection}>
     <CardDepthContext.Provider value={depth + 1}>
       <View
         style={{
@@ -24,6 +29,12 @@ export function Card({ props }: { props: Props }) {
           gap: compact ? 10 : 12,
         }}
       >
+        {!inheritedSelection ? <Pressable accessibilityRole="button" onPress={() => setSelection(value => !value)}
+          style={{ alignSelf: "flex-end", paddingVertical: 6, paddingHorizontal: 4 }} hitSlop={8}>
+          <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>
+            {selection ? "Вернуть оформление" : "Выделить текст"}
+          </Text>
+        </Pressable> : null}
         {title !== null && title.trim() !== "" ? (
           <Text
             selectable
@@ -41,6 +52,7 @@ export function Card({ props }: { props: Props }) {
         </View>
       </View>
     </CardDepthContext.Provider>
+    </TextSelectionContext.Provider>
   );
 }
 
