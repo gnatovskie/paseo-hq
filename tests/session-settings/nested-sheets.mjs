@@ -275,6 +275,17 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await button(`Сессии области ${wtTitle}`).click();
           await page.getByLabel(`Ветка области ${wtBranch}`).waitFor();
           await capture("area-branch-badge");
+          await page.getByLabel(`Ветка области ${wtBranch}`).click();
+          await page.getByText("Информация о ветке", { exact: true }).waitFor();
+          await page.getByText(wtPath, { exact: true }).waitFor();
+          await button("Скопировать название ветки").click();
+          assert.equal(await page.evaluate(() => navigator.clipboard.readText()), wtBranch);
+          await button("Скопировать путь области").click();
+          assert.equal(await page.evaluate(() => navigator.clipboard.readText()), wtPath);
+          await page.keyboard.press("Escape");
+          await page.getByText("Информация о ветке", { exact: true }).waitFor({ state: "hidden" });
+          assert.equal(await button(`Сессии области ${wtTitle}`).getAttribute("aria-expanded"), "true");
+
           await writeFile(join(wtPath, "dirty.txt"), "uncommitted");
           await button(`Действия области ${wtTitle}`).click();
           await page.getByText(new RegExp(`^Worktree на ветке ${wtBranch}`)).waitFor();

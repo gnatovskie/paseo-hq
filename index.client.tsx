@@ -1303,6 +1303,56 @@ function ItemMenuActions({ actions, theme, disabled }: {
   );
 }
 
+function AreaBranchBadge({ branch, path, theme }: { branch: string; path: string; theme: PluginTheme }) {
+  const c = theme.colors;
+  const toast = useToast();
+  const anchor = useRef<View>(null);
+  const { width, height } = useWindowDimensions();
+  const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (!position || Platform.OS !== "web") return;
+    const close = (event: KeyboardEvent) => { if (event.key === "Escape") setPosition(null); };
+    document.addEventListener("keydown", close);
+    return () => document.removeEventListener("keydown", close);
+  }, [position]);
+  const copy = async (value: string, label: string) => {
+    try {
+      await copyText(value);
+      toast.show(`${label} скопирован${label === "Ветка" ? "а" : ""}`, { variant: "info" });
+    } catch {
+      toast.error(`Не удалось скопировать ${label === "Ветка" ? "ветку" : "путь"}`);
+    }
+  };
+  const popupWidth = Math.min(320, width - 24);
+  return <>
+    <Pressable ref={anchor} accessibilityRole="button" accessibilityLabel={`Ветка области ${branch}`}
+      onPress={(event) => {
+        event.stopPropagation();
+        anchor.current?.measureInWindow((x, y, _w, h) => setPosition({
+          x: Math.max(12, Math.min(x, width - popupWidth - 12)),
+          y: y + h + 8 + 180 <= height ? y + h + 8 : Math.max(12, y - 188),
+        }));
+      }}
+      style={{ alignSelf: "flex-start", minHeight: 20, maxWidth: "100%", flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 6, borderRadius: 6, backgroundColor: c.surface2 }}>
+      <Icon name="GitBranch" size={11} color={c.foregroundMuted} />
+      <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 11, color: c.foregroundMuted }}>{branch}</Text>
+    </Pressable>
+    <NativeModal transparent visible={position !== null} animationType="fade" onRequestClose={() => setPosition(null)}>
+      <View style={{ flex: 1 }}>
+        <Pressable accessibilityLabel="Закрыть информацию о ветке" onPress={() => setPosition(null)} style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }} />
+        {position ? <View style={{ position: "absolute", left: position.x, top: position.y, width: popupWidth, padding: 14, gap: 14, borderRadius: 12, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface1, shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 14, shadowOffset: { width: 0, height: 5 }, elevation: 8 }}>
+          <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>Информация о ветке</Text>
+          {[{ label: "Ветка", value: branch, icon: "GitBranch" }, { label: "Папка области", value: path, icon: "Folder" }].map((item) => <View key={item.label} style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <Icon name={item.icon} size={15} color={c.foregroundMuted} />
+            <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={{ color: c.foregroundMuted, fontSize: 11 }}>{item.label}</Text><Text selectable style={{ color: c.foreground, fontSize: 12 }} numberOfLines={2}>{item.value}</Text></View>
+            <Pressable accessibilityRole="button" accessibilityLabel={`Скопировать ${item.label === "Ветка" ? "название ветки" : "путь области"}`} onPress={() => void copy(item.value, item.label === "Ветка" ? "Ветка" : "Путь")} style={({ pressed }) => ({ padding: 7, borderRadius: 7, backgroundColor: pressed ? c.surface2 : "transparent" })}><Icon name="Copy" size={15} color={c.foregroundMuted} /></Pressable>
+          </View>)}
+        </View> : null}
+      </View>
+    </NativeModal>
+  </>;
+}
+
 function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover }: PluginSidebarItemProps) {
   const paseo = usePaseo();
   const toast = useToast();
@@ -2993,19 +3043,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                                   <AreaSessionBadges sessions={sessions} terminalCount={areaTerminals.length}
                                     theme={theme} platform={layout.platform} />
                                 ) : areaBranches[chat.id] ?? serverState.areaWorktrees[chat.id]?.branch ? (
-                                  <View
-                                    accessible
-                                    accessibilityLabel={`Ветка области ${areaBranches[chat.id] ?? serverState.areaWorktrees[chat.id]?.branch}`}
-                                    style={{
-                                      alignSelf: "flex-start", minHeight: 20, maxWidth: "100%", flexDirection: "row", alignItems: "center",
-                                      gap: 4, paddingHorizontal: 6, borderRadius: 6, backgroundColor: c.surface2,
-                                    }}
-                                  >
-                                    <Icon name="GitBranch" size={11} color={c.foregroundMuted} />
-                                    <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 11, color: c.foregroundMuted }}>
-                                      {areaBranches[chat.id] ?? serverState.areaWorktrees[chat.id]?.branch}
-                                    </Text>
-                                  </View>
+                                  <AreaBranchBadge branch={(areaBranches[chat.id] ?? serverState.areaWorktrees[chat.id]?.branch)!} path={chat.workspaceDirectory} theme={theme} />
                                 ) : null}
                               </View>
                               {isPinned ? <Icon name="Pin" size={12} color={c.accent} /> : null}
