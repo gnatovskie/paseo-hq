@@ -1167,36 +1167,43 @@ type SessionNaming = {
   onChange: (title: string) => void;
 };
 
-function NewSessionName({ theme, kind, naming, disabled }: {
-  theme: PluginTheme; kind: "agent" | "terminal"; naming: SessionNaming;
-  disabled: boolean;
+function EditableName({ theme, value, onChange, onBlur, disabled, label, caption, editLabel, placeholder = "Необязательно" }: {
+  theme: PluginTheme; value: string; onChange: (value: string) => void; onBlur?: () => void;
+  disabled: boolean; label: string; caption: string; editLabel: string; placeholder?: string;
 }) {
   const input = useRef<React.ElementRef<typeof TextInput>>(null);
   const [focused, setFocused] = useState(false);
   const [selection, setSelection] = useState<{ start: number; end: number }>();
-  const label = kind === "agent" ? "Название нового агента" : "Название нового терминала";
   const edit = () => {
-    setSelection({ start: naming.value.length, end: naming.value.length });
+    setSelection({ start: value.length, end: value.length });
     input.current?.focus();
   };
   return <View style={{ gap: 6 }}>
-    <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>{kind === "agent" ? "Название агента" : "Название терминала"}</Text>
+    <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>{caption}</Text>
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
       <View style={{ flex: 1, minWidth: 0, height: 44, justifyContent: "center", paddingHorizontal: 12,
         borderWidth: 1, borderRadius: 9, borderColor: focused ? theme.colors.accent : theme.colors.border, backgroundColor: theme.colors.surface2 }}>
-        <TextInput ref={input} accessibilityLabel={label} value={naming.value} placeholder="Необязательно"
+        <TextInput ref={input} accessibilityLabel={label} value={value} placeholder={placeholder}
           placeholderTextColor={theme.colors.foregroundMuted} maxLength={200} editable={!disabled}
-          onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} onSubmitEditing={() => input.current?.blur()}
-          onChangeText={naming.onChange} selection={selection}
+          onFocus={() => setFocused(true)} onBlur={() => { setFocused(false); onBlur?.(); }} onSubmitEditing={() => input.current?.blur()}
+          onChangeText={onChange} selection={selection}
           onSelectionChange={({ nativeEvent: { selection: next } }) => {
             if (next.start === selection?.start && next.end === selection.end) setSelection(undefined);
           }}
           style={{ padding: 0, outlineWidth: 0, color: theme.colors.foreground, fontSize: 15 }} />
       </View>
-      <ChatActionButton theme={theme} label="Редактировать название сессии" icon="Pencil"
+      <ChatActionButton theme={theme} label={editLabel} icon="Pencil"
         disabled={disabled} onPress={edit} />
     </View>
   </View>;
+}
+
+function NewSessionName({ theme, kind, naming, disabled }: {
+  theme: PluginTheme; kind: "agent" | "terminal"; naming: SessionNaming; disabled: boolean;
+}) {
+  return <EditableName theme={theme} value={naming.value} onChange={naming.onChange} disabled={disabled}
+    label={kind === "agent" ? "Название нового агента" : "Название нового терминала"}
+    caption={kind === "agent" ? "Название агента" : "Название терминала"} editLabel="Редактировать название сессии" />;
 }
 
 // Одна форма для новой области и новой сессии.
@@ -4659,17 +4666,9 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
         actions={[{ label: syncingPlugin ? "Обновление Штаба" : "Обновить Штаб", icon: "RefreshCw", disabled: syncingPlugin, onPress: () => void handleSyncPlugin() }]}>
         <HqModal.Content>
           <View style={{ gap: 16 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <View style={{ flex: 1, minWidth: 0, height: 44, flexDirection: "row", alignItems: "center", paddingHorizontal: 12,
-                borderRadius: 9, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface2 }}>
-                <TextInput accessibilityLabel="Название панели" value={draftHeaderTitle} onChangeText={setDraftHeaderTitle}
-                  placeholder="Штаб" placeholderTextColor={c.foregroundMuted}
-                  onBlur={() => void handleSaveHeaderTitle()} onSubmitEditing={() => void handleSaveHeaderTitle()}
-                  style={{ flex: 1, minWidth: 0, padding: 0, outlineWidth: 0, color: c.foreground, fontSize: 15 }} />
-              </View>
-              <ChatActionButton theme={theme} label="Принять название панели" icon="Check" disabled={savingPanelSettings}
-                onPress={() => void handleSaveHeaderTitle()} />
-            </View>
+            <EditableName theme={theme} value={draftHeaderTitle} onChange={setDraftHeaderTitle}
+              onBlur={() => void handleSaveHeaderTitle()} disabled={savingPanelSettings}
+              label="Название панели" caption="Название панели" editLabel="Редактировать название панели" placeholder="Штаб" />
             <View style={{ padding: 12, gap: 12, borderRadius: 12, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface2 }}>
               <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>Автогенерация названий</Text>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>

@@ -157,8 +157,13 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await page.getByText("Автогенерация названий", { exact: true }).waitFor();
           await page.getByText("Модель генерации названий", { exact: true }).waitFor();
           const panelName = page.getByRole("textbox", { name: "Название панели", exact: true });
+          await button("Редактировать название панели").click();
+          assert(await panelName.evaluate(node => document.activeElement === node));
+          const caret = await panelName.evaluate(node => ({ start: node.selectionStart, end: node.selectionEnd, length: node.value.length }));
+          assert.equal(caret.start, caret.length);
+          assert.equal(caret.end, caret.length);
           await panelName.fill("Тестовый штаб");
-          await button("Принять название панели").click();
+          await panelName.press("Tab");
           await button("Выбрать модель названий").click();
           await page.getByRole("textbox", { name: "Поиск модели по всем провайдерам", exact: true }).waitFor();
           await button("Закрыть список моделей").click();
