@@ -10,6 +10,9 @@ export type { ProjectMeta } from "./project-meta";
 export const sidebarStateSchema = z.object({
   projects: z.record(z.string(), projectMetaSchema),
   nativeIcons: z.record(z.string(), z.string()),
+  areaPriorities: z.record(z.string(), z.number().finite()).default({}),
+  projectAddedAt: z.record(z.string(), z.number()).default({}),
+  projectsSortBy: z.enum(["prompt", "reply"]).default("prompt"),
   areaSessionSortBy: z.record(z.string(), z.enum(["prompt", "reply"])).default({}),
   areaIcons: z.record(z.string(), z.string()).default({}),
   areaIconBgs: z.record(z.string(), z.string()).default({}),
@@ -69,6 +72,7 @@ export const panelSettingsRpc = defineRpc({
     titleModel: z.string().trim().min(1).optional(),
     headerTitle: z.string().optional(),
     showHostMetrics: z.boolean().optional(),
+    projectsSortBy: z.enum(["prompt", "reply"]).optional(),
     projectsSortMode: z.enum(["auto", "manual"]).optional(),
     projectOrder: z.array(z.string()).optional(),
     projectIds: z.array(z.string()).default([]),
@@ -156,6 +160,7 @@ export const projectSaveRpc = defineRpc({
     hidden: z.boolean().optional(),
     hiddenSections: z.array(z.enum(["areas", "pools"])).optional(),
     pinned: z.boolean().optional(),
+    priority: z.number().finite().optional(),
     sessionTitleModel: z.string().nullable().optional(),
     sessionsSortMode: z.enum(["auto", "manual"]).optional(),
     areasSortBy: z.enum(["prompt", "reply"]).optional(),
@@ -188,6 +193,7 @@ export const chatRenameRpc = defineRpc({
 const areaIconBackgroundSchema = z.string().regex(/^#[0-9a-f]{6}$/i).nullable();
 
 export const areaPreferencesSchema = z.object({
+  priority: z.number().finite().default(10),
   sessionsSortBy: z.enum(["prompt", "reply"]).default("prompt"),
   icon: z.string().nullable().default(null),
   iconBg: areaIconBackgroundSchema.default(null),
@@ -256,6 +262,7 @@ export const areaSettingsRpc = defineRpc({
   name: "sidebar.area-settings",
   input: z.object({
     workspaceId: z.string().min(1),
+    priority: z.number().finite().optional(),
     sessionsSortBy: z.enum(["prompt", "reply"]).optional(),
     defaultBranch: z.string().min(1).nullable().optional(),
     icon: z.string().trim().min(1).max(16).nullable().optional(),

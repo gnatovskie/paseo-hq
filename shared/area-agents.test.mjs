@@ -36,10 +36,17 @@ test("reply sorting uses final reply times, not prompts or runtime activity", ()
   assert.deepEqual(ids(entries), ["prompt", "reply"]);
 });
 
-test("pins override activity newest first, manual order stays frozen", () => {
+test("pins override activity newest first, manual priorities ignore activity", () => {
   const entries = [{ id: "oldpin" }, { id: "newpin" }, { id: "a" }, { id: "b" }];
   const pins = { oldpin: 1, newpin: 2 };
   const activity = id => ({ oldpin: 900, newpin: 1, a: 10, b: 20 })[id];
-  assert.deepEqual([...entries].sort((a,b) => compareAreaOrder(a,b,pins,"auto",[],activity)).map(e=>e.id), ["newpin","oldpin","b","a"]);
-  assert.deepEqual([...entries].sort((a,b) => compareAreaOrder(a,b,pins,"manual",["a","b"],activity)).map(e=>e.id), ["newpin","oldpin","a","b"]);
+  assert.deepEqual([...entries].sort((a,b) => compareAreaOrder(a,b,pins,"auto",{},activity)).map(e=>e.id), ["newpin","oldpin","b","a"]);
+  assert.deepEqual([...entries].sort((a,b) => compareAreaOrder(a,b,pins,"manual",{a:20,b:10},activity)).map(e=>e.id), ["newpin","oldpin","a","b"]);
+});
+
+test("manual area priorities allow arbitrary finite numbers, ties use newest creation", () => {
+ const entries = [{ id: "old", createdAt: at(1) }, { id: "new", createdAt: at(2) }, { id: "high", createdAt: at(0) }, { id: "low", createdAt: at(59) }];
+ const priorities = { high: 10.5, low: -100 };
+ const order = entries.sort((a,b) => compareAreaOrder(a,b,{},"manual",priorities,()=>999)).map(e=>e.id);
+ assert.deepEqual(order, ["high","new","old","low"]);
 });

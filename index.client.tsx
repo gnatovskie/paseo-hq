@@ -116,6 +116,8 @@ const DEFAULT_META: ProjectMeta = {
   avatarBg: null,
   hidden: false,
   pinned: false,
+  pinnedAt: 0,
+  priority: 10,
   sessionTitleModel: null,
   sessionsSortMode: "auto",
   areasSortBy: "prompt",
@@ -137,6 +139,8 @@ interface ProjectGroup {
   lastRunningAt: number;
   /** Последний промпт любого агента проекта, используется для порядка внутри группы. */
   lastPromptAt: number;
+  lastReplyAt: number;
+  createdAt: number;
   hasRunning: boolean;
   summaryBucket: UiSessionBucket;
   chats: PaseoWorkspace[];
@@ -983,13 +987,60 @@ function orderAreaSessions(
   return [...pinnedItems, ...items.filter(item => !pinned[item.id])];
 }
 
+function PriorityField({ label, value, pinned, theme, onSave }: { label: string; value: number; pinned: boolean; theme: PluginTheme; onSave: (value: number) => void }) {
+  const [draft, setDraft] = useState(String(value));
+  const [invalid, setInvalid] = useState(false);
+  useEffect(() => { setDraft(String(value)); }, [value]);
+  return <View style={{ paddingVertical: 8, gap: 4 }}>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+      {pinned ? <Icon name="Pin" size={14} color={theme.colors.accent} /> : null}
+      <Text numberOfLines={2} style={{ flex: 1, color: theme.colors.foreground, fontSize: 13 }}>{label}</Text>
+      <TextInput accessibilityLabel={`Приоритет: ${label}`} value={draft} editable={!pinned}
+        keyboardType="numbers-and-punctuation" onChangeText={text => { setDraft(text); setInvalid(false); }}
+        onBlur={() => {
+          const text = draft.trim().replace(",", ".");
+          const number = Number(text);
+          if (!text || !Number.isFinite(number)) { setInvalid(true); return; }
+          setDraft(String(number));
+          if (number !== value) onSave(number);
+        }} style={{ width: 76, minHeight: 36, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
+          borderWidth: 1, borderColor: invalid ? theme.colors.statusDanger : theme.colors.border,
+          backgroundColor: theme.colors.surface1, color: theme.colors.foreground, textAlign: "center", fontSize: 14, opacity: pinned ? 0.45 : 1 }} />
+    </View>
+    {invalid ? <Text style={{ fontSize: 11, color: theme.colors.statusDanger }}>Введите число</Text> : null}
+  </View>;
+}
+
+function SortingSettings({ label, enabled, disabled, onToggle, theme, children }: { label: string; enabled: boolean; disabled?: boolean; onToggle: (enabled: boolean) => void; theme: PluginTheme; children: React.ReactNode }) {
+  const c = theme.colors;
+  return <View style={{ borderWidth: 1, borderColor: c.border, borderRadius: 12, overflow: "hidden", backgroundColor: c.surface1 }}>
+    <View style={{ padding: 12, gap: 5 }}>
+      <SettingsSwitch label={label} value={enabled} disabled={disabled} onValueChange={onToggle} />
+      <Text style={{ color: c.foregroundMuted, fontSize: 11, lineHeight: 16 }}>
+        {enabled ? "Порядок меняется по выбранной активности" : "Порядок задается приоритетами"}
+      </Text>
+    </View>
+    <View style={{ padding: 12, gap: 6, backgroundColor: c.surface2, borderTopWidth: 1, borderColor: c.border }}>
+      {children}
+      <View style={{ flexDirection: "row", gap: 6, alignItems: "center", marginTop: 4 }}>
+        <Icon name="Pin" size={12} color={c.foregroundMuted} />
+        <Text style={{ flex: 1, color: c.foregroundMuted, fontSize: 11, lineHeight: 16 }}>Закрепленные всегда сверху, последнее закрепление первым.</Text>
+      </View>
+    </View>
+  </View>;
+}
+
 function SortBasisPicker({ value, onChange, theme, disabled = false }: { disabled?: boolean; value: "prompt" | "reply"; onChange: (value: "prompt" | "reply") => void; theme: PluginTheme }) {
-  return <View style={{ gap: 4 }}><Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>Сортировать по</Text>
-    {([{ value: "prompt", label: "Последнему промпту" }, { value: "reply", label: "Последнему финальному ответу агента" }] as const).map(option =>
+  return <View style={{ gap: 7 }}><Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>ПОДНИМАТЬ ВВЕРХ ПО</Text>
+    {([{ value: "prompt", label: "Последнему промпту", detail: "Когда отправлено новое сообщение", icon: "MessageSquare" }, { value: "reply", label: "Последнему финальному ответу агента", detail: "Когда агент завершил ответ", icon: "CheckCheck" }] as const).map(option =>
       <Pressable key={option.value} disabled={disabled} accessibilityRole="radio" aria-checked={value === option.value} accessibilityState={{ checked: value === option.value }} accessibilityLabel={option.label}
-        onPress={() => onChange(option.value)} style={{ padding: 8, borderRadius: 7, flexDirection: "row", gap: 8, backgroundColor: value === option.value ? theme.colors.surface1 : undefined }}>
-        <Icon name={value === option.value ? "CircleDot" : "Circle"} size={16} color={theme.colors.foregroundMuted} />
-        <Text style={{ color: theme.colors.foreground, fontSize: 12, flexShrink: 1 }}>{option.label}</Text>
+        onPress={() => onChange(option.value)} style={{ padding: 10, borderRadius: 9, borderWidth: 1, borderColor: value === option.value ? theme.colors.accent : theme.colors.border, flexDirection: "row", alignItems: "center", gap: 9, backgroundColor: theme.colors.surface1 }}>
+        <Icon name={option.icon} size={16} color={value === option.value ? theme.colors.accent : theme.colors.foregroundMuted} />
+        <View style={{ flex: 1, gap: 3 }}>
+          <Text style={{ color: theme.colors.foreground, fontSize: 12, fontWeight: value === option.value ? "600" : "400" }}>{option.label}</Text>
+          <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>{option.detail}</Text>
+        </View>
+        {value === option.value ? <Icon name="Check" size={14} color={theme.colors.accent} /> : null}
       </Pressable>)}
   </View>;
 }
@@ -1551,6 +1602,9 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     headerTitle: "Штаб",
     projectsSortMode: "auto",
     projectOrder: [],
+    projectAddedAt: {},
+    areaPriorities: {},
+    projectsSortBy: "prompt",
   });
 
   const [collapsed, setCollapsed] = useState(false);
@@ -1788,8 +1842,13 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const replyMounted = useRef(true);
   useEffect(() => { replyMounted.current = true; return () => { replyMounted.current = false; }; }, []);
   useEffect(() => {
-    const relevant = agents.filter(({ agent }) => !agent.archivedAt && !agent.internal && agent.workspaceId &&
-      (serverState.areaSessionSortBy[agent.workspaceId] === "reply" || serverState.projects[workspaces.find(w => w.id === agent.workspaceId)?.projectId ?? ""]?.areasSortBy === "reply"));
+    const relevant = agents.filter(({ agent }) => {
+      if (agent.archivedAt || agent.internal || !agent.workspaceId) return false;
+      const meta = serverState.projects[workspaces.find(w => w.id === agent.workspaceId)?.projectId ?? ""];
+      return serverState.areaSessionSortBy[agent.workspaceId] === "reply"
+        || (meta?.sessionsSortMode === "auto" && meta.areasSortBy === "reply")
+        || (serverState.projectsSortMode === "auto" && serverState.projectsSortBy === "reply");
+    });
     void (async () => {
       for (const { agent } of relevant) {
         if (!replyMounted.current) break;
@@ -1818,7 +1877,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
         finally { replyRequests.current.delete(agent.id); }
       }
     })();
-  }, [agents, serverState.areaSessionSortBy, serverState.projects, workspaces, paseo]);
+  }, [agents, serverState.areaSessionSortBy, serverState.projects, serverState.projectsSortBy, serverState.projectsSortMode, workspaces, paseo]);
   const areaReplyMap = useMemo(() => {
     const result: Record<string, number> = {};
     for (const { agent } of agents) if (!agent.archivedAt && !agent.internal && agent.workspaceId)
@@ -1842,6 +1901,8 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
         resolvedAvatarUri: meta.avatarUri ?? serverState.nativeIcons[p.projectId] ?? null,
         lastRunningAt: 0,
         lastPromptAt: 0,
+        lastReplyAt: 0,
+        createdAt: serverState.projectAddedAt[p.projectId] ?? 0,
         hasRunning: false,
         summaryBucket: "done",
         chats: [],
@@ -1864,6 +1925,8 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           resolvedAvatarUri: meta.avatarUri ?? serverState.nativeIcons[w.projectId] ?? null,
           lastRunningAt: 0,
           lastPromptAt: 0,
+          lastReplyAt: 0,
+          createdAt: serverState.projectAddedAt[w.projectId] ?? 0,
           hasRunning: false,
           summaryBucket: "done",
           chats: [],
@@ -1894,17 +1957,18 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
         maxPrompt = Math.max(maxPrompt, chatLastPromptMs(ch, agentPromptMap));
       }
 
-      g.chats.sort((a, b) => compareAreaOrder(a, b, pinnedMap, g.meta.sessionsSortMode, g.meta.sessionOrder,
+      g.chats.sort((a, b) => compareAreaOrder(a, b, pinnedMap, g.meta.sessionsSortMode, serverState.areaPriorities,
         id => g.meta.areasSortBy === "reply" ? (areaReplyMap[id] || parseIsoMs(g.chats.find(ch => ch.id === id)?.createdAt))
           : chatLastPromptMs(g.chats.find(ch => ch.id === id)!, agentPromptMap)));
 
       g.lastRunningAt = maxRun;
       g.lastPromptAt = maxPrompt;
+      g.lastReplyAt = Math.max(0, ...g.chats.map(chat => areaReplyMap[chat.id] ?? 0));
       g.hasRunning = hasRunning;
       g.summaryBucket = best;
     }
 
-    list.sort(compareProjectOrder);
+    list.sort((a,b) => compareProjectOrder(a,b,serverState.projectsSortMode,serverState.projectsSortBy));
     return list;
   }, [projects, workspaces, archivedIds, serverState, agentBucketByWorkspace, agentTurnFinishMap, agentPromptMap, areaReplyMap]);
 
@@ -3894,12 +3958,21 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                         : [...editingGroup.meta.hiddenSections, projectSettingsTab] });
                     }}
                   />
-                  {projectSettingsTab === "areas" ? <>
-                    <SettingsSwitch label="Автосортировка областей" disabled={savingProject} value={editingGroup.meta.sessionsSortMode === "auto"}
-                      onValueChange={enabled => { if (!savingProject) void saveProjectPatch({ sessionsSortMode: enabled ? "auto" : "manual", sessionOrder: editingGroup.chats.map(chat => chat.id) }); }} />
+                  {projectSettingsTab === "areas" ? <SortingSettings label="Автосортировка областей" theme={theme}
+                    enabled={editingGroup.meta.sessionsSortMode === "auto"} disabled={savingProject}
+                    onToggle={enabled => { void saveProjectPatch({ sessionsSortMode: enabled ? "auto" : "manual" }); }}>
                     {editingGroup.meta.sessionsSortMode === "auto" ? <SortBasisPicker theme={theme} disabled={savingProject} value={editingGroup.meta.areasSortBy}
-                      onChange={areasSortBy => { if (!savingProject) void saveProjectPatch({ areasSortBy }); }} /> : null}
-                  </> : null}
+                      onChange={areasSortBy => { if (!savingProject) void saveProjectPatch({ areasSortBy }); }} /> : <>
+                      <Text style={{ color: c.foregroundMuted, fontSize: 11, lineHeight: 16 }}>Большее число выше. При равенстве - новые выше. По умолчанию 10.</Text>
+                      {editingGroup.chats.length ? editingGroup.chats.map(chat => <PriorityField key={chat.id} theme={theme}
+                        label={chatTitle(chat, latestAgentByWorkspace[chat.id])} value={serverState.areaPriorities[chat.id] ?? 10}
+                        pinned={Boolean(serverState.pinnedSessions[chat.id])} onSave={priority => {
+                          void readAreaSettings({ workspaceId: chat.id, priority }).then(settings => {
+                            setServerState(prev => ({ ...prev, areaPriorities: { ...prev.areaPriorities, [chat.id]: settings.priority } }));
+                          }).catch(error => toast.error(error instanceof Error ? error.message : "Не удалось сохранить приоритет"));
+                        }} />) : <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>В проекте пока нет областей.</Text>}
+                    </>}
+                  </SortingSettings> : null}
                 </View>
               </View>
 
@@ -4859,6 +4932,26 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
             <EditableName theme={theme} value={draftHeaderTitle} onChange={setDraftHeaderTitle}
               onBlur={() => void handleSaveHeaderTitle()} disabled={savingPanelSettings}
               label="Название панели" caption="Название панели" editLabel="Редактировать название панели" placeholder="Штаб" />
+            <SortingSettings label="Автосортировка проектов" theme={theme} enabled={serverState.projectsSortMode === "auto"}
+              disabled={savingPanelSettings} onToggle={enabled => {
+                setSavingPanelSettings(true);
+                void updatePanelSettings({ projectsSortMode: enabled ? "auto" : "manual", projectIds: projects.map(p => p.projectId) })
+                  .then(setServerState).catch(error => toast.error(error instanceof Error ? error.message : "Не удалось сохранить сортировку"))
+                  .finally(() => setSavingPanelSettings(false));
+              }}>
+              {serverState.projectsSortMode === "auto" ? <SortBasisPicker theme={theme} value={serverState.projectsSortBy} onChange={projectsSortBy => {
+                void updatePanelSettings({ projectsSortBy, projectIds: projects.map(p => p.projectId) })
+                  .then(setServerState).catch(error => toast.error(error instanceof Error ? error.message : "Не удалось сохранить сортировку"));
+              }} /> : <>
+                <Text style={{ color: c.foregroundMuted, fontSize: 11, lineHeight: 16 }}>Большее число выше. При равенстве - новые выше. По умолчанию 10.</Text>
+                {allGroups.map(group => <PriorityField key={group.id} theme={theme} label={group.name} value={group.meta.priority}
+                  pinned={group.meta.pinned} onSave={priority => {
+                    void saveProject({ projectId: group.id, priority }).then(updated => {
+                      setServerState(prev => ({ ...prev, projects: { ...prev.projects, [group.id]: updated.projects[group.id]! } }));
+                    }).catch(error => toast.error(error instanceof Error ? error.message : "Не удалось сохранить приоритет"));
+                  }} />)}
+              </>}
+            </SortingSettings>
             <View style={{ padding: 12, gap: 12, borderRadius: 12, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface2 }}>
               <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>Автогенерация названий</Text>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>

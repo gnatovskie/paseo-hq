@@ -7,6 +7,8 @@ export const projectMetaSchema = z.object({
   hidden: z.boolean().default(false),
   hiddenSections: z.array(z.enum(["areas", "pools"])).default([]),
   pinned: z.boolean().default(false),
+  pinnedAt: z.number().default(0),
+  priority: z.number().finite().default(10),
   sessionTitleModel: z.string().nullable().default(null),
   sessionsSortMode: z.enum(["auto", "manual"]).default("auto"),
   areasSortBy: z.enum(["prompt", "reply"]).default("prompt"),

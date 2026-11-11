@@ -108,7 +108,7 @@ const MAX_HISTORY_ENTRIES = 500;
 type AreaPreferences = ReturnType<typeof areaPreferencesSchema.parse>;
 
 function emptyAreaPreferences(): AreaPreferences {
-  return { sessionsSortBy: "prompt", icon: null, iconBg: null, titleModel: null, defaultBranch: null, launchBranches: {}, worktree: null };
+  return { priority: 10, sessionsSortBy: "prompt", icon: null, iconBg: null, titleModel: null, defaultBranch: null, launchBranches: {}, worktree: null };
 }
 
 interface StoredData {
@@ -123,6 +123,8 @@ interface StoredData {
   headerTitle: string;
   projectsSortMode: "auto" | "manual";
   projectOrder: string[];
+  projectAddedAt: Record<string, number>;
+  projectsSortBy: "prompt" | "reply";
 }
 
 let writeQueue: Promise<unknown> = Promise.resolve();
@@ -202,6 +204,8 @@ async function readStored(): Promise<StoredData> {
       titleModel: typeof raw.titleModel === "string" && raw.titleModel.trim() ? raw.titleModel.trim() : "first_line",
       showHostMetrics: typeof raw.showHostMetrics === "boolean" ? raw.showHostMetrics : true,
       headerTitle: typeof raw.headerTitle === "string" && raw.headerTitle.trim() ? raw.headerTitle.trim() : "Штаб",
+      projectAddedAt: parseNumberMap(raw.projectAddedAt),
+      projectsSortBy: raw.projectsSortBy === "reply" ? "reply" : "prompt",
       projectsSortMode: raw.projectsSortMode === "manual" ? "manual" : "auto",
       projectOrder: Array.isArray(raw.projectOrder)
         ? raw.projectOrder.filter((x): x is string => typeof x === "string")
@@ -218,6 +222,8 @@ async function readStored(): Promise<StoredData> {
       titleModel: "first_line",
       showHostMetrics: true,
       headerTitle: "Штаб",
+      projectAddedAt: {},
+      projectsSortBy: "prompt",
       projectsSortMode: "auto",
       projectOrder: [],
     };
@@ -240,6 +246,8 @@ async function saveStored(data: StoredData): Promise<void> {
     headerTitle: data.headerTitle || "Штаб",
     projectsSortMode: data.projectsSortMode || "auto",
     projectOrder: data.projectOrder || [],
+    projectAddedAt: data.projectAddedAt,
+    projectsSortBy: data.projectsSortBy,
   };
   await mkdir(dirname(stateFile), { recursive: true, mode: 0o700 });
   const tmp = `${stateFile}.${process.pid}.${Date.now()}.tmp`;
@@ -439,11 +447,25 @@ async function withDaemonClient<T>(fn: (client: LowLevelDaemonClient) => Promise
 }
 
 async function buildState(projectIds: string[]): Promise<SidebarState> {
-  const stored = await readStored();
+  let stored = await readStored();
+  if (projectIds.some(id => stored.projectAddedAt[id] === undefined)) {
+    await serializeWrite(async () => {
+      const latest = await readStored();
+      const now = Date.now();
+      for (const [index, id] of projectIds.entries()) {
+        latest.projectAddedAt[id] ??= now - index;
+      }
+      await saveStored(latest);
+    });
+    stored = await readStored();
+  }
   const ids = Array.from(new Set([...projectIds, ...Object.keys(stored.projects)]));
   const nativeIcons = await loadNativeIcons(ids);
   return {
     projects: stored.projects,
+    projectAddedAt: stored.projectAddedAt,
+    projectsSortBy: stored.projectsSortBy,
+    areaPriorities: Object.fromEntries(Object.entries(stored.areaPreferences).map(([id, pref]) => [id, pref.priority])),
     nativeIcons,
     areaSessionSortBy: Object.fromEntries(Object.entries(stored.areaPreferences).map(([id, pref]) => [id, pref.sessionsSortBy])),
     areaIcons: Object.fromEntries(
@@ -717,6 +739,7 @@ export default function contribute(server: PluginServerContext) {
       titleModel,
       showHostMetrics,
       projectsSortMode,
+      projectsSortBy,
       projectOrder,
       projectIds,
     }) => {
@@ -735,6 +758,7 @@ export default function contribute(server: PluginServerContext) {
         if (projectsSortMode === "auto" || projectsSortMode === "manual") {
           stored.projectsSortMode = projectsSortMode;
         }
+        if (projectsSortBy !== undefined) stored.projectsSortBy = projectsSortBy;
         if (Array.isArray(projectOrder)) {
           stored.projectOrder = projectOrder;
         }
@@ -760,18 +784,19 @@ export default function contribute(server: PluginServerContext) {
     return { title: await suggestTitle(paseo, workspaceId, agentId, selectedModel) };
   });
 
-  server.handle(areaSettingsRpc, async ({ workspaceId, defaultBranch, icon, iconBg, titleModel, sessionsSortBy }, { paseo }) => {
+  server.handle(areaSettingsRpc, async ({ workspaceId, defaultBranch, icon, iconBg, titleModel, sessionsSortBy, priority }, { paseo }) => {
     const area = await requireArea(paseo, workspaceId);
     const [currentBranch, branches]: [string | null, string[]] = area.projectKind === "git"
       ? await Promise.all([currentGitBranch(area.workspaceDirectory), localGitBranches(area.workspaceDirectory)])
       : [null, []];
-    if (sessionsSortBy !== undefined || defaultBranch !== undefined || icon !== undefined || iconBg !== undefined || titleModel !== undefined) {
+    if (priority !== undefined || sessionsSortBy !== undefined || defaultBranch !== undefined || icon !== undefined || iconBg !== undefined || titleModel !== undefined) {
       if (defaultBranch && !branches.includes(defaultBranch)) {
         throw new Error("Ветка не найдена в этой области");
       }
       await serializeWrite(async () => {
         const stored = await readStored();
         const preferences = stored.areaPreferences[workspaceId] ??= emptyAreaPreferences();
+        if (priority !== undefined) preferences.priority = priority;
         if (sessionsSortBy !== undefined) preferences.sessionsSortBy = sessionsSortBy;
         if (defaultBranch !== undefined) preferences.defaultBranch = defaultBranch;
         if (icon !== undefined) preferences.icon = icon;
@@ -1014,6 +1039,7 @@ export default function contribute(server: PluginServerContext) {
       sessionTitleModel,
       sessionsSortMode,
       areasSortBy,
+      priority,
       sessionOrder,
     }) => {
       let resolvedAvatar: { dataUri: string; buffer: Buffer; mime: string } | null = null;
@@ -1058,6 +1084,8 @@ export default function contribute(server: PluginServerContext) {
           avatarBg: null,
           hidden: false,
           pinned: false,
+          pinnedAt: 0,
+          priority: 10,
           sessionTitleModel: null,
           sessionsSortMode: "auto",
           areasSortBy: "prompt",
@@ -1085,6 +1113,8 @@ export default function contribute(server: PluginServerContext) {
           next.hidden = hidden;
         }
         if (pinned !== undefined) {
+          if (pinned && !prev.pinned) next.pinnedAt = Date.now();
+          if (!pinned) next.pinnedAt = 0;
           next.pinned = pinned;
         }
         if (sessionTitleModel !== undefined) {
@@ -1093,6 +1123,7 @@ export default function contribute(server: PluginServerContext) {
         if (sessionsSortMode === "auto" || sessionsSortMode === "manual") {
           next.sessionsSortMode = sessionsSortMode;
         }
+        if (priority !== undefined) next.priority = priority;
         if (areasSortBy !== undefined) next.areasSortBy = areasSortBy;
         if (Array.isArray(sessionOrder)) {
           next.sessionOrder = sessionOrder;
