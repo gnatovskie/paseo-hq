@@ -376,11 +376,17 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
             }
             await button("Закрыть").last().click();
             await page.getByTestId(`workspace-tab-agent_${secondChat.id}`).click();
+            if (await button(`Развернуть область ${title}`).count()) await button(`Развернуть область ${title}`).click();
+            await until(async () => await sidebar.getByRole("button", { name: "Открыть агента Second fixture chat", exact: true }).getAttribute("aria-selected") === "true", "sidebar follows the active agent tab");
+            assert.notEqual(await sidebarSession.getAttribute("aria-selected"), "true");
             await openArea();
             assert.equal(await button("Открыть агента Second fixture chat").getAttribute("aria-selected"), "true");
             assert.notEqual(await button("Открыть агента Fixture chat").getAttribute("aria-selected"), "true");
             await button("Открыть терминал Fixture terminal").click();
             await page.getByTestId(`workspace-tab-terminal_${fixtureTerminal.id}`).waitFor();
+            if (await button(`Развернуть область ${title}`).count()) await button(`Развернуть область ${title}`).click();
+            await until(async () => await sidebarTerminal.getAttribute("aria-selected") === "true", "sidebar follows the active terminal tab");
+            assert.notEqual(await sidebarSession.getAttribute("aria-selected"), "true");
             await openArea();
             assert.equal(await button("Открыть терминал Fixture terminal").getAttribute("aria-selected"), "true");
             assert.notEqual(await button("Открыть агента Fixture chat").getAttribute("aria-selected"), "true");

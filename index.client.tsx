@@ -854,12 +854,13 @@ function agentTitle(agent: AgentEntry["agent"]): string {
   return agent.title?.trim() || "Агент без названия";
 }
 
-function AgentSummary({ agent, branch, theme, platform, gap = 4 }: {
+function AgentSummary({ agent, branch, theme, platform, gap = 4, selected }: {
   agent: AgentEntry["agent"];
   branch?: string;
   theme: PluginTheme;
   platform: PluginSidebarItemProps["layout"]["platform"];
   gap?: number;
+  selected?: boolean;
 }) {
   const c = theme.colors;
   const family = resolveModelFamilyBadge(agent);
@@ -870,7 +871,7 @@ function AgentSummary({ agent, branch, theme, platform, gap = 4 }: {
         <SessionStatusIndicator bucket={bucket} theme={theme} platform={platform} size={SESSION_STATUS_SIZE} />
       </View>
       <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-        <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 13, lineHeight: 18, fontWeight: "500" }}>
+        <Text numberOfLines={1} style={{ color: selected === false ? c.foregroundMuted : c.foreground, fontSize: 13, lineHeight: 18, fontWeight: selected ? "600" : "500" }}>
           {agentTitle(agent)}
         </Text>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 6, minHeight: 16 }}>
@@ -920,7 +921,7 @@ function TerminalRow({ terminal, label, onOpen, onMenu, disabled, theme, nested 
 }) {
   const c = theme.colors;
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingRight: nested ? 0 : 10, borderRadius: 8, ...(nested ? {} : { borderWidth: 1, borderColor: selected ? c.accent : "transparent" }) }}>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingRight: nested ? 0 : 10, borderRadius: 8, ...(nested ? { backgroundColor: selected ? c.surface1 : undefined } : { borderWidth: 1, borderColor: selected ? c.accent : "transparent" }) }}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`Открыть терминал ${label}`}
@@ -938,7 +939,7 @@ function TerminalRow({ terminal, label, onOpen, onMenu, disabled, theme, nested 
           <Icon name="Terminal" size={SESSION_STATUS_SIZE} color={c.foregroundMuted} />
         </View>
         <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-          <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 13, lineHeight: 18 }}>{label}</Text>
+          <Text numberOfLines={1} style={{ color: nested && !selected ? c.foregroundMuted : c.foreground, fontSize: 13, lineHeight: 18, fontWeight: nested && selected ? "600" : "400" }}>{label}</Text>
           <Text
             numberOfLines={1}
             ellipsizeMode="middle"
@@ -3158,16 +3159,17 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                             }}>
                               {orderAreaSessions(sessions, areaTerminals, serverState.pinnedSessions).map((session) => session.kind === "terminal" ? (
                                 <TerminalRow key={session.id} terminal={session.terminal} label={terminalLabel(session.terminal)} theme={theme}
-                                  nested
+                                  nested selected={activeSession === `terminal_${session.id}`}
                                   pinned={Boolean(serverState.pinnedSessions[session.id])}
                                   disabled={chatMutationPending}
                                   onMenu={() => openTerminalMenu(session.id)}
                                   onOpen={() => openAreaTerminal(session.terminal)} />
                               ) : (
-                                <View key={session.id} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                                <View key={session.id} style={{ flexDirection: "row", alignItems: "center", gap: 4, borderRadius: 8, backgroundColor: activeSession === `agent_${session.id}` ? c.surface1 : undefined }}>
                                   <Pressable
                                     accessibilityRole="button"
                                     accessibilityLabel={`Открыть агента ${agentTitle(session.entry.agent)}`}
+                                    aria-selected={activeSession === `agent_${session.id}`}
                                     onPress={() => jumpToAgent(session.id)}
                                     style={({ pressed }) => ({
                                       flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center",
@@ -3175,7 +3177,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                                       backgroundColor: pressed ? c.surface2 : undefined,
                                     })}
                                   >
-                                    <AgentSummary agent={session.entry.agent} theme={theme} platform={layout.platform} gap={NESTED_ITEM_GAP} />
+                                    <AgentSummary agent={session.entry.agent} theme={theme} platform={layout.platform} gap={NESTED_ITEM_GAP} selected={activeSession === `agent_${session.id}`} />
                                   </Pressable>
                                   {serverState.pinnedSessions[session.id] ? <Icon name="Pin" size={12} color={c.accent} /> : null}
                                   <ChatActionButton
