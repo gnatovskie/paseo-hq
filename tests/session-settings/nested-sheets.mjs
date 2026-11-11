@@ -92,7 +92,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
     });
 
     browser = await chromium.launch({ executablePath: process.env.PASEO_CHROMIUM_EXECUTABLE });
-    for (const width of [390, 1280]) {
+    for (const width of (process.env.HQ_SMOKE_WIDTH ? [Number(process.env.HQ_SMOKE_WIDTH)] : [390, 1280])) {
       await t.test(`${width}px`, async () => {
         const page = await browser.newPage({
           viewport: { width, height: 844 },
@@ -331,6 +331,13 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await page.getByRole("textbox", { name: "Имя новой ветки", exact: true }).fill(wtBranch);
           assert.equal(await page.getByRole("textbox", { name: "Папка worktree", exact: true }).inputValue(), wtPath);
           await page.waitForTimeout(400);
+          const [branchFolderBox, kindBox, sessionNameBox] = await Promise.all([
+            page.getByRole("textbox", { name: "Папка worktree", exact: true }).boundingBox(),
+            button("Агент").boundingBox(),
+            page.getByRole("textbox", { name: "Название нового агента", exact: true }).boundingBox(),
+          ]);
+          assert(branchFolderBox.y + branchFolderBox.height <= kindBox.y, "session type follows branch settings");
+          assert(kindBox.y + kindBox.height <= sessionNameBox.y, "session name follows its type");
           await capture("new-area-worktree");
           await button("Терминал").click();
           await button("Создать область").click();
@@ -368,10 +375,11 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           assert(!execFileSync("git", ["-C", source, "worktree", "list"], { encoding: "utf8" }).includes(wtPath));
 
           if (width === 1280) {
+            const areaButton = name => page.getByRole("dialog").last().getByRole("button", { name, exact: true });
             await enterSidebar();
             await openArea();
             for (const name of ["Second fixture chat", "Fixture chat"]) {
-              await button(`Открыть агента ${name}`).click();
+              await areaButton(`Открыть агента ${name}`).click();
               await openArea();
             }
             await button("Закрыть").last().click();
@@ -380,16 +388,17 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
             await until(async () => await sidebar.getByRole("button", { name: "Открыть агента Second fixture chat", exact: true }).getAttribute("aria-selected") === "true", "sidebar follows the active agent tab");
             assert.notEqual(await sidebarSession.getAttribute("aria-selected"), "true");
             await openArea();
-            assert.equal(await button("Открыть агента Second fixture chat").getAttribute("aria-selected"), "true");
-            assert.notEqual(await button("Открыть агента Fixture chat").getAttribute("aria-selected"), "true");
-            await button("Открыть терминал Fixture terminal").click();
+            assert.equal(await areaButton("Открыть агента Second fixture chat").getAttribute("aria-selected"), "true");
+            assert.notEqual(await areaButton("Открыть агента Fixture chat").getAttribute("aria-selected"), "true");
+            await Promise.all([page.waitForEvent("load"), areaButton("Открыть терминал Fixture terminal").click()]);
             await page.getByTestId(`workspace-tab-terminal_${fixtureTerminal.id}`).waitFor();
+            await areaToggle.waitFor();
             if (await button(`Развернуть область ${title}`).count()) await button(`Развернуть область ${title}`).click();
             await until(async () => await sidebarTerminal.getAttribute("aria-selected") === "true", "sidebar follows the active terminal tab");
             assert.notEqual(await sidebarSession.getAttribute("aria-selected"), "true");
             await openArea();
-            assert.equal(await button("Открыть терминал Fixture terminal").getAttribute("aria-selected"), "true");
-            assert.notEqual(await button("Открыть агента Fixture chat").getAttribute("aria-selected"), "true");
+            assert.equal(await areaButton("Открыть терминал Fixture terminal").getAttribute("aria-selected"), "true");
+            assert.notEqual(await areaButton("Открыть агента Fixture chat").getAttribute("aria-selected"), "true");
           }
           if (width === 1280) await button("Закрыть").last().click();
           const terminalsBefore = (await workspaceHandle.terminals.list()).entries.length;

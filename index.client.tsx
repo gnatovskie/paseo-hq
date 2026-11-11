@@ -1244,13 +1244,14 @@ function NewSessionWindow({ theme, title, open, onClose, narrow, kind, onKindCha
   const c = theme.colors;
   const disabled = busy || (kind === "agent" && !model);
   const field = { borderRadius: 9, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface2 } as const;
+  const kindActions: SheetAction[] = [
+    { label: "Агент", icon: "Bot", selected: kind === "agent", onPress: () => onKindChange("agent") },
+    { label: "Терминал", icon: "Terminal", selected: kind === "terminal", onPress: () => onKindChange("terminal") },
+  ];
   return (
     <HqModal theme={theme} narrow={narrow} title={title} open={open} onOpenChange={(next) => { if (!next && !busy) onClose(); }}
       actionsDisabled={kindLocked}
-      actions={[
-        { label: "Агент", icon: "Bot", selected: kind === "agent", onPress: () => onKindChange("agent") },
-        { label: "Терминал", icon: "Terminal", selected: kind === "terminal", onPress: () => onKindChange("terminal") },
-      ]}
+      actions={target ? undefined : kindActions}
     >
       <View style={{ gap: 16 }}>
         {target ? (
@@ -1286,6 +1287,7 @@ function NewSessionWindow({ theme, title, open, onClose, narrow, kind, onKindCha
           </View>
         ) : null}
         {extra}
+        {target ? <ItemMenuActions theme={theme} actions={kindActions} disabled={kindLocked || busy} /> : null}
         <NewSessionName theme={theme} kind={kind} naming={naming} disabled={busy} />
         {kind === "agent" ? (
           <View style={{ gap: 6 }}>
