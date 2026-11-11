@@ -693,6 +693,7 @@ function ChatActionButton({ label, icon, color, disabled, onPress, theme, quiet 
       style={({ pressed }) => ({
         width: quiet ? 34 : 44,
         height: quiet ? 36 : 44,
+        flexShrink: quiet ? 0 : 1,
         borderRadius: 9,
         borderWidth: quiet ? 0 : 1,
         borderColor: c.border,
@@ -2287,20 +2288,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                             >
                               <Icon name="MoreHorizontal" size={16} color={c.foregroundMuted} />
                             </Pressable>
-                            <Pressable
-                              accessibilityRole="button"
-                              accessibilityLabel={`Новая сессия в области ${title}`}
-                              disabled={Boolean(creatingAreaIds[chat.id])}
-                              onPress={() => void handleCreateAreaSession(chat.id)}
-                              style={({ pressed }) => ({
-                                width: btnSize, height: btnSize, borderRadius: 8,
-                                alignItems: "center", justifyContent: "center",
-                                backgroundColor: pressed ? c.surface2 : undefined,
-                                opacity: creatingAreaIds[chat.id] ? 0.5 : 1,
-                              })}
-                            >
-                              <Icon name="Plus" size={16} color={c.accent} />
-                            </Pressable>
                           </View>
                           {expanded ? (
                             <View style={{
@@ -3140,6 +3127,20 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
             <View style={{ gap: 16 }}>
               <View style={{ flexDirection: "row", gap: 8 }}>
                 <ChatActionButton
+                  label="Новая сессия"
+                  icon="Plus"
+                  disabled={chatMutationPending || Boolean(creatingAreaIds[editingChat.id])}
+                  onPress={() => void handleCreateAreaSession(editingChat.id)}
+                  theme={theme}
+                />
+                <ChatActionButton
+                  label="Новый терминал"
+                  icon="Terminal"
+                  disabled={chatMutationPending || Boolean(creatingTerminalId)}
+                  onPress={() => void handleCreateAreaTerminal(editingChat.id)}
+                  theme={theme}
+                />
+                <ChatActionButton
                   label={editingChatPinned ? "Открепить область" : "Закрепить область"}
                   icon={editingChatPinned ? "PinOff" : "Pin"}
                   color={editingChatPinned ? c.accent : undefined}
@@ -3285,15 +3286,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                   gap: 10,
                 }}
               >
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                  <Text style={{ flex: 1, color: c.foreground, fontSize: 13, fontWeight: "600" }}>Сессии и терминалы</Text>
-                  <ChatActionButton label="Новая сессия" icon="Plus"
-                    disabled={chatMutationPending || Boolean(creatingAreaIds[editingChat.id])}
-                    onPress={() => void handleCreateAreaSession(editingChat.id)} theme={theme} />
-                  <ChatActionButton label="Новый терминал" icon="Terminal"
-                    disabled={chatMutationPending || Boolean(creatingTerminalId)}
-                    onPress={() => void handleCreateAreaTerminal(editingChat.id)} theme={theme} />
-                </View>
+                <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>Сессии и терминалы</Text>
                 {editingChatEntries.map((entry) => {
                   const ag = entry.agent;
                   const agTitle = sessionTitle(ag);
