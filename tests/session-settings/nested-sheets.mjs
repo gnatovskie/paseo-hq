@@ -231,6 +231,8 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await page.getByLabel(/^Папка терминала: \/.+/).waitFor();
           await button("Агент").click();
           await button("Создать область").waitFor();
+          await page.getByLabel(/^Ветка: .+/).first().waitFor();
+          await capture("new-area-existing-branch");
           await button(`Область: ${title}`).click();
           await newAreaName.waitFor({ state: "hidden" });
           await button("Создать область").waitFor({ state: "hidden" });

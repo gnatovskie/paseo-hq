@@ -1102,7 +1102,7 @@ function ActionSheet({ title, open, onClose, theme, actions, disabled, fixedHeig
   );
 }
 
-type Choice<T> = { value: T; label: string; icon: string; detail?: string; a11yLabel?: string };
+type Choice<T> = { value: T; label: string; icon: string; detail?: string; a11yLabel?: string; badge?: string };
 
 // Список вариантов с галочкой у выбранного, в рамке поля.
 function ChoiceList<T>({ theme, options, value, onChange, disabled }: {
@@ -1139,6 +1139,19 @@ function ChoiceList<T>({ theme, options, value, onChange, disabled }: {
                 <Text numberOfLines={1} style={{ color: c.foregroundMuted, fontSize: 11 }}>{option.detail}</Text>
               ) : null}
             </View>
+            {option.badge ? (
+              <View
+                accessible
+                accessibilityLabel={`Ветка: ${option.badge}`}
+                style={{
+                  flexShrink: 1, maxWidth: "45%", minHeight: 20, flexDirection: "row", alignItems: "center", gap: 4,
+                  paddingHorizontal: 6, borderRadius: 6, backgroundColor: c.surface1,
+                }}
+              >
+                <Icon name="GitBranch" size={11} color={c.foregroundMuted} />
+                <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 11, color: c.foregroundMuted }}>{option.badge}</Text>
+              </View>
+            ) : null}
             {selected ? <Icon name="Check" size={16} color={c.accent} /> : null}
           </Pressable>
         );
@@ -1165,7 +1178,7 @@ function NewSessionWindow({ theme, title, open, onClose, narrow, kind, onKindCha
   /** Куда создавать: новая область или одна из имеющихся (value = id области, null = новая). */
   /** Дополнительные поля после названия (ветка и папка worktree у новой области). */
   extra?: React.ReactNode;
-  target?: { value: string | null; options: { value: string; label: string }[]; onChange: (value: string | null) => void; locked?: boolean };
+  target?: { value: string | null; options: { value: string; label: string; branch?: string }[]; onChange: (value: string | null) => void; locked?: boolean };
   model: string | null;
   modelsError: string | null;
   modelOptions: ReturnType<typeof titleModelOptions>;
@@ -1197,6 +1210,7 @@ function NewSessionWindow({ theme, title, open, onClose, narrow, kind, onKindCha
                 { value: null as string | null, label: "Новая область", icon: "Plus" },
                 ...target.options.map((option) => ({
                   value: option.value as string | null, label: option.label, icon: "Folder", a11yLabel: `Область: ${option.label}`,
+                  badge: option.branch,
                 })),
               ]}
               value={target.value}
@@ -3814,7 +3828,11 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           kindLocked={Boolean(newArea.workspaceId)}
           target={{
             value: newArea.targetWorkspaceId ?? null,
-            options: (newAreaGroup?.chats ?? []).map((chat) => ({ value: chat.id, label: chatTitle(chat, latestAgentByWorkspace[chat.id]) })),
+            options: (newAreaGroup?.chats ?? []).map((chat) => ({
+              value: chat.id,
+              label: chatTitle(chat, latestAgentByWorkspace[chat.id]),
+              branch: areaBranches[chat.id] ?? serverState.areaWorktrees[chat.id]?.branch,
+            })),
             onChange: (value) => setNewArea({ ...newArea, targetWorkspaceId: value ?? undefined }),
             locked: Boolean(newArea.workspaceId),
           }}
