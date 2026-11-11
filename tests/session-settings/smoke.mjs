@@ -237,7 +237,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await sidebarTerminal.waitFor({ state: "hidden" });
           await openArea();
           await areaContents.waitFor();
-          await page.getByText("Функционал области", { exact: true }).waitFor();
+          await page.getByText("Действия области", { exact: true }).waitFor();
           assert.equal(await areaIcon.count(), 1, "the icon picker opens from the title row");
           assert.equal((await areaIcon.textContent()).trim(), "");
           await editTitle.locator("..").getByText(title, { exact: true }).waitFor();

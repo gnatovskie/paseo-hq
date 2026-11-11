@@ -6,6 +6,7 @@ import {
   Image,
   Linking,
   Modal as NativeModal,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -971,12 +972,23 @@ type SheetAction = { label: string; icon: string; onPress: () => void; danger?: 
 const hqWindowClosers: (() => void)[] = [];
 
 function HqModalLayer({ visible, children }: { visible: boolean; children: React.ReactNode }) {
+  const closeTop = () => hqWindowClosers[hqWindowClosers.length - 1]?.();
+  // В вебе Escape ловим сами: событие модалки react-native приходит только пока фокус внутри нее,
+  // а после закрытия верхнего окна фокус теряется.
+  useEffect(() => {
+    if (Platform.OS !== "web" || !visible) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeTop();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [visible]);
   return (
     <NativeModal
       transparent
       visible={visible}
       animationType="fade"
-      onRequestClose={() => hqWindowClosers[hqWindowClosers.length - 1]?.()}
+      onRequestClose={Platform.OS === "web" ? undefined : closeTop}
     >
       <View style={{ flex: 1 }}>{children}</View>
     </NativeModal>
@@ -1228,6 +1240,10 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const [confirmClosingSession, setConfirmClosingSession] = useState(false);
   const [terminalMenuId, setTerminalMenuId] = useState<string | null>(null);
   const [draftTerminalName, setDraftTerminalName] = useState<string | null>(null);
+  const [projectIconOpen, setProjectIconOpen] = useState(false);
+  const [projectNameFocused, setProjectNameFocused] = useState(false);
+  const projectNameInput = useRef<React.ElementRef<typeof TextInput>>(null);
+  const savedProjectName = useRef<string | null>(null);
   const [areaTitleFocused, setAreaTitleFocused] = useState(false);
   const [agentTitleFocused, setAgentTitleFocused] = useState(false);
   const [terminalNameFocused, setTerminalNameFocused] = useState(false);
@@ -1782,6 +1798,8 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     setDraftHidden(group.meta.hidden);
     setDraftPinned(group.meta.pinned);
     setConfirmRemoveProject(false);
+    setProjectIconOpen(false);
+    savedProjectName.current = null;
   };
 
   const handlePickWebFile = async () => {
@@ -1792,40 +1810,59 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     }
   };
 
-  const handleSaveProjectSettings = async () => {
-    if (!editingGroup || savingProject) return;
+  // Каждая правка проекта сохраняется сразу, как в действиях области.
+  const saveProjectPatch = async (patch: {
+    customName?: string | null;
+    avatar?: AvatarUpdate;
+    newSessionMode?: "directory" | "worktree";
+    hidden?: boolean;
+    pinned?: boolean;
+  }) => {
+    if (!editingGroup) return false;
     setSavingProject(true);
     try {
-      const trimmedUrl = draftAvatarUrl.trim();
-      const avatarPayload: AvatarUpdate = trimmedUrl
-        ? { kind: "urlOrPath", value: trimmedUrl }
-        : draftAvatarUpdate;
-      const trimmedName = draftProjectName.trim();
-      const folderName = editingGroup.rootPath.split("/").pop() || "";
-      const customName =
-        trimmedName === "" || trimmedName === folderName ? null : trimmedName;
-      const nameChanged = customName !== (editingGroup.customName ?? null);
-
-      const updated = await saveProject({
-        projectId: editingGroup.id,
-        customName: nameChanged ? customName : undefined,
-        avatar: avatarPayload,
-        newSessionMode: draftNewMode,
-        hidden: draftHidden,
-        pinned: draftPinned,
-      });
+      const updated = await saveProject({ projectId: editingGroup.id, ...patch });
       setServerState((prev) => ({
         ...prev,
         ...updated,
         nativeIcons: { ...prev.nativeIcons, ...updated.nativeIcons },
       }));
       await reloadAll();
-      setEditingProjectId(null);
-      toast.show("Настройки проекта сохранены", { variant: "success" });
+      return true;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Не удалось сохранить настройки проекта");
+      return false;
     } finally {
       setSavingProject(false);
+    }
+  };
+
+  const commitProjectName = () => {
+    if (!editingGroup) return;
+    const trimmedName = draftProjectName.trim();
+    const folderName = editingGroup.rootPath.split("/").pop() || "";
+    const customName = trimmedName === "" || trimmedName === folderName ? null : trimmedName;
+    if (customName === (editingGroup.customName ?? null)) return;
+    // Потеря фокуса и закрытие окна приходят вместе: одну правку сохраняем один раз.
+    const key = `${editingGroup.id}:${customName ?? ""}`;
+    if (savedProjectName.current === key) return;
+    savedProjectName.current = key;
+    void saveProjectPatch({ customName });
+  };
+
+  const acceptProjectName = () => {
+    commitProjectName();
+    projectNameInput.current?.blur();
+  };
+
+  const applyProjectIcon = async () => {
+    const trimmedUrl = draftAvatarUrl.trim();
+    const avatar: AvatarUpdate = trimmedUrl ? { kind: "urlOrPath", value: trimmedUrl } : draftAvatarUpdate;
+    if (await saveProjectPatch({ avatar })) {
+      setDraftAvatarUrl("");
+      setDraftAvatarUpdate({ kind: "keep" });
+      setProjectIconOpen(false);
+      toast.show("Иконка проекта обновлена", { variant: "success" });
     }
   };
 
@@ -3164,19 +3201,151 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
 
       {/* Модальное окно настроек проекта */}
       <HqModal theme={theme}
-        title={editingGroup ? `Проект: ${editingGroup.name}` : "Настройки проекта"}
+        title="Настройки проекта"
         open={Boolean(editingGroup)}
         onOpenChange={(open) => {
           if (!open) {
+            commitProjectName();
+            setProjectIconOpen(false);
             setEditingProjectId(null);
             setConfirmRemoveProject(false);
           }
         }}
+        actionsDisabled={savingProject}
+        actions={editingGroup ? [
+          {
+            label: draftPinned ? "Открепить проект" : "Закрепить проект",
+            icon: draftPinned ? "PinOff" : "Pin",
+            color: draftPinned ? c.accent : undefined,
+            onPress: () => {
+              const next = !draftPinned;
+              setDraftPinned(next);
+              void saveProjectPatch({ pinned: next });
+            },
+          },
+          {
+            label: draftHidden ? "Показать проект в основном списке" : "Скрыть проект из основного списка",
+            icon: draftHidden ? "Eye" : "EyeOff",
+            color: draftHidden ? c.accent : undefined,
+            onPress: () => {
+              const next = !draftHidden;
+              setDraftHidden(next);
+              void saveProjectPatch({ hidden: next });
+            },
+          },
+          {
+            label: confirmRemoveProject ? "Нажмите еще раз, чтобы убрать проект" : "Убрать проект из списка Paseo",
+            icon: "Trash2", danger: true,
+            onPress: () => void handleRemoveProject(),
+          },
+        ] : []}
       >
         <HqModal.Content>
           {editingGroup ? (
-            <View style={{ gap: 18 }}>
-              <SettingsSection title="Аватарка проекта (без ограничений размера и пропорций)">
+            <View style={{ gap: 16 }}>
+              <View style={{ gap: 6 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Иконка проекта"
+                    onPress={() => {
+                      setDraftAvatarUrl("");
+                      setDraftAvatarUpdate({ kind: "keep" });
+                      setProjectIconOpen(true);
+                    }}
+                    style={({ pressed }) => ({
+                      width: 44, height: 44, borderRadius: 9, alignItems: "center", justifyContent: "center",
+                      borderWidth: 1, borderColor: c.border, backgroundColor: pressed ? c.surface1 : c.surface2,
+                    })}
+                  >
+                    <ProjectAvatar
+                      name={draftProjectName || editingGroup.name}
+                      projectId={editingGroup.id}
+                      avatarUri={previewAvatar.uri}
+                      emoji={previewAvatar.emoji}
+                      bg={previewAvatar.bg}
+                      size={32}
+                    />
+                  </Pressable>
+                  <View style={{
+                    flex: 1, minWidth: 0, height: 44, flexDirection: "row", alignItems: "center",
+                    paddingHorizontal: 12, borderRadius: 9, borderWidth: 1, backgroundColor: c.surface2,
+                    borderColor: projectNameFocused ? c.accent : c.border,
+                  }}>
+                    <TextInput
+                      ref={projectNameInput}
+                      accessibilityLabel="Название проекта"
+                      value={draftProjectName}
+                      onChangeText={(value) => {
+                        savedProjectName.current = null;
+                        setDraftProjectName(value);
+                      }}
+                      onFocus={() => setProjectNameFocused(true)}
+                      onBlur={() => {
+                        setProjectNameFocused(false);
+                        commitProjectName();
+                      }}
+                      onSubmitEditing={acceptProjectName}
+                      placeholder={editingGroup.rootPath.split("/").pop() || "Проект"}
+                      placeholderTextColor={c.foregroundMuted}
+                      maxLength={200}
+                      style={{ flex: 1, minWidth: 0, padding: 0, outlineWidth: 0, color: c.foreground, fontSize: 15 }}
+                    />
+                  </View>
+                  {projectNameFocused ? (
+                    <ChatActionButton
+                      label="Принять название"
+                      icon="Check"
+                      color={c.accent}
+                      onPressIn={acceptProjectName}
+                      onPress={acceptProjectName}
+                      theme={theme}
+                    />
+                  ) : null}
+                </View>
+                <Text numberOfLines={1} style={{ color: c.foregroundMuted, fontSize: 11 }}>
+                  Папка: {editingGroup.rootPath}
+                </Text>
+              </View>
+
+              <SettingsSelect
+                label="Рабочая папка новой области"
+                hint="Выберите общую папку репозитория или изолированный git worktree"
+                value={draftNewMode}
+                options={[
+                  { label: "В папке проекта", value: "directory" },
+                  { label: "В отдельном worktree", value: "worktree" },
+                ]}
+                onValueChange={(v) => {
+                  setDraftNewMode(v);
+                  void saveProjectPatch({ newSessionMode: v });
+                }}
+              />
+
+              {confirmRemoveProject ? (
+                <Text style={{ color: c.statusDanger, fontSize: 13 }}>
+                  Нажмите корзину еще раз, чтобы убрать проект из Paseo (файлы останутся).
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
+        </HqModal.Content>
+      </HqModal>
+
+      {/* Иконка или картинка проекта */}
+      <HqModal theme={theme}
+        title="Иконка проекта"
+        open={projectIconOpen && Boolean(editingGroup)}
+        onOpenChange={(open) => {
+          if (open) return;
+          setProjectIconOpen(false);
+          setDraftAvatarUrl("");
+          setDraftAvatarUpdate({ kind: "keep" });
+        }}
+      >
+        <HqModal.Content>
+          {editingGroup ? (
+            <View style={{ gap: 16 }}>
                 <View
                   style={{
                     padding: 12,
@@ -3286,6 +3455,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                           <Pressable
                             key={em}
                             accessibilityRole="button"
+                            accessibilityLabel={`Выбрать ${em}`}
                             onPress={() => {
                               setDraftAvatarUrl("");
                               setDraftAvatarUpdate({
@@ -3339,121 +3509,18 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                     </View>
                   </View>
                 </View>
-              </SettingsSection>
-
-              <SettingsSection title="Основное">
-                <View
-                  style={{
-                    padding: 12,
-                    borderRadius: 12,
-                    backgroundColor: c.surface2,
-                    borderWidth: 1,
-                    borderColor: c.border,
-                    gap: 8,
-                  }}
-                >
-                  <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Название проекта</Text>
-                  <TextInput
-                    value={draftProjectName}
-                    onChangeText={setDraftProjectName}
-                    placeholder={editingGroup.rootPath.split("/").pop() || "Проект"}
-                    placeholderTextColor={c.foregroundMuted}
-                    style={{
-                      paddingHorizontal: 12,
-                      paddingVertical: 10,
-                      borderRadius: 9,
-                      backgroundColor: c.surface1,
-                      borderWidth: 1,
-                      borderColor: c.border,
-                      color: c.foreground,
-                      fontSize: 14,
-                    }}
-                  />
-                  <Text numberOfLines={1} style={{ color: c.foregroundMuted, fontSize: 11 }}>
-                    Папка: {editingGroup.rootPath}
-                  </Text>
-                </View>
-              </SettingsSection>
-
-              <SettingsSection title="Поведение проекта">
-                <View
-                  style={{
-                    padding: 12,
-                    borderRadius: 12,
-                    backgroundColor: c.surface2,
-                    borderWidth: 1,
-                    borderColor: c.border,
-                    gap: 10,
-                  }}
-                >
-                  <SettingsSelect
-                    label="Рабочая папка новой области"
-                    hint="Выберите общую папку репозитория или изолированный git worktree"
-                    value={draftNewMode}
-                    options={[
-                      { label: "В папке проекта", value: "directory" },
-                      { label: "В отдельном worktree", value: "worktree" },
-                    ]}
-                    onValueChange={(v) => setDraftNewMode(v)}
-                  />
-                  <SettingsSwitch
-                    label="Закрепить проект наверху"
-                    hint="Закрепленные проекты показываются выше остальных"
-                    value={draftPinned}
-                    onValueChange={setDraftPinned}
-                  />
-                  <SettingsSwitch
-                    label="Скрыть проект из основного списка"
-                    hint="Редкие проекты можно убрать под кнопку внизу списка"
-                    value={draftHidden}
-                    onValueChange={setDraftHidden}
-                  />
-                </View>
-              </SettingsSection>
 
               <Pressable
                 accessibilityRole="button"
                 disabled={savingProject}
-                onPress={() => void handleSaveProjectSettings()}
+                onPress={() => void applyProjectIcon()}
                 style={({ pressed }) => ({
-                  paddingVertical: 13,
-                  borderRadius: 10,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  backgroundColor: c.accent,
-                  opacity: savingProject ? 0.5 : pressed ? 0.85 : 1,
+                  paddingVertical: 13, borderRadius: 10, alignItems: "center", justifyContent: "center",
+                  backgroundColor: c.accent, opacity: savingProject ? 0.5 : pressed ? 0.85 : 1,
                 })}
               >
                 <Text style={{ color: "#FFFFFF", fontSize: 15, fontWeight: "700" }}>
-                  {savingProject ? "Сохранение..." : "Сохранить настройки"}
-                </Text>
-              </Pressable>
-
-              <Pressable
-                accessibilityRole="button"
-                disabled={savingProject}
-                onPress={() => void handleRemoveProject()}
-                style={({ pressed }) => ({
-                  paddingVertical: 11,
-                  borderRadius: 10,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  backgroundColor: confirmRemoveProject ? c.statusDanger : c.surface2,
-                  borderWidth: 1,
-                  borderColor: confirmRemoveProject ? c.statusDanger : c.border,
-                  opacity: savingProject ? 0.5 : pressed ? 0.8 : 1,
-                })}
-              >
-                <Text
-                  style={{
-                    color: confirmRemoveProject ? "#FFFFFF" : c.statusDanger,
-                    fontSize: 13,
-                    fontWeight: "600",
-                  }}
-                >
-                  {confirmRemoveProject
-                    ? "Нажмите еще раз, чтобы убрать проект из Paseo (файлы останутся)"
-                    : "Убрать проект из списка Paseo"}
+                  {savingProject ? "Сохранение..." : "Применить"}
                 </Text>
               </Pressable>
             </View>
@@ -3516,7 +3583,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       </HqModal>
 
       <ActionSheet
-        title="Функционал области"
+        title="Действия области"
         fixedHeight
         open={Boolean(editingChat)}
         onClose={() => {

@@ -177,7 +177,38 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await areaToggle.click();
           await sidebarSession.waitFor({ state: "hidden" });
           await areaToggle.click();
-          await sidebarSession.click();
+
+          const stored = async () => Object.values(JSON.parse(await readFile(stateFile, "utf8")).projects);
+          await button("Настройки проекта source").click();
+          const projectName = page.getByRole("textbox", { name: "Название проекта", exact: true });
+          await projectName.waitFor();
+          assert.equal(await button("Принять название").count(), 0);
+          await projectName.click();
+          await button("Принять название").waitFor();
+          await projectName.fill("Renamed project");
+          await button("Принять название").click();
+          await button("Принять название").waitFor({ state: "hidden" });
+          const until = async (check, message) => {
+            for (let attempt = 0; attempt < 40; attempt++) {
+              if (await check()) return;
+              await new Promise(resolve => setTimeout(resolve, 150));
+            }
+            assert.fail(message);
+          };
+          await button("Закрепить проект").click();
+          await button("Открепить проект").waitFor();
+          await until(async () => (await stored()).some(meta => meta.pinned === true), "pin saved at once");
+          await capture("project-settings");
+          await button("Открепить проект").click();
+          await button("Закрепить проект").waitFor();
+          await button("Иконка проекта").click();
+          await page.getByText("Любая картинка, пропорции и размер", { exact: true }).waitFor();
+          await button("Выбрать 🚀").click();
+          await button("Применить").click();
+          await page.getByText("Любая картинка, пропорции и размер", { exact: true }).waitFor({ state: "hidden" });
+          await until(async () => JSON.stringify(await stored()).includes("🚀"), "icon applied");
+          await page.keyboard.press("Escape");
+          await projectName.waitFor({ state: "hidden" });
 
           assert.deepEqual(errors, []);
         } catch (error) {
