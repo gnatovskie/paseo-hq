@@ -1366,7 +1366,7 @@ function SessionInformation({ theme, agent, workspace, path, branch, agentLink, 
       <Icon name={row.icon} size={15} color={c.foregroundMuted} />
       <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
         <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>{row.label}</Text>
-        <Text selectable accessibilityLabel={`${row.a11y}: ${row.value}`} style={{ color: c.foreground, fontSize: 12 }}>{row.value}</Text>
+        <Text selectable numberOfLines={row.icon === "Link2" ? 1 : undefined} ellipsizeMode="tail" accessibilityLabel={`${row.a11y}: ${row.value}`} style={{ color: c.foreground, fontSize: 12 }}>{row.value}</Text>
       </View>
       {"copy" in row && row.copy ? <Pressable accessibilityRole="button" accessibilityLabel={row.icon === "GitBranch" ? "Скопировать ветку" : row.icon === "Link2" ? "Скопировать ссылку на агента" : project ? "Скопировать папку проекта" : "Скопировать рабочую папку"} onPress={() => void copy(row.value)} style={({ pressed }) => ({ padding: 7, borderRadius: 7, backgroundColor: pressed ? c.surface2 : "transparent" })}><Icon name="Copy" size={15} color={c.foregroundMuted} /></Pressable> : null}
     </View>)}
