@@ -961,7 +961,7 @@ function orderAreaSessions(
 }
 
 // Свое окно вместо Modal хоста: хост рисует крестик в заголовке и его нельзя ни укрупнить, ни выровнять.
-// Слева название с рядом действий под ним, справа крупный крестик по центру этого блока.
+// Название и крупный крестик в одной строке, ряд действий под ними.
 function ActionSheet({ title, open, onClose, theme, actions, disabled, children }: {
   title: string;
   open: boolean;
@@ -984,22 +984,24 @@ function ActionSheet({ title, open, onClose, theme, actions, disabled, children 
           width: "100%", maxWidth: 480, padding: 16, gap: 14, borderRadius: 16,
           borderWidth: 1, borderColor: c.border, backgroundColor: c.surface1,
         }}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-            <View style={{ flex: 1, minWidth: 0, gap: 10 }}>
-              <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 18, fontWeight: "600" }}>{title}</Text>
-              <ItemMenuActions theme={theme} disabled={disabled} actions={actions} />
+          <View style={{ gap: 10 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+              <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, color: c.foreground, fontSize: 18, fontWeight: "600" }}>
+                {title}
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Закрыть"
+                onPress={onClose}
+                style={({ pressed }) => ({
+                  width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center",
+                  backgroundColor: pressed ? c.surface2 : undefined,
+                })}
+              >
+                <Icon name="X" size={28} color={c.foreground} />
+              </Pressable>
             </View>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Закрыть"
-              onPress={onClose}
-              style={({ pressed }) => ({
-                width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center",
-                backgroundColor: pressed ? c.surface2 : undefined,
-              })}
-            >
-              <Icon name="X" size={28} color={c.foreground} />
-            </Pressable>
+            <ItemMenuActions theme={theme} disabled={disabled} actions={actions} />
           </View>
           {children}
         </View>
