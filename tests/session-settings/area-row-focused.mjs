@@ -147,7 +147,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await openArea();
           const previousAgents = (await client.agents.list({})).entries.map(({ agent }) => agent);
           const previousAgentIds = new Set(previousAgents.map(agent => agent.id));
-          await button("Новый агент").click();
+          await button("Новая сессия").click();
           await page.getByText("Модель нового агента", { exact: true }).waitFor();
           assert.equal((await client.agents.list({})).entries.filter(({ agent }) => agent.workspaceId === workspace.id).length,
             previousAgents.filter(agent => agent.workspaceId === workspace.id).length);

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Animated,
@@ -1010,7 +1010,8 @@ function HqModal({ title, open, onOpenChange, theme, actions, actionsDisabled = 
   const close = () => onOpenChange(false);
   const latestClose = useRef(close);
   latestClose.current = close;
-  useEffect(() => {
+  // Синхронно с отрисовкой: иначе Escape сразу после закрытия окна попадает в уже закрытое.
+  useLayoutEffect(() => {
     if (!open) return;
     const closer = () => latestClose.current();
     hqWindowClosers.push(closer);
@@ -1181,6 +1182,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const [newAgentWorkspaceId, setNewAgentWorkspaceId] = useState<string | null>(null);
   const [newAgentModels, setNewAgentModels] = useState<PaseoProviderSnapshotResult["entries"]>([]);
   const [newAgentModel, setNewAgentModel] = useState<string | null>(null);
+  const [newSessionKind, setNewSessionKind] = useState<"agent" | "terminal">("agent");
   const [newAgentModelsError, setNewAgentModelsError] = useState<string | null>(null);
   const agentModelsRequest = useRef(0);
   const [newArea, setNewArea] = useState<{
@@ -1593,6 +1595,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const openNewAreaAgent = (workspaceId: string) => {
     const group = allGroups.find(item => item.chats.some(chat => chat.id === workspaceId));
     if (!group) return;
+    setNewSessionKind("agent");
     setNewAgentWorkspaceId(workspaceId);
     void prepareAgentModels(group, workspaceId);
   };
@@ -1634,6 +1637,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       if (!snapshot) throw new Error("Терминал создан, но его данные недоступны");
       setExpandedAreaIds((prev) => ({ ...prev, [workspaceId]: true }));
       setEditingChatId((current) => current === workspaceId ? null : current);
+      setNewAgentWorkspaceId(null);
       openAreaTerminal(snapshot);
       void reloadAll();
     } catch (error) {
@@ -3595,16 +3599,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
         disabled={false}
         actions={editingChat ? [
           {
-            label: "Новый агент", icon: "Plus",
-            disabled: chatMutationPending || Boolean(creatingAreaIds[editingChat.id]),
-            onPress: () => openNewAreaAgent(editingChat.id),
-          },
-          {
-            label: "Новый терминал", icon: "Terminal",
-            disabled: chatMutationPending || Boolean(creatingTerminalId),
-            onPress: () => void handleCreateAreaTerminal(editingChat.id),
-          },
-          {
             label: editingChatPinned ? "Открепить область" : "Закрепить область",
             icon: editingChatPinned ? "PinOff" : "Pin",
             color: editingChatPinned ? c.accent : undefined,
@@ -3708,8 +3702,17 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                   gap: 10,
                 }}
               >
-                <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>Сессии</Text>
-                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                  <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>Сессии</Text>
+                  <ChatActionButton
+                    label="Новая сессия"
+                    icon="Plus"
+                    disabled={chatMutationPending || Boolean(creatingAreaIds[editingChat.id]) || Boolean(creatingTerminalId)}
+                    onPress={() => openNewAreaAgent(editingChat.id)}
+                    theme={theme}
+                  />
+                </View>
+                <View style={{ flexWrap: "wrap", flexDirection: "row", gap: 6 }}>
                   {AREA_SESSION_FILTERS.map(({ value, label }) => {
                     const selected = areaSessionFilter === value;
                     return (
@@ -3845,28 +3848,68 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           ) : null}
       </ActionSheet>
 
-      <HqModal theme={theme} title="Новый агент" open={Boolean(newAgentWorkspaceId)} onOpenChange={(open) => {
-        if (!open && !Object.values(creatingAreaIds).some(Boolean)) setNewAgentWorkspaceId(null);
+      <HqModal theme={theme} title="Новая сессия" open={Boolean(newAgentWorkspaceId)} onOpenChange={(open) => {
+        if (!open && !Object.values(creatingAreaIds).some(Boolean) && !creatingTerminalId) setNewAgentWorkspaceId(null);
       }}>
         <HqModal.Content>
           <View style={{ gap: 14 }}>
-            <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Модель нового агента</Text>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <Text style={{ flex: 1, color: c.foreground, fontSize: 13 }} numberOfLines={1}>
-                {newAgentModel ?? newAgentModelsError ?? "Загружаю модели..."}
-              </Text>
-              <TitleModelPicker theme={theme} options={titleModelOptions(newAgentModels, "first_line").filter(option => option.provider)}
-                value={newAgentModel ?? ""} disabled={!newAgentModel || Object.values(creatingAreaIds).some(Boolean)}
-                label="Выбрать модель нового агента" icon="ChevronDown" menuLabel="Модели нового агента"
-                onValueChange={setNewAgentModel} />
+            <View style={{ flexDirection: "row", gap: 6 }}>
+              {([["agent", "Агент"], ["terminal", "Терминал"]] as const).map(([kind, label]) => {
+                const selected = newSessionKind === kind;
+                return (
+                  <Pressable
+                    key={kind}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    onPress={() => setNewSessionKind(kind)}
+                    style={({ pressed }) => ({
+                      minHeight: 34, paddingHorizontal: 14, borderRadius: 17,
+                      borderWidth: 1, borderColor: selected ? c.accent : c.border,
+                      justifyContent: "center", backgroundColor: selected ? c.accent : c.surface1,
+                      opacity: pressed ? 0.75 : 1,
+                    })}
+                  >
+                    <Text style={{ color: selected ? c.accentForeground : c.foreground, fontSize: 13 }}>{label}</Text>
+                  </Pressable>
+                );
+              })}
             </View>
-            <Pressable accessibilityRole="button" accessibilityLabel="Создать агента с выбранной моделью"
-              disabled={!newAgentModel || Object.values(creatingAreaIds).some(Boolean)}
-              onPress={() => { if (newAgentWorkspaceId) void handleCreateAreaSession(newAgentWorkspaceId); }}
-              style={({ pressed }) => ({ padding: 11, alignItems: "center", borderRadius: 8,
-                backgroundColor: c.accent, opacity: !newAgentModel || pressed ? 0.6 : 1 })}>
-              <Text style={{ color: c.accentForeground, fontSize: 14, fontWeight: "600" }}>Создать агента</Text>
-            </Pressable>
+            {newSessionKind === "agent" ? (
+              <>
+                <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Модель нового агента</Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <Text style={{ flex: 1, color: c.foreground, fontSize: 13 }} numberOfLines={1}>
+                    {newAgentModel ?? newAgentModelsError ?? "Загружаю модели..."}
+                  </Text>
+                  <TitleModelPicker theme={theme} options={titleModelOptions(newAgentModels, "first_line").filter(option => option.provider)}
+                    value={newAgentModel ?? ""} disabled={!newAgentModel || Object.values(creatingAreaIds).some(Boolean)}
+                    label="Выбрать модель нового агента" icon="ChevronDown" menuLabel="Модели нового агента"
+                    onValueChange={setNewAgentModel} />
+                </View>
+                <Pressable accessibilityRole="button" accessibilityLabel="Создать агента с выбранной моделью"
+                  disabled={!newAgentModel || Object.values(creatingAreaIds).some(Boolean)}
+                  onPress={() => { if (newAgentWorkspaceId) void handleCreateAreaSession(newAgentWorkspaceId); }}
+                  style={({ pressed }) => ({ padding: 11, alignItems: "center", borderRadius: 8,
+                    backgroundColor: c.accent, opacity: !newAgentModel || pressed ? 0.6 : 1 })}>
+                  <Text style={{ color: c.accentForeground, fontSize: 14, fontWeight: "600" }}>Создать агента</Text>
+                </Pressable>
+              </>
+            ) : (
+              <>
+                <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>
+                  Терминал откроется в рабочей папке области.
+                </Text>
+                <Pressable accessibilityRole="button" accessibilityLabel="Создать терминал"
+                  disabled={Boolean(creatingTerminalId)}
+                  onPress={() => { if (newAgentWorkspaceId) void handleCreateAreaTerminal(newAgentWorkspaceId); }}
+                  style={({ pressed }) => ({ padding: 11, alignItems: "center", borderRadius: 8,
+                    backgroundColor: c.accent, opacity: creatingTerminalId || pressed ? 0.6 : 1 })}>
+                  <Text style={{ color: c.accentForeground, fontSize: 14, fontWeight: "600" }}>
+                    {creatingTerminalId ? "Создаю…" : "Создать терминал"}
+                  </Text>
+                </Pressable>
+              </>
+            )}
           </View>
         </HqModal.Content>
       </HqModal>

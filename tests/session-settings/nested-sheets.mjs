@@ -166,8 +166,14 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await terminalName.waitFor();
           await page.keyboard.press("Escape");
           await terminalName.waitFor({ state: "hidden" });
-          await button("Новый агент").click();
+          assert.equal(await button("Новый терминал").count(), 0, "terminal moved into the new session window");
+          await button("Новая сессия").click();
           await page.getByText("Модель нового агента", { exact: true }).waitFor();
+          await button("Терминал").click();
+          await button("Создать терминал").waitFor();
+          assert.equal(await button("Создать агента с выбранной моделью").count(), 0);
+          await button("Агент").click();
+          await button("Создать агента с выбранной моделью").waitFor();
           await button("Закрыть").last().click();
           await page.getByText("Модель нового агента", { exact: true }).waitFor({ state: "hidden" });
           await button("Закрыть").last().click();
@@ -209,6 +215,13 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await until(async () => JSON.stringify(await stored()).includes("🚀"), "icon applied");
           await page.keyboard.press("Escape");
           await projectName.waitFor({ state: "hidden" });
+
+          const terminalsBefore = (await workspaceHandle.terminals.list()).entries.length;
+          await openArea();
+          await button("Новая сессия").click();
+          await button("Терминал").click();
+          await button("Создать терминал").click();
+          await until(async () => (await workspaceHandle.terminals.list()).entries.length === terminalsBefore + 1, "terminal created from the new session window");
 
           assert.deepEqual(errors, []);
         } catch (error) {
