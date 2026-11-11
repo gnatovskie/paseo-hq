@@ -145,7 +145,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
         const areaIcon = button("Выбрать иконку области");
         const generate = button("Сгенерировать название");
         const areaToggle = button(`Сессии области ${title}`);
-        const sidebar = button("Новая область в проекте source").locator("../..");
+        const sidebar = button("Настройки проекта source").locator("../..");
         const sidebarSession = sidebar.getByRole("button", { name: "Открыть агента Fixture chat", exact: true });
         const sidebarTerminal = sidebar.getByRole("button", { name: "Открыть терминал Fixture terminal", exact: true });
         const newAreaName = page.getByRole("textbox", { name: "Название новой области", exact: true });
@@ -178,7 +178,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await sidebar.getByRole("tab", { name: "Пулы" }).click();
           await page.getByText("Сервис готовится. Здесь появятся пулы генераций проекта.").waitFor();
           assert.equal(await button("Новая область в проекте source").count(), 0);
-          await page.getByRole("tab", { name: "Области", selected: false }).first().click();
+          await sidebar.getByRole("tab", { name: "Области", exact: true }).click();
           await openArea();
           await button("Закрыть").last().click();
           const quick = button(`Новая сессия в области ${title}`);
