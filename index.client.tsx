@@ -967,7 +967,7 @@ function ActionSheet({ title, open, onClose, theme, actions, disabled, children 
   open: boolean;
   onClose: () => void;
   theme: PluginTheme;
-  actions: { label: string; icon: string; onPress: () => void; danger?: boolean }[];
+  actions: { label: string; icon: string; onPress: () => void; danger?: boolean; disabled?: boolean; color?: string }[];
   disabled: boolean;
   children: React.ReactNode;
 }) {
@@ -981,7 +981,7 @@ function ActionSheet({ title, open, onClose, theme, actions, disabled, children 
           style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: "rgba(0,0,0,0.55)" }}
         />
         <View style={{
-          width: "100%", maxWidth: 480, padding: 16, gap: 14, borderRadius: 16,
+          width: "100%", maxWidth: 480, maxHeight: "90%", padding: 16, gap: 14, borderRadius: 16,
           borderWidth: 1, borderColor: c.border, backgroundColor: c.surface1,
         }}>
           <View style={{ gap: 10 }}>
@@ -1003,7 +1003,9 @@ function ActionSheet({ title, open, onClose, theme, actions, disabled, children 
             </View>
             <ItemMenuActions theme={theme} disabled={disabled} actions={actions} />
           </View>
-          {children}
+          <ScrollView keyboardShouldPersistTaps="handled" style={{ flexShrink: 1 }}>
+            {children}
+          </ScrollView>
         </View>
       </View>
     </NativeModal>
@@ -1011,19 +1013,19 @@ function ActionSheet({ title, open, onClose, theme, actions, disabled, children 
 }
 
 function ItemMenuActions({ actions, theme, disabled }: {
-  actions: { label: string; icon: string; onPress: () => void; danger?: boolean }[];
+  actions: { label: string; icon: string; onPress: () => void; danger?: boolean; disabled?: boolean; color?: string }[];
   theme: PluginTheme;
   disabled: boolean;
 }) {
   return (
     <View style={{ flexDirection: "row", gap: 8, justifyContent: "flex-start" }}>
-      {actions.map(({ label, icon, onPress, danger }) => (
+      {actions.map(({ label, icon, onPress, danger, disabled: actionDisabled, color }) => (
         <ChatActionButton
           key={label}
           label={label}
           icon={icon}
-          color={danger ? theme.colors.statusDanger : undefined}
-          disabled={disabled}
+          color={danger ? theme.colors.statusDanger : color}
+          disabled={disabled || actionDisabled}
           onPress={onPress}
           theme={theme}
         />
@@ -3414,18 +3416,60 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
         </Modal.Content>
       </Modal>
 
-      <Modal
+      <ActionSheet
         title="Функционал области"
         open={Boolean(editingChat)}
-        onOpenChange={(open) => {
-          if (!open) {
-            handleRenameChat();
-            setEditingChatId(null);
-            updateDraftChatTitle(null);
-          }
+        onClose={() => {
+          handleRenameChat();
+          setEditingChatId(null);
+          updateDraftChatTitle(null);
         }}
+        theme={theme}
+        disabled={false}
+        actions={editingChat ? [
+          {
+            label: "Новый агент", icon: "Plus",
+            disabled: chatMutationPending || Boolean(creatingAreaIds[editingChat.id]),
+            onPress: () => openNewAreaAgent(editingChat.id),
+          },
+          {
+            label: "Новый терминал", icon: "Terminal",
+            disabled: chatMutationPending || Boolean(creatingTerminalId),
+            onPress: () => void handleCreateAreaTerminal(editingChat.id),
+          },
+          {
+            label: editingChatPinned ? "Открепить область" : "Закрепить область",
+            icon: editingChatPinned ? "PinOff" : "Pin",
+            color: editingChatPinned ? c.accent : undefined,
+            disabled: chatMutationPending,
+            onPress: () => void handleTogglePinChat(),
+          },
+          {
+            label: "Скопировать путь к папке проекта", icon: "Folders",
+            onPress: () => {
+              const path = currentProjectGroup?.rootPath || editingChat.workspaceDirectory;
+              void copyText(path)
+                .then(() => toast.show("Путь скопирован", { variant: "info" }))
+                .catch(() => toast.error("Не удалось скопировать путь"));
+            },
+          },
+          ...(editingChat.projectKind === "git" ? [{
+            label: "Настройки области", icon: "Settings",
+            disabled: chatMutationPending,
+            onPress: () => setAreaSettingsPanel("branch"),
+          }] : []),
+          {
+            label: "Перенести в проект", icon: "ArrowRightLeft",
+            disabled: chatMutationPending,
+            onPress: () => setChatTransferOpen(true),
+          },
+          {
+            label: "Архивировать область", icon: "Archive", danger: true,
+            disabled: chatMutationPending,
+            onPress: () => void handleArchiveChat(editingChat),
+          },
+        ] : []}
       >
-        <Modal.Content>
           {editingChat ? (
             <View style={{ gap: 16 }} onTouchStart={() => areaTitleInput.current?.blur()}>
               <View style={{ gap: 4 }}>
@@ -3469,65 +3513,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                   />
                 </View>
 
-              </View>
-              <View style={{ flexDirection: "row", gap: 8, justifyContent: "flex-end" }}>
-                <ChatActionButton
-                  label="Новый агент"
-                  icon="Plus"
-                  disabled={chatMutationPending || Boolean(creatingAreaIds[editingChat.id])}
-                  onPress={() => openNewAreaAgent(editingChat.id)}
-                  theme={theme}
-                />
-                <ChatActionButton
-                  label="Новый терминал"
-                  icon="Terminal"
-                  disabled={chatMutationPending || Boolean(creatingTerminalId)}
-                  onPress={() => void handleCreateAreaTerminal(editingChat.id)}
-                  theme={theme}
-                />
-                <ChatActionButton
-                  label={editingChatPinned ? "Открепить область" : "Закрепить область"}
-                  icon={editingChatPinned ? "PinOff" : "Pin"}
-                  color={editingChatPinned ? c.accent : undefined}
-                  disabled={chatMutationPending}
-                  onPress={() => void handleTogglePinChat()}
-                  theme={theme}
-                />
-                <ChatActionButton
-                  label="Скопировать путь к папке проекта"
-                  icon="Folders"
-                  onPress={() => {
-                    const path = currentProjectGroup?.rootPath || editingChat.workspaceDirectory;
-                    void copyText(path)
-                      .then(() => toast.show("Путь скопирован", { variant: "info" }))
-                      .catch(() => toast.error("Не удалось скопировать путь"));
-                  }}
-                  theme={theme}
-                />
-                {editingChat.projectKind === "git" ? (
-                  <ChatActionButton
-                    label="Настройки области"
-                    icon="Settings"
-                    disabled={chatMutationPending}
-                    onPress={() => setAreaSettingsPanel("branch")}
-                    theme={theme}
-                  />
-                ) : null}
-                <ChatActionButton
-                  label="Перенести в проект"
-                  icon="ArrowRightLeft"
-                  disabled={chatMutationPending}
-                  onPress={() => setChatTransferOpen(true)}
-                  theme={theme}
-                />
-                <ChatActionButton
-                  label="Архивировать область"
-                  icon="Archive"
-                  color={c.statusDanger}
-                  disabled={chatMutationPending}
-                  onPress={() => void handleArchiveChat(editingChat)}
-                  theme={theme}
-                />
               </View>
 
               <View
@@ -3673,8 +3658,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
               ) : null}
             </View>
           ) : null}
-        </Modal.Content>
-      </Modal>
+      </ActionSheet>
 
       <Modal title="Новый агент" open={Boolean(newAgentWorkspaceId)} onOpenChange={(open) => {
         if (!open && !Object.values(creatingAreaIds).some(Boolean)) setNewAgentWorkspaceId(null);

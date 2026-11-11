@@ -136,7 +136,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
         const settingsHeading = page.getByText("Настройки области", { exact: true });
         const iconPicker = page.getByText("Иконка области", { exact: true });
         const closeSettings = async () => {
-          await button("Close").last().click();
+          await button("Закрыть").last().click();
           await settingsHeading.waitFor({ state: "hidden" });
         };
         const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
@@ -186,7 +186,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await page.getByText("Сессии", { exact: true }).click();
           await page.waitForFunction(expected => Boolean(document.querySelector(`[aria-label="Сессии области ${expected}"]`)), title);
           assert.equal((await workspaceHandle.refresh()).title, title);
-          await button("Close").last().click();
+          await button("Закрыть").last().click();
           await button("Новая область в проекте source").click();
           await page.getByText("Модель нового агента", { exact: true }).waitFor();
           const newAreaTitle = `Model choice area ${width}`;
