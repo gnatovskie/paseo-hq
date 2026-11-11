@@ -367,6 +367,25 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await until(async () => !existsSync(wtPath), "worktree folder removed on archive");
           assert(!execFileSync("git", ["-C", source, "worktree", "list"], { encoding: "utf8" }).includes(wtPath));
 
+          if (width === 1280) {
+            await enterSidebar();
+            await openArea();
+            for (const name of ["Second fixture chat", "Fixture chat"]) {
+              await button(`Открыть агента ${name}`).click();
+              await openArea();
+            }
+            await button("Закрыть").last().click();
+            await page.getByTestId(`workspace-tab-agent_${secondChat.id}`).click();
+            await openArea();
+            assert.equal(await button("Открыть агента Second fixture chat").getAttribute("aria-selected"), "true");
+            assert.notEqual(await button("Открыть агента Fixture chat").getAttribute("aria-selected"), "true");
+            await button("Открыть терминал Fixture terminal").click();
+            await page.getByTestId(`workspace-tab-terminal_${fixtureTerminal.id}`).waitFor();
+            await openArea();
+            assert.equal(await button("Открыть терминал Fixture terminal").getAttribute("aria-selected"), "true");
+            assert.notEqual(await button("Открыть агента Fixture chat").getAttribute("aria-selected"), "true");
+          }
+          if (width === 1280) await button("Закрыть").last().click();
           const terminalsBefore = (await workspaceHandle.terminals.list()).entries.length;
           await button("Новая область в проекте source").click();
           await button(`Область: ${title}`).click();

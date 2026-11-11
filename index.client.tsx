@@ -59,6 +59,7 @@ import {
 import { projectAgentConfig } from "./shared/project-agent-config";
 import { compareProjectOrder } from "./shared/project-order";
 import { GENERATOR_TITLE, titleModelOptions } from "./shared/title-models";
+import { useActiveSession } from "./client/active-session.client";
 import { TitleModelPicker } from "./client/title-model-picker.client";
 import { TooltipPressable } from "./client/tooltip.client";
 import { HostMetricsBar } from "./client/host-widget";
@@ -906,7 +907,8 @@ function openTerminalTab(hostId: string, terminal: PaseoTerminal, platform: Plug
   return Linking.openURL(`paseo://${target}`);
 }
 
-function TerminalRow({ terminal, label, onOpen, onMenu, disabled, theme, nested = false, pinned = false }: {
+function TerminalRow({ terminal, label, onOpen, onMenu, disabled, theme, nested = false, pinned = false, selected = false }: {
+  selected?: boolean;
   terminal: PaseoTerminal;
   label: string;
   onOpen: () => void;
@@ -918,10 +920,12 @@ function TerminalRow({ terminal, label, onOpen, onMenu, disabled, theme, nested 
 }) {
   const c = theme.colors;
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingRight: nested ? 0 : 11 }}>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingRight: nested ? 0 : 10, borderRadius: 8, ...(nested ? {} : { borderWidth: 1, borderColor: selected ? c.accent : "transparent" }) }}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`Открыть терминал ${label}`}
+        accessibilityState={{ selected }}
+        aria-selected={selected}
         onPress={onOpen}
         style={({ pressed }) => ({
           flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", minHeight: 44,
@@ -1443,6 +1447,7 @@ function AreaBranchBadge({ branch, path, kind, theme }: { branch: string; path: 
 function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover }: PluginSidebarItemProps) {
   const paseo = usePaseo();
   const toast = useToast();
+  const activeSession = useActiveSession();
   const readSidebar = useRpc(sidebarReadRpc);
   const readAreaSettings = useRpc(areaSettingsRpc);
   const createAreaSession = useRpc(areaSessionCreateRpc);
@@ -4197,6 +4202,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                   if (session.kind === "terminal") {
                     return (
                       <TerminalRow key={session.id} terminal={session.terminal} label={terminalLabel(session.terminal)} theme={theme}
+                        selected={activeSession === `terminal_${session.id}`}
                         pinned={Boolean(serverState.pinnedSessions[session.id])}
                         disabled={chatMutationPending}
                         onMenu={() => openTerminalMenu(session.id)}
@@ -4208,7 +4214,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                   }
                   const ag = session.entry.agent;
                   const agTitle = agentTitle(ag);
-                  const isCurrent = editingChatAgent?.id === ag.id;
+                  const isCurrent = activeSession === `agent_${ag.id}`;
                   return (
                     <View
                       key={ag.id}
@@ -4226,6 +4232,8 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                       <Pressable
                         accessibilityRole="button"
                         accessibilityLabel={`Открыть агента ${agTitle}`}
+                        accessibilityState={{ selected: isCurrent }}
+                        aria-selected={isCurrent}
                         onPress={() => {
                           setEditingChatId(null);
                           jumpToAgent(ag.id);
