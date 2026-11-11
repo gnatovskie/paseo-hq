@@ -5,7 +5,6 @@ import {
   Easing,
   Image,
   Linking,
-  Modal as NativeModal,
   Pressable,
   ScrollView,
   Text,
@@ -963,8 +962,8 @@ function orderAreaSessions(
   return [...pinnedItems, ...items.filter(item => !pinned[item.id])];
 }
 
-// Свое окно вместо Modal хоста: хост рисует крестик в заголовке и его нельзя ни укрупнить, ни выровнять.
-// Название и крупный крестик в одной строке, ряд действий под ними.
+// Окно хоста Paseo: его шапка, крестик, затемнение, прокрутка и наложение окон поверх друг друга.
+// Ряд действий идет первой строкой под шапкой.
 function ActionSheet({ title, open, onClose, theme, actions, disabled, children }: {
   title: string;
   open: boolean;
@@ -974,44 +973,13 @@ function ActionSheet({ title, open, onClose, theme, actions, disabled, children 
   disabled: boolean;
   children: React.ReactNode;
 }) {
-  const c = theme.colors;
   return (
-    <NativeModal transparent visible={open} animationType="fade" onRequestClose={onClose}>
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 16 }}>
-        <Pressable
-          accessibilityLabel="Закрыть окно"
-          onPress={onClose}
-          style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: "rgba(0,0,0,0.55)" }}
-        />
-        <View style={{
-          width: "100%", maxWidth: 480, maxHeight: "90%", padding: 16, gap: 14, borderRadius: 16,
-          borderWidth: 1, borderColor: c.border, backgroundColor: c.surface1,
-        }}>
-          <View style={{ gap: 10 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-              <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, color: c.foreground, fontSize: 18, fontWeight: "600" }}>
-                {title}
-              </Text>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Закрыть"
-                onPress={onClose}
-                style={({ pressed }) => ({
-                  width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center",
-                  backgroundColor: pressed ? c.surface2 : undefined,
-                })}
-              >
-                <Icon name="X" size={28} color={c.foreground} />
-              </Pressable>
-            </View>
-            <ItemMenuActions theme={theme} disabled={disabled} actions={actions} />
-          </View>
-          <ScrollView keyboardShouldPersistTaps="handled" style={{ flexShrink: 1 }}>
-            {children}
-          </ScrollView>
-        </View>
-      </View>
-    </NativeModal>
+    <Modal title={title} open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <Modal.Content>
+        <ItemMenuActions theme={theme} disabled={disabled} actions={actions} />
+        {children}
+      </Modal.Content>
+    </Modal>
   );
 }
 
