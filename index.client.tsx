@@ -964,8 +964,24 @@ function orderAreaSessions(
 
 type SheetAction = { label: string; icon: string; onPress: () => void; danger?: boolean; disabled?: boolean; color?: string };
 
-// Все окна Штаба рисуем сами и на одном слое: окно хоста и окно react-native мешают друг другу при наложении
-// (фокус и порядок слоев). Шапка: название и крупный крестик в одной строке, ряд действий под ней.
+// Все окна Штаба рисуем сами. Они лежат в одном слое HqModalLayer (одна модалка react-native на все окна),
+// а окно - обычный оверлей внутри него: так одно окно открывается поверх другого без борьбы за фокус и слои.
+// Шапка: название и крупный крестик в одной строке, ряд действий под ней.
+const hqWindowClosers: (() => void)[] = [];
+
+function HqModalLayer({ visible, children }: { visible: boolean; children: React.ReactNode }) {
+  return (
+    <NativeModal
+      transparent
+      visible={visible}
+      animationType="fade"
+      onRequestClose={() => hqWindowClosers[hqWindowClosers.length - 1]?.()}
+    >
+      <View style={{ flex: 1 }}>{children}</View>
+    </NativeModal>
+  );
+}
+
 function HqModal({ title, open, onOpenChange, theme, actions, actionsDisabled = false, children }: {
   title: string;
   open: boolean;
@@ -977,48 +993,61 @@ function HqModal({ title, open, onOpenChange, theme, actions, actionsDisabled = 
 }) {
   const c = theme.colors;
   const close = () => onOpenChange(false);
+  const latestClose = useRef(close);
+  latestClose.current = close;
+  useEffect(() => {
+    if (!open) return;
+    const closer = () => latestClose.current();
+    hqWindowClosers.push(closer);
+    return () => {
+      const index = hqWindowClosers.indexOf(closer);
+      if (index >= 0) hqWindowClosers.splice(index, 1);
+    };
+  }, [open]);
+  if (!open) return null;
   return (
-    <NativeModal transparent visible={open} animationType="fade" onRequestClose={close}>
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 16 }}>
-        <Pressable
-          accessibilityLabel="Закрыть окно"
-          onPress={close}
-          style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: "rgba(0,0,0,0.55)" }}
-        />
-        <View style={{
-          width: "100%", maxWidth: 520, maxHeight: "90%", borderRadius: 16,
-          borderWidth: 1, borderColor: c.border, backgroundColor: c.surface1, overflow: "hidden",
-        }}>
-          <View style={{ paddingLeft: 16, paddingRight: 8, paddingTop: 8, paddingBottom: 8, gap: 8 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, color: c.foreground, fontSize: 18, fontWeight: "600" }}>
-                {title}
-              </Text>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Закрыть"
-                onPress={close}
-                style={({ pressed }) => ({
-                  width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center",
-                  backgroundColor: pressed ? c.surface2 : undefined,
-                })}
-              >
-                <Icon name="X" size={28} color={c.foreground} />
-              </Pressable>
-            </View>
-            {actions?.length ? (
-              <View style={{ paddingRight: 8 }}>
-                <ItemMenuActions theme={theme} disabled={actionsDisabled} actions={actions} />
-              </View>
-            ) : null}
+    <View style={{
+      position: "absolute", top: 0, right: 0, bottom: 0, left: 0,
+      alignItems: "center", justifyContent: "center", padding: 16,
+    }}>
+      <Pressable
+        accessibilityLabel="Закрыть окно"
+        onPress={close}
+        style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: "rgba(0,0,0,0.55)" }}
+      />
+      <View style={{
+        width: "100%", maxWidth: 520, maxHeight: "90%", borderRadius: 16,
+        borderWidth: 1, borderColor: c.border, backgroundColor: c.surface1, overflow: "hidden",
+      }}>
+        <View style={{ paddingLeft: 16, paddingRight: 8, paddingTop: 8, paddingBottom: 8, gap: 8 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, color: c.foreground, fontSize: 18, fontWeight: "600" }}>
+              {title}
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Закрыть"
+              onPress={close}
+              style={({ pressed }) => ({
+                width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center",
+                backgroundColor: pressed ? c.surface2 : undefined,
+              })}
+            >
+              <Icon name="X" size={28} color={c.foreground} />
+            </Pressable>
           </View>
-          <View style={{ height: 1, backgroundColor: c.border }} />
-          <ScrollView keyboardShouldPersistTaps="handled" style={{ flexShrink: 1 }} contentContainerStyle={{ padding: 16, gap: 16 }}>
-            {children}
-          </ScrollView>
+          {actions?.length ? (
+            <View style={{ paddingRight: 8 }}>
+              <ItemMenuActions theme={theme} disabled={actionsDisabled} actions={actions} />
+            </View>
+          ) : null}
         </View>
+        <View style={{ height: 1, backgroundColor: c.border }} />
+        <ScrollView keyboardShouldPersistTaps="handled" style={{ flexShrink: 1 }} contentContainerStyle={{ padding: 16, gap: 16 }}>
+          {children}
+        </ScrollView>
       </View>
-    </NativeModal>
+    </View>
   );
 }
 
@@ -1477,6 +1506,8 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const agentMenuChat = agents.find(({ agent }) =>
     agent.id === agentMenuId && agent.workspaceId && !agent.archivedAt && !agent.internal,
   )?.agent;
+  const hqWindowOpen = addModalOpen || Boolean(editingGroup) || Boolean(newArea) || Boolean(editingChat)
+    || Boolean(newAgentWorkspaceId) || Boolean(agentMenuChat) || Boolean(terminalMenuItem) || panelSettingsOpen;
 
   const currentProjectGroup = useMemo(
     () => (editingChat ? allGroups.find((g) => g.id === editingChat.projectId) ?? null : null),
@@ -2737,6 +2768,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
         </ScrollView>
       ) : null}
 
+      <HqModalLayer visible={hqWindowOpen}>
       {/* Модальное окно добавления проекта */}
       <HqModal theme={theme}
         title="Добавить проект"
@@ -4205,6 +4237,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           </View>
         </HqModal.Content>
       </HqModal>
+      </HqModalLayer>
     </View>
   );
 }
