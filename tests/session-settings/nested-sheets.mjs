@@ -284,7 +284,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await page.getByLabel(`Ветка области ${wtBranch}`).waitFor();
           await capture("area-branch-badge");
           await page.getByLabel(`Ветка области ${wtBranch}`).click();
-          await page.getByText("Информация о ветке", { exact: true }).waitFor();
+          await page.getByText("Рабочая папка", { exact: true }).waitFor();
           await page.getByText("Worktree", { exact: true }).waitFor();
           await page.getByText(wtPath, { exact: true }).waitFor();
           await button("Скопировать название ветки").click();
@@ -292,12 +292,16 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await button("Скопировать путь области").click();
           assert.equal(await page.evaluate(() => navigator.clipboard.readText()), wtPath);
           await page.keyboard.press("Escape");
-          await page.getByText("Информация о ветке", { exact: true }).waitFor({ state: "hidden" });
+          await page.getByText("Рабочая папка", { exact: true }).waitFor({ state: "hidden" });
           assert.equal(await button(`Сессии области ${wtTitle}`).getAttribute("aria-expanded"), "true");
 
           await writeFile(join(wtPath, "dirty.txt"), "uncommitted");
           await button(`Действия области ${wtTitle}`).click();
-          await page.getByText(new RegExp(`^Worktree на ветке ${wtBranch}`)).waitFor();
+          assert.equal(await button("Настройки области").count(), 0);
+          await button("Скопировать название ветки").click();
+          assert.equal(await clipboard(), wtBranch);
+          await button("Скопировать путь области").click();
+          assert.equal(await clipboard(), wtPath);
           await button("Архивировать область").click();
           await page.getByText("Незакоммиченные изменения: 1", { exact: true }).waitFor();
           await capture("archive-worktree");

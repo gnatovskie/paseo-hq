@@ -1362,6 +1362,30 @@ function ItemMenuActions({ actions, theme, disabled }: {
   );
 }
 
+function BranchInformation({ branch, path, kind, theme }: { branch: string; path: string; kind?: "project" | "worktree"; theme: PluginTheme }) {
+  const c = theme.colors;
+  const toast = useToast();
+  const copy = async (value: string, label: string) => {
+    try {
+      await copyText(value);
+      toast.show(`${label} скопирован${label === "Ветка" ? "а" : ""}`, { variant: "info" });
+    } catch {
+      toast.error(`Не удалось скопировать ${label === "Ветка" ? "ветку" : "путь"}`);
+    }
+  };
+  return <View style={{ gap: 12 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+            <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>Рабочая папка</Text>
+            {kind ? <Text style={{ color: c.foregroundMuted, fontSize: 10, paddingHorizontal: 7, paddingVertical: 4, borderRadius: 6, backgroundColor: c.surface2 }}>{kind === "worktree" ? "Worktree" : "Папка проекта"}</Text> : null}
+          </View>
+          {[{ label: "Ветка", value: branch, icon: "GitBranch" }, { label: "Папка области", value: path, icon: "Folder" }].map((item) => <View key={item.label} style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <Icon name={item.icon} size={15} color={c.foregroundMuted} />
+            <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={{ color: c.foregroundMuted, fontSize: 11 }}>{item.label}</Text><Text selectable style={{ color: c.foreground, fontSize: 12 }} numberOfLines={2}>{item.value}</Text></View>
+            <Pressable accessibilityRole="button" accessibilityLabel={`Скопировать ${item.label === "Ветка" ? "название ветки" : "путь области"}`} onPress={() => void copy(item.value, item.label === "Ветка" ? "Ветка" : "Путь")} style={({ pressed }) => ({ padding: 7, borderRadius: 7, backgroundColor: pressed ? c.surface2 : "transparent" })}><Icon name="Copy" size={15} color={c.foregroundMuted} /></Pressable>
+          </View>)}
+  </View>;
+}
+
 function AreaBranchBadge({ branch, path, kind, theme }: { branch: string; path: string; kind?: "project" | "worktree"; theme: PluginTheme }) {
   const c = theme.colors;
   const toast = useToast();
@@ -1374,14 +1398,6 @@ function AreaBranchBadge({ branch, path, kind, theme }: { branch: string; path: 
     document.addEventListener("keydown", close);
     return () => document.removeEventListener("keydown", close);
   }, [position]);
-  const copy = async (value: string, label: string) => {
-    try {
-      await copyText(value);
-      toast.show(`${label} скопирован${label === "Ветка" ? "а" : ""}`, { variant: "info" });
-    } catch {
-      toast.error(`Не удалось скопировать ${label === "Ветка" ? "ветку" : "путь"}`);
-    }
-  };
   const popupWidth = Math.min(320, width - 24);
   return <>
     <Pressable ref={anchor} accessibilityRole="button" accessibilityLabel={`Ветка области ${branch}`}
@@ -1400,15 +1416,7 @@ function AreaBranchBadge({ branch, path, kind, theme }: { branch: string; path: 
       <View style={{ flex: 1 }}>
         <Pressable accessibilityLabel="Закрыть информацию о ветке" onPress={() => setPosition(null)} style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }} />
         {position ? <View style={{ position: "absolute", left: position.x, top: position.y, width: popupWidth, padding: 14, gap: 14, borderRadius: 12, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface1, shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 14, shadowOffset: { width: 0, height: 5 }, elevation: 8 }}>
-          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-            <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>Информация о ветке</Text>
-            {kind ? <Text style={{ color: c.foregroundMuted, fontSize: 10, paddingHorizontal: 7, paddingVertical: 4, borderRadius: 6, backgroundColor: c.surface2 }}>{kind === "worktree" ? "Worktree" : "Папка проекта"}</Text> : null}
-          </View>
-          {[{ label: "Ветка", value: branch, icon: "GitBranch" }, { label: "Папка области", value: path, icon: "Folder" }].map((item) => <View key={item.label} style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-            <Icon name={item.icon} size={15} color={c.foregroundMuted} />
-            <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={{ color: c.foregroundMuted, fontSize: 11 }}>{item.label}</Text><Text selectable style={{ color: c.foreground, fontSize: 12 }} numberOfLines={2}>{item.value}</Text></View>
-            <Pressable accessibilityRole="button" accessibilityLabel={`Скопировать ${item.label === "Ветка" ? "название ветки" : "путь области"}`} onPress={() => void copy(item.value, item.label === "Ветка" ? "Ветка" : "Путь")} style={({ pressed }) => ({ padding: 7, borderRadius: 7, backgroundColor: pressed ? c.surface2 : "transparent" })}><Icon name="Copy" size={15} color={c.foregroundMuted} /></Pressable>
-          </View>)}
+          <BranchInformation branch={branch} path={path} kind={kind} theme={theme} />
         </View> : null}
       </View>
     </NativeModal>
@@ -1553,7 +1561,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   // Панель области и ее настройки
   const [editingChatId, setEditingChatId] = useState<string | null>(null);
   const [areaSessionFilter, setAreaSessionFilter] = useState<(typeof AREA_SESSION_FILTERS)[number]["value"]>("all");
-  const [areaSettingsPanel, setAreaSettingsPanel] = useState<"branch" | null>(null);
   const [draftChatTitle, setDraftChatTitle] = useState<string | null>(null);
   const [draftTitleSelection, setDraftTitleSelection] = useState<{ start: number; end: number }>();
   const draftTitleRevision = useRef(0);
@@ -1563,7 +1570,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const areaTitleInput = useRef<React.ElementRef<typeof TextInput>>(null);
   const [areaSettings, setAreaSettings] = useState<z.infer<typeof areaSettingsRpc.output> | null>(null);
   const [areaSettingsError, setAreaSettingsError] = useState<string | null>(null);
-  const [savingAreaSettings, setSavingAreaSettings] = useState(false);
   const [suggestingTitle, setSuggestingTitle] = useState(false);
   const [agentMenuId, setAgentMenuId] = useState<string | null>(null);
   const [draftAgentTitle, setDraftAgentTitle] = useState<string | null>(null);
@@ -1590,7 +1596,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const [transferArchiveOriginal, setTransferArchiveOriginal] = useState<boolean>(true);
   const [transferIncludeHistory, setTransferIncludeHistory] = useState<boolean>(true);
   const [transferringChat, setTransferringChat] = useState<boolean>(false);
-  const chatMutationPending = savingChat || transferringChat || savingAreaSettings;
+  const chatMutationPending = savingChat || transferringChat;
 
   const c = theme.colors;
   const isWeb = layout.platform === "web" && typeof (globalThis as { document?: unknown }).document !== "undefined";
@@ -2344,7 +2350,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     setAreaSettingsError(null);
     setEditingChatId(chat.id);
     setAreaSessionFilter("all");
-    setAreaSettingsPanel(null);
     setAgentMenuId(null);
     setChatTransferOpen(false);
     updateDraftChatTitle(null);
@@ -2352,21 +2357,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     setTransferTargetProjectId(others[0]?.id || "");
     setTransferArchiveOriginal(true);
     setTransferIncludeHistory(true);
-  };
-
-  const handleSaveAreaSettings = async (change: { defaultBranch: string | null }) => {
-    if (!editingChat || chatMutationPending) return;
-    const workspaceId = editingChat.id;
-    setSavingAreaSettings(true);
-    try {
-      const settings = await readAreaSettings({ workspaceId, ...change });
-      setAreaSettings(settings);
-
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Не удалось сохранить настройки области");
-    } finally {
-      setSavingAreaSettings(false);
-    }
   };
 
   const handleTransferChat = async () => {
@@ -4097,11 +4087,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                 .catch(() => toast.error("Не удалось скопировать путь"));
             },
           },
-          ...(editingChat.projectKind === "git" ? [{
-            label: "Настройки области", icon: "Settings",
-            disabled: chatMutationPending,
-            onPress: () => setAreaSettingsPanel("branch"),
-          }] : []),
           {
             label: "Перенести в проект", icon: "ArrowRightLeft",
             disabled: chatMutationPending,
@@ -4172,10 +4157,15 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                     />
                   )}
                 </View>
-                {serverState.areaWorktrees[editingChat.id] ? (
-                  <Text numberOfLines={1} ellipsizeMode="middle" selectable style={{ color: c.foregroundMuted, fontSize: 11 }}>
-                    Worktree на ветке {serverState.areaWorktrees[editingChat.id]!.branch}: {serverState.areaWorktrees[editingChat.id]!.path}
-                  </Text>
+                {editingChat.projectKind === "git" ? (
+                  <View style={{ marginTop: 8, padding: 12, borderRadius: 9, borderWidth: 1, borderColor: c.border }}>
+                    <BranchInformation
+                      branch={areaBranches[editingChat.id] ?? areaSettings?.currentBranch ?? "Ветка не определена"}
+                      path={editingChat.workspaceDirectory}
+                      kind={areaCheckoutKinds[editingChat.id]}
+                      theme={theme}
+                    />
+                  </View>
                 ) : null}
               </View>
 
@@ -4366,42 +4356,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           }}
         />
       ) : null}
-
-      <HqModal theme={theme}
-        narrow
-        title="Настройки области"
-        open={Boolean(editingChat && areaSettingsPanel === "branch")}
-        onOpenChange={(open) => {
-          if (!open) setAreaSettingsPanel(null);
-        }}
-      >
-        <HqModal.Content>
-          {editingChat?.projectKind === "git" ? (
-            <View style={{ padding: 12, borderRadius: 12, backgroundColor: c.surface2, borderWidth: 1, borderColor: c.border }}>
-              {areaSettings ? (
-                <SettingsSelect
-                  label="Ветка по умолчанию"
-                  hint="Рабочая папка общая для агентов области. Перед созданием агента переключите область на выбранную ветку."
-                  value={areaSettings.defaultBranch ?? ""}
-                  options={[
-                    { value: "", label: areaSettings.currentBranch ? `Текущая ветка · ${areaSettings.currentBranch}` : "Текущий checkout" },
-                    ...Array.from(new Set([
-                      ...areaSettings.branches,
-                      ...(areaSettings.defaultBranch ? [areaSettings.defaultBranch] : []),
-                    ])).map((branch) => ({ value: branch, label: branch })),
-                  ]}
-                  disabled={chatMutationPending}
-                  onValueChange={(value) => void handleSaveAreaSettings({ defaultBranch: value || null })}
-                />
-              ) : (
-                <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>
-                  {areaSettingsError ?? "Загружаю настройки области…"}
-                </Text>
-              )}
-            </View>
-          ) : null}
-        </HqModal.Content>
-      </HqModal>
 
       <ActionSheet
         narrow

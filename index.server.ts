@@ -783,10 +783,6 @@ export default function contribute(server: PluginServerContext) {
     const selected = snapshot.entries.some(entry => entry.enabled && entry.status === "ready"
       && (entry.models ?? []).some(option => option.isSelectable !== false && `${entry.provider}/${option.id}` === model));
     if (!selected) throw new Error("Выбранная модель недоступна в этой области");
-    const branch = (await readStored()).areaPreferences[workspaceId]?.defaultBranch;
-    if (branch && await currentGitBranch(area.workspaceDirectory) !== branch) {
-      throw new Error(`Переключите область на ветку «${branch}», чтобы создать агента`);
-    }
     const agent = await paseo.workspaces.ref(area).agents.create({ config: { provider: model }, title: title || undefined });
     return { agentId: agent.id };
   });
