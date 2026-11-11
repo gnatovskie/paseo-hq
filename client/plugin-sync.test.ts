@@ -1,12 +1,12 @@
 import { it, expect, vi } from 'vitest';
 import { syncPlugin } from './plugin-sync';
 const complete = { state: 'complete' as const, success: true, updated: true, message: 'done' };
-it('recovers the worker result when replacement interrupts the start and status RPCs', async () => {
+it.each(['Plugin stopped: paseo-hq', 'Plugin is not available: paseo-hq'])('recovers after replacement: %s', async (message) => {
   vi.useFakeTimers();
   const calls: string[] = [];
   const rpc = async ({ action }: { action: string }) => {
     calls.push(action);
-    if (calls.length <= 2) throw new Error('Plugin stopped: paseo-hq');
+    if (calls.length <= 2) throw new Error(message);
     return complete;
   };
   try {

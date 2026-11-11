@@ -1,6 +1,6 @@
 type Result = { state: 'running' | 'complete' | 'failed'; success: boolean; updated: boolean; message: string; details?: string };
 type Rpc = (input: { action: 'start' | 'status'; jobId: string }) => Promise<Result>;
-const restarting = (error: unknown) => /Plugin stopped|Plugin .*not running|Plugin .*not found|Unknown plugin/i.test(String(error));
+const restarting = (error: unknown) => /Plugin stopped|Plugin .*not running|Plugin is not available: paseo-hq|Plugin .*not found|Unknown plugin/i.test(String(error));
 
 export async function syncPlugin(rpc: Rpc, jobId: string): Promise<Result> {
   const deadline = Date.now() + 240_000;
