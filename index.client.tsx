@@ -987,52 +987,9 @@ function orderAreaSessions(
   return [...pinnedItems, ...items.filter(item => !pinned[item.id])];
 }
 
-function PriorityField({ label, value, pinned, theme, onSave }: { label: string; value: number; pinned: boolean; theme: PluginTheme; onSave: (value: number) => void }) {
-  const [draft, setDraft] = useState(String(value));
-  const [invalid, setInvalid] = useState(false);
-  useEffect(() => { setDraft(String(value)); }, [value]);
-  return <View style={{ paddingVertical: 8, gap: 4 }}>
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-      {pinned ? <Icon name="Pin" size={14} color={theme.colors.accent} /> : null}
-      <Text numberOfLines={2} style={{ flex: 1, color: theme.colors.foreground, fontSize: 13 }}>{label}</Text>
-      <TextInput accessibilityLabel={`Приоритет: ${label}`} value={draft} editable={!pinned}
-        keyboardType="numbers-and-punctuation" onChangeText={text => { setDraft(text); setInvalid(false); }}
-        onBlur={() => {
-          const text = draft.trim().replace(",", ".");
-          const number = Number(text);
-          if (!text || !Number.isFinite(number)) { setInvalid(true); return; }
-          setDraft(String(number));
-          if (number !== value) onSave(number);
-        }} style={{ width: 76, minHeight: 36, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
-          borderWidth: 1, borderColor: invalid ? theme.colors.statusDanger : theme.colors.border,
-          backgroundColor: theme.colors.surface1, color: theme.colors.foreground, textAlign: "center", fontSize: 14, opacity: pinned ? 0.45 : 1 }} />
-    </View>
-    {invalid ? <Text style={{ fontSize: 11, color: theme.colors.statusDanger }}>Введите число</Text> : null}
-  </View>;
-}
-
-function SortingSettings({ label, enabled, disabled, onToggle, theme, children }: { label: string; enabled: boolean; disabled?: boolean; onToggle: (enabled: boolean) => void; theme: PluginTheme; children: React.ReactNode }) {
-  const c = theme.colors;
-  return <View style={{ borderWidth: 1, borderColor: c.border, borderRadius: 12, overflow: "hidden", backgroundColor: c.surface1 }}>
-    <View style={{ padding: 12, gap: 5 }}>
-      <SettingsSwitch label={label} value={enabled} disabled={disabled} onValueChange={onToggle} />
-      <Text style={{ color: c.foregroundMuted, fontSize: 11, lineHeight: 16 }}>
-        {enabled ? "Порядок меняется по выбранной активности" : "Порядок задается приоритетами"}
-      </Text>
-    </View>
-    <View style={{ padding: 12, gap: 6, backgroundColor: c.surface2, borderTopWidth: 1, borderColor: c.border }}>
-      {children}
-      <View style={{ flexDirection: "row", gap: 6, alignItems: "center", marginTop: 4 }}>
-        <Icon name="Pin" size={12} color={c.foregroundMuted} />
-        <Text style={{ flex: 1, color: c.foregroundMuted, fontSize: 11, lineHeight: 16 }}>Закрепленные всегда сверху, последнее закрепление первым.</Text>
-      </View>
-    </View>
-  </View>;
-}
-
 function SortBasisPicker({ value, onChange, onCreated, theme, disabled = false }: { onCreated?: () => void; disabled?: boolean; value: "prompt" | "reply" | "created"; onChange: (value: "prompt" | "reply") => void; theme: PluginTheme }) {
   return <View style={{ gap: 7 }}><Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>Сортировать по:</Text>
-    {([{ value: "prompt", label: "Последнему промпту", detail: "Когда отправлено новое сообщение", icon: "MessageSquare" }, { value: "reply", label: "Последнему финальному ответу агента", detail: "Когда агент завершил ответ", icon: "CheckCheck" }, ...(onCreated ? [{ value: "created", label: "Дате создания", detail: "Новые области выше", icon: "Calendar" }] as const : [])] as const).map(option =>
+    {([{ value: "prompt", label: "Последнему промпту", detail: "Когда отправлено новое сообщение", icon: "MessageSquare" }, { value: "reply", label: "Последнему финальному ответу агента", detail: "Когда агент завершил ответ", icon: "CheckCheck" }, ...(onCreated ? [{ value: "created", label: "Дате создания", detail: "Новые выше", icon: "Calendar" }] as const : [])] as const).map(option =>
       <Pressable key={option.value} disabled={disabled} accessibilityRole="radio" aria-checked={value === option.value} accessibilityState={{ checked: value === option.value }} accessibilityLabel={option.label}
         onPress={() => option.value === "created" ? onCreated?.() : onChange(option.value)} style={{ padding: 10, borderRadius: 9, borderWidth: 1, borderColor: value === option.value ? theme.colors.accent : theme.colors.border, flexDirection: "row", alignItems: "center", gap: 9, backgroundColor: theme.colors.surface1 }}>
         <Icon name={option.icon} size={16} color={value === option.value ? theme.colors.accent : theme.colors.foregroundMuted} />
@@ -2499,6 +2456,15 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     } finally {
       setSavingPanelSettings(false);
     }
+  };
+
+  const handleProjectSort = async (projectsSortBy: "prompt" | "reply" | "created") => {
+    setSavingPanelSettings(true);
+    try {
+      setServerState(await updatePanelSettings({ projectsSortMode: "auto", projectsSortBy, projectIds: projects.map(project => project.projectId) }));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Не удалось сохранить сортировку");
+    } finally { setSavingPanelSettings(false); }
   };
 
   const handleToggleHostMetrics = async (enabled: boolean) => {
@@ -4921,26 +4887,12 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
             <EditableName theme={theme} value={draftHeaderTitle} onChange={setDraftHeaderTitle}
               onBlur={() => void handleSaveHeaderTitle()} disabled={savingPanelSettings}
               label="Название панели" caption="Название панели" editLabel="Редактировать название панели" placeholder="Штаб" />
-            <SortingSettings label="Автосортировка проектов" theme={theme} enabled={serverState.projectsSortMode === "auto"}
-              disabled={savingPanelSettings} onToggle={enabled => {
-                setSavingPanelSettings(true);
-                void updatePanelSettings({ projectsSortMode: enabled ? "auto" : "manual", projectIds: projects.map(p => p.projectId) })
-                  .then(setServerState).catch(error => toast.error(error instanceof Error ? error.message : "Не удалось сохранить сортировку"))
-                  .finally(() => setSavingPanelSettings(false));
-              }}>
-              {serverState.projectsSortMode === "auto" ? <SortBasisPicker theme={theme} value={serverState.projectsSortBy} onChange={projectsSortBy => {
-                void updatePanelSettings({ projectsSortBy, projectIds: projects.map(p => p.projectId) })
-                  .then(setServerState).catch(error => toast.error(error instanceof Error ? error.message : "Не удалось сохранить сортировку"));
-              }} /> : <>
-                <Text style={{ color: c.foregroundMuted, fontSize: 11, lineHeight: 16 }}>Большее число выше. При равенстве - новые выше. По умолчанию 10.</Text>
-                {allGroups.map(group => <PriorityField key={group.id} theme={theme} label={group.name} value={group.meta.priority}
-                  pinned={group.meta.pinned} onSave={priority => {
-                    void saveProject({ projectId: group.id, priority }).then(updated => {
-                      setServerState(prev => ({ ...prev, projects: { ...prev.projects, [group.id]: updated.projects[group.id]! } }));
-                    }).catch(error => toast.error(error instanceof Error ? error.message : "Не удалось сохранить приоритет"));
-                  }} />)}
-              </>}
-            </SortingSettings>
+            <View style={{ padding: 12, borderRadius: 12, backgroundColor: c.surface2 }}>
+              <SortBasisPicker theme={theme} disabled={savingPanelSettings}
+                value={serverState.projectsSortMode === "manual" ? "created" : serverState.projectsSortBy}
+                onChange={basis => void handleProjectSort(basis)}
+                onCreated={() => void handleProjectSort("created")} />
+            </View>
             <View style={{ padding: 12, gap: 12, borderRadius: 12, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface2 }}>
               <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>Автогенерация названий</Text>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>

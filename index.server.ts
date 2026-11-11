@@ -124,7 +124,7 @@ interface StoredData {
   projectsSortMode: "auto" | "manual";
   projectOrder: string[];
   projectAddedAt: Record<string, number>;
-  projectsSortBy: "prompt" | "reply";
+  projectsSortBy: "prompt" | "reply" | "created";
 }
 
 let writeQueue: Promise<unknown> = Promise.resolve();
@@ -205,7 +205,7 @@ async function readStored(): Promise<StoredData> {
       showHostMetrics: typeof raw.showHostMetrics === "boolean" ? raw.showHostMetrics : true,
       headerTitle: typeof raw.headerTitle === "string" && raw.headerTitle.trim() ? raw.headerTitle.trim() : "Штаб",
       projectAddedAt: parseNumberMap(raw.projectAddedAt),
-      projectsSortBy: raw.projectsSortBy === "reply" ? "reply" : "prompt",
+      projectsSortBy: raw.projectsSortBy === "reply" || raw.projectsSortBy === "created" ? raw.projectsSortBy : "prompt",
       projectsSortMode: raw.projectsSortMode === "manual" ? "manual" : "auto",
       projectOrder: Array.isArray(raw.projectOrder)
         ? raw.projectOrder.filter((x): x is string => typeof x === "string")
