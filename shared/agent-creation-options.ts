@@ -6,6 +6,11 @@ export function agentCreationOptions(
   selection: string | null,
   preferred: Pick<PaseoAgentConfig, "modeId" | "thinkingOptionId">,
 ) {
+  // Until the catalog arrives, the inherited model keeps its known settings.
+  // Model changes are only offered once the catalog can validate compatibility.
+  if (!entries.length && selection) return {
+    modes: [], thinkingOptions: [], modeId: preferred.modeId, thinkingOptionId: preferred.thinkingOptionId,
+  };
   const provider = entries.find(entry => selection?.startsWith(`${entry.provider}/`));
   const model = provider?.models?.find(model => `${provider.provider}/${model.id}` === selection);
   const modes = provider?.modes ?? [];

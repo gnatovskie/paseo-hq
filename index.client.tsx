@@ -1271,7 +1271,7 @@ function NewSessionWindow({ theme, title, open, onClose, narrow, kind, onKindCha
   onSubmit: () => void;
 }) {
   const c = theme.colors;
-  const disabled = busy || (kind === "agent" && (!model || agentOptions.loading));
+  const disabled = busy || (kind === "agent" && !model);
   const field = { borderRadius: 9, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface2 } as const;
   const kindActions: SheetAction[] = [
     { label: "Агент", icon: "Bot", selected: kind === "agent", onPress: () => onKindChange("agent") },
@@ -1347,7 +1347,7 @@ function NewSessionWindow({ theme, title, open, onClose, narrow, kind, onKindCha
         )}
         {kind === "agent" ? (
           <View style={{ gap: 12 }}>
-            {agentOptions.loading ? <Text style={{ color: c.foregroundMuted }}>Загружаю настройки модели...</Text> : <>
+            {agentOptions.loading ? <Text style={{ color: c.foregroundMuted }}>Настройки загружаются в фоне. Можно создать агента с настройками последней сессии.</Text> : <>
               <NewAgentOption theme={theme} label="Permissions" options={agentOptions.modes}
                 value={agentOptions.modeId} onChange={agentOptions.onModeChange} disabled={busy}
                 fallback="Провайдер не предоставляет выбор" />

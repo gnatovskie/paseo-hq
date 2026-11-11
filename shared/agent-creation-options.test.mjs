@@ -29,3 +29,8 @@ test('provider changes reset incompatible options and support slash-containing m
 test('missing selection or loading catalog does not invent options', () => {
   assert.deepEqual(agentCreationOptions([], 'codex/a', {}), { modes: [], thinkingOptions: [], modeId: undefined, thinkingOptionId: undefined });
 });
+test('pending catalog preserves inherited settings for immediate creation', () => {
+  const result = agentCreationOptions([], 'codex/a', { modeId: 'full', thinkingOptionId: 'low' });
+  assert.equal(result.modeId, 'full');
+  assert.equal(result.thinkingOptionId, 'low');
+});
