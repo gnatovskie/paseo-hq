@@ -254,8 +254,8 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           timings.push({ name: `${width}px: create to message input`, metrics: { milliseconds: Math.round(performance.now() - createStarted) }, status: 'passed' });
           await writeFile(join(output, 'creation-timings.json'), JSON.stringify(timings, null, 2));
           await capture('created-agent-ready');
-          // Native HQ uses this workspace deep link instead of mounting a plugin screen.
-          // Exercise the same host route and ensure it selects the created agent.
+          // Also verify the host supports opening the created agent from an external link.
+          // HQ itself uses host navigation to dismiss the mobile sidebar.
           const hostId = new URL(page.url()).pathname.split('/')[2];
           assert(hostId, 'created agent has a host route');
           await page.goto(`http://${endpoint}/h/${hostId}/workspace/${encodeURIComponent(workspace.id)}?open=${encodeURIComponent(`agent:${created.agent.id}`)}`);

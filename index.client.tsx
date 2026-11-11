@@ -1654,6 +1654,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const [areaSettingsError, setAreaSettingsError] = useState<string | null>(null);
   const [suggestingTitle, setSuggestingTitle] = useState(false);
   const [agentMenuId, setAgentMenuId] = useState<string | null>(null);
+  const closingAgentIds = useRef(new Set<string>());
   const [draftAgentTitle, setDraftAgentTitle] = useState<string | null>(null);
   const [suggestingAgentTitle, setSuggestingAgentTitle] = useState(false);
   const terminalNameInput = useRef<React.ElementRef<typeof TextInput>>(null);
@@ -1993,12 +1994,9 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     [openScreen],
   );
 
-  const jumpToAgent = async (agentId: string, workspaceId?: string) => {
-    const destination = workspaceId ?? agents.find(entry => entry.agent.id === agentId)?.agent.workspaceId ?? undefined;
+  const jumpToAgent = async (agentId: string) => {
     try {
-      await openAgentTab({ agentId, workspaceId: destination, hostId: host.id, platform: layout.platform }, {
-        openURL: url => Linking.openURL(url), openScreen,
-      });
+      await openAgentTab({ agentId }, { openScreen });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Не удалось открыть чат агента");
     }
@@ -2081,7 +2079,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       setEditingChatId((current) => current === workspaceId ? null : current);
       setNewAgentWorkspaceId(null);
       setNewArea(null);
-      await jumpToAgent(agentId, workspaceId);
+      await jumpToAgent(agentId);
       void reloadAll();
     } catch (error) {
       clearProviders(paseo);
@@ -2596,24 +2594,30 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     const workspaceId = agentMenuChat?.workspaceId;
     if (!workspaceId || !agentMenuChat || chatMutationPending) return;
     const agentId = agentMenuChat.id;
-    const result = {
-      reload: "Агент перезагружен",
-      close: "Агент закрыт",
-    };
+    if (action === "close") {
+      if (closingAgentIds.current.has(agentId)) return;
+      closingAgentIds.current.add(agentId);
+      // Only this agent is closing. Keep the sidebar usable during daemon cleanup.
+      setAgentMenuId(null);
+      try {
+        await paseo.agents.ref(agentId).archive();
+        setAgents(entries => entries.filter(entry => entry.agent.id !== agentId));
+        void queryClient.invalidateQueries({ queryKey: ["hq-closed-agents", host.id, workspaceId] });
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Не удалось закрыть агента");
+      } finally {
+        closingAgentIds.current.delete(agentId);
+      }
+      return;
+    }
     setSavingChat(true);
     try {
-      if (action === "reload") {
-        await paseo.agents.ref(agentId).reload();
-      } else if (action === "close") {
-        await paseo.agents.ref(agentId).archive();
-        void queryClient.invalidateQueries({ queryKey: ["hq-closed-agents", host.id, workspaceId] });
-      }
+      await paseo.agents.ref(agentId).reload();
       await reloadAll();
       setAgentMenuId(null);
-      toast.show(result[action], { variant: "success" });
+      toast.show("Агент перезагружен", { variant: "success" });
     } catch (err) {
-      const fallback = action === "close" ? "Не удалось закрыть агента" : "Не удалось обновить агента";
-      toast.error(err instanceof Error ? err.message : fallback);
+      toast.error(err instanceof Error ? err.message : "Не удалось обновить агента");
     } finally {
       setSavingChat(false);
     }
