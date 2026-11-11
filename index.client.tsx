@@ -1029,7 +1029,8 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   // Панель области и ее настройки
   const [editingChatId, setEditingChatId] = useState<string | null>(null);
   const [areaSettingsOpen, setAreaSettingsOpen] = useState(false);
-  const [draftChatTitle, setDraftChatTitle] = useState("");
+  const [draftChatTitle, setDraftChatTitle] = useState<string | null>(null);
+  const draftTitleRevision = useRef(0);
   const [savingChat, setSavingChat] = useState(false);
   const [areaSettings, setAreaSettings] = useState<z.infer<typeof areaSettingsRpc.output> | null>(null);
   const [areaSettingsError, setAreaSettingsError] = useState<string | null>(null);
@@ -1285,7 +1286,8 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const terminalMenuItem = terminals.find((terminal) => terminal.id === terminalMenuId);
   const titleSourceAgent = editingChatEntries[0]?.agent;
   const titleModel = editingChat ? serverState.projects[editingChat.projectId]?.sessionTitleModel : null;
-  const canSuggestTitle = Boolean(titleModel && titleSourceAgent) && !suggestingTitle && !chatMutationPending;
+  const canSuggestTitle = draftChatTitle !== null && Boolean(titleModel && titleSourceAgent)
+    && !suggestingTitle && !chatMutationPending;
   const agentMenuChat = agents.find(({ agent }) =>
     agent.id === agentMenuId && agent.workspaceId && !agent.archivedAt && !agent.internal,
   )?.agent;
@@ -1632,6 +1634,11 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     }
   };
 
+  const updateDraftChatTitle = (value: string | null) => {
+    draftTitleRevision.current += 1;
+    setDraftChatTitle(value);
+  };
+
   const openAreaActions = (chat: PaseoWorkspace) => {
     if (chatMutationPending) return;
     setAreaSettings(null);
@@ -1640,8 +1647,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     setAreaSettingsOpen(false);
     setAgentMenuId(null);
     setChatTransferOpen(false);
-    const agent = latestAgentByWorkspace[chat.id];
-    setDraftChatTitle(chatTitle(chat, agent));
+    updateDraftChatTitle(null);
     const others = allGroups.filter((g) => g.id !== chat.projectId);
     setTransferTargetProjectId(others[0]?.id || "");
     setTransferArchiveOriginal(true);
@@ -1696,14 +1702,13 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   };
 
   const handleRenameChat = async () => {
-    if (!editingChat || chatMutationPending) return;
+    if (!editingChat || draftChatTitle === null || chatMutationPending) return;
     setSavingChat(true);
     try {
       const nextTitle = draftChatTitle.trim() || null;
-      const { title } = await paseo.workspaces.ref(editingChat.id).setTitle(nextTitle);
-      setDraftChatTitle(chatTitle({ ...editingChat, title }, editingChatAgent));
+      await paseo.workspaces.ref(editingChat.id).setTitle(nextTitle);
       await reloadAll();
-      setAreaSettingsOpen(false);
+      updateDraftChatTitle(null);
       toast.show("Название области обновлено", { variant: "success" });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Не удалось переименовать область");
@@ -1715,6 +1720,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   // Предлагает название моделью проекта по последнему промпту и ответу; сохраняет Руслан.
   const handleSuggestTitle = async () => {
     if (!editingChat || !titleSourceAgent || !canSuggestTitle) return;
+    const revision = draftTitleRevision.current;
     setSuggestingTitle(true);
     try {
       const { title } = await suggestSessionTitle({
@@ -1722,7 +1728,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
         agentId: titleSourceAgent.id,
         projectId: editingChat.projectId,
       });
-      setDraftChatTitle(title);
+      if (draftTitleRevision.current === revision) setDraftChatTitle(title);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Не удалось сгенерировать название");
     } finally {
@@ -3118,15 +3124,91 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       </Modal>
 
       <Modal
-        title={editingChat ? chatTitle(editingChat, editingChatAgent) : "Область"}
+        title="Функционал области"
         open={Boolean(editingChat)}
         onOpenChange={(open) => {
-          if (!open) setEditingChatId(null);
+          if (!open) {
+            setEditingChatId(null);
+            updateDraftChatTitle(null);
+          }
         }}
       >
         <Modal.Content>
           {editingChat ? (
             <View style={{ gap: 16 }}>
+              {draftChatTitle === null ? (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <Text style={{ flex: 1, color: c.foreground, fontSize: 16, fontWeight: "600" }}>
+                    {chatTitle(editingChat, editingChatAgent)}
+                  </Text>
+                  <ChatActionButton
+                    label="Редактировать название области"
+                    icon="Pencil"
+                    quiet
+                    disabled={chatMutationPending}
+                    onPress={() => updateDraftChatTitle(chatTitle(editingChat, editingChatAgent))}
+                    theme={theme}
+                  />
+                </View>
+              ) : (
+                <View style={{ gap: 4 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                    <TextInput
+                      accessibilityLabel="Название области"
+                      value={draftChatTitle}
+                      onChangeText={updateDraftChatTitle}
+                      placeholder="Новая область"
+                      placeholderTextColor={c.foregroundMuted}
+                      onSubmitEditing={() => void handleRenameChat()}
+                      editable={!chatMutationPending}
+                      autoFocus
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        paddingHorizontal: 12,
+                        paddingVertical: 10,
+                        borderRadius: 9,
+                        backgroundColor: c.surface1,
+                        borderWidth: 1,
+                        borderColor: c.border,
+                        color: c.foreground,
+                        fontSize: 14,
+                      }}
+                    />
+                    <ChatActionButton
+                      label={suggestingTitle ? "Генерирую название" : "Сгенерировать название"}
+                      icon={suggestingTitle ? "LoaderCircle" : "Sparkles"}
+                      quiet
+                      disabled={!canSuggestTitle}
+                      onPress={() => void handleSuggestTitle()}
+                      theme={theme}
+                    />
+                    <ChatActionButton
+                      label="Сохранить название"
+                      icon="Check"
+                      color={c.accent}
+                      quiet
+                      disabled={chatMutationPending}
+                      onPress={() => void handleRenameChat()}
+                      theme={theme}
+                    />
+                    <ChatActionButton
+                      label="Отменить редактирование названия"
+                      icon="X"
+                      color={c.foregroundMuted}
+                      quiet
+                      disabled={chatMutationPending}
+                      onPress={() => updateDraftChatTitle(null)}
+                      theme={theme}
+                    />
+                  </View>
+                  {!titleModel ? (
+                    <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>
+                      Выбери модель названия в настройках проекта
+                    </Text>
+                  ) : null}
+                </View>
+              )}
               <View style={{ flexDirection: "row", gap: 8 }}>
                 <ChatActionButton
                   label="Новая сессия"
@@ -3274,106 +3356,41 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       >
         <Modal.Content>
           {editingChat && areaSettingsOpen ? (
-            <View style={{ gap: 16 }}>
-              <View
-                style={{
-                  padding: 12,
-                  borderRadius: 12,
-                  backgroundColor: c.surface2,
-                  borderWidth: 1,
-                  borderColor: c.border,
-                  gap: 10,
-                }}
-              >
-                <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Название области</Text>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                  <TextInput
-                    value={draftChatTitle}
-                    onChangeText={setDraftChatTitle}
-                    placeholder="Новая область"
-                    placeholderTextColor={c.foregroundMuted}
-                    onSubmitEditing={() => void handleRenameChat()}
-                    style={{
-                      flex: 1,
-                      minWidth: 0,
-                      paddingHorizontal: 12,
-                      paddingVertical: 10,
-                      borderRadius: 9,
-                      backgroundColor: c.surface1,
-                      borderWidth: 1,
-                      borderColor: c.border,
-                      color: c.foreground,
-                      fontSize: 14,
-                    }}
+            <View style={{ padding: 12, borderRadius: 12, backgroundColor: c.surface2, borderWidth: 1, borderColor: c.border, gap: 8 }}>
+              {areaSettings ? (
+                <>
+                  <SettingsSelect
+                    label="Иконка области"
+                    value={areaSettings.icon ?? ""}
+                    options={[
+                      { value: "", label: "Без иконки" },
+                      ...AREA_ICONS.map((icon) => ({ value: icon, label: icon })),
+                    ]}
+                    disabled={chatMutationPending}
+                    onValueChange={(value) => void handleSaveAreaSettings({ icon: value || null })}
                   />
-                  <ChatActionButton
-                    label={suggestingTitle ? "Генерирую название" : "Сгенерировать название"}
-                    icon={suggestingTitle ? "LoaderCircle" : "Sparkles"}
-                    disabled={!canSuggestTitle}
-                    onPress={() => void handleSuggestTitle()}
-                    theme={theme}
-                  />
-                </View>
-                {!titleModel ? (
-                  <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>
-                    Выбери модель названия в настройках проекта
-                  </Text>
-                ) : null}
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={chatMutationPending}
-                  onPress={() => void handleRenameChat()}
-                  style={({ pressed }) => ({
-                    paddingVertical: 11,
-                    borderRadius: 9,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    backgroundColor: c.accent,
-                    opacity: chatMutationPending ? 0.5 : pressed ? 0.85 : 1,
-                  })}
-                >
-                  <Text style={{ color: "#FFFFFF", fontSize: 14, fontWeight: "600" }}>
-                    Сохранить название
-                  </Text>
-                </Pressable>
-              </View>
-
-              <View style={{ padding: 12, borderRadius: 12, backgroundColor: c.surface2, borderWidth: 1, borderColor: c.border, gap: 8 }}>
-                {areaSettings ? (
-                  <>
+                  {editingChat.projectKind === "git" ? (
                     <SettingsSelect
-                      label="Иконка области"
-                      value={areaSettings.icon ?? ""}
+                      label="Ветка по умолчанию"
+                      hint="Рабочая папка общая для всех сессий. Перед созданием сессии переключите область на выбранную ветку."
+                      value={areaSettings.defaultBranch ?? ""}
                       options={[
-                        { value: "", label: "Без иконки" },
-                        ...AREA_ICONS.map((icon) => ({ value: icon, label: icon })),
+                        { value: "", label: areaSettings.currentBranch ? `Текущая ветка · ${areaSettings.currentBranch}` : "Текущий checkout" },
+                        ...Array.from(new Set([
+                          ...areaSettings.branches,
+                          ...(areaSettings.defaultBranch ? [areaSettings.defaultBranch] : []),
+                        ])).map((branch) => ({ value: branch, label: branch })),
                       ]}
                       disabled={chatMutationPending}
-                      onValueChange={(value) => void handleSaveAreaSettings({ icon: value || null })}
+                      onValueChange={(value) => void handleSaveAreaSettings({ defaultBranch: value || null })}
                     />
-                    {editingChat.projectKind === "git" ? (
-                      <SettingsSelect
-                        label="Ветка по умолчанию"
-                        hint="Рабочая папка общая для всех сессий. Перед созданием сессии переключите область на выбранную ветку."
-                        value={areaSettings.defaultBranch ?? ""}
-                        options={[
-                          { value: "", label: areaSettings.currentBranch ? `Текущая ветка · ${areaSettings.currentBranch}` : "Текущий checkout" },
-                          ...Array.from(new Set([
-                            ...areaSettings.branches,
-                            ...(areaSettings.defaultBranch ? [areaSettings.defaultBranch] : []),
-                          ])).map((branch) => ({ value: branch, label: branch })),
-                        ]}
-                        disabled={chatMutationPending}
-                        onValueChange={(value) => void handleSaveAreaSettings({ defaultBranch: value || null })}
-                      />
-                    ) : null}
-                  </>
-                ) : (
-                  <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>
-                    {areaSettingsError ?? "Загружаю настройки области…"}
-                  </Text>
-                )}
-              </View>
+                  ) : null}
+                </>
+              ) : (
+                <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>
+                  {areaSettingsError ?? "Загружаю настройки области…"}
+                </Text>
+              )}
             </View>
           ) : null}
         </Modal.Content>

@@ -110,6 +110,8 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
         const openArea = () => areaActions.click();
         const settings = button("Настройки области");
         const openSettings = () => settings.click();
+        const editTitle = button("Редактировать название области");
+        const cancelTitle = button("Отменить редактирование названия");
         const areaToggle = button(`Сессии области ${title}`);
         const sidebar = button("Новая область в проекте source").locator("../..");
         const sidebarSession = sidebar.getByRole("button", { name: "Открыть сессию Fixture chat", exact: true });
@@ -129,9 +131,10 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
         const history = page.getByRole("switch", { name: "Перенести историю последней сессии", exact: true });
         const draft = page.getByPlaceholder("Новая область", { exact: true });
         const areaContents = page.getByText("Сессии и терминалы", { exact: true });
+        const settingsHeading = page.getByText("Настройки области", { exact: true });
         const closeSettings = async () => {
           await button("Close").last().click();
-          await draft.waitFor({ state: "hidden" });
+          await settingsHeading.waitFor({ state: "hidden" });
         };
         const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
         const capture = (name) => output && page.screenshot({ path: join(output, `${name}-${width}.png`) });
@@ -218,7 +221,9 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await sidebarTerminal.waitFor({ state: "hidden" });
           await openArea();
           await areaContents.waitFor();
-          assert.equal(await draft.count(), 0, "area actions should open without the settings form");
+          await page.getByText("Функционал области", { exact: true }).waitFor();
+          await editTitle.locator("..").getByText(title, { exact: true }).waitFor();
+          assert.equal(await draft.count(), 0, "the title is read-only until the edit button is pressed");
           assert.equal(await page.getByText("Иконка области", { exact: true }).count(), 0);
           assert.equal(await archive.count(), 0, "transfer options should open only after pressing the icon");
           const actions = ["Закрепить область", "Скопировать путь к папке проекта",
@@ -234,6 +239,8 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           assert(boxes.every((box, index) => box && box.y === boxes[0].y && (!index || box.x > boxes[index - 1].x)));
           const lastAction = boxes.at(-1);
           assert(lastAction.x + lastAction.width <= width);
+          const editBox = await editTitle.boundingBox();
+          assert(editBox.y + editBox.height < boxes[0].y);
           assert(boxes[0].y + boxes[0].height < (await areaContents.boundingBox()).y);
           const chatRows = page.getByRole("button", { name: /^Открыть сессию / });
           assert.equal(await chatRows.count(), 2);
@@ -247,13 +254,19 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           const firstChat = firstChatLabel === "Открыть сессию Fixture chat" ? chat : secondChat;
 
           await openSettings();
-          await draft.waitFor();
-          assert.equal(await draft.inputValue(), title);
+          await settingsHeading.waitFor();
+          assert.equal(await draft.count(), 0, "the title editor belongs in the area panel");
           await button("Иконка области: Без иконки").waitFor();
           await button("Ветка по умолчанию: Текущая ветка · hq-next").waitFor();
+          await button("Иконка области: Без иконки").click({ trial: true });
+          await capture("area-details");
+          await closeSettings();
+          await editTitle.click();
+          await draft.waitFor();
+          assert.equal(await draft.inputValue(), title);
           const generate = button("Сгенерировать название");
           await generate.click({ trial: true });
-          await capture("area-details");
+          await capture("area-title-edit");
           const fieldBox = await draft.boundingBox();
           const generateBox = await generate.boundingBox();
           assert(generateBox.x >= fieldBox.x + fieldBox.width);
@@ -268,7 +281,6 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           assert.equal(JSON.parse(String(generationFrame.payload)).message.input.agentId, firstChat.id);
           await generate.click({ trial: true });
           await draft.fill("Unsaved title");
-          await closeSettings();
 
           assert.equal(await copySessionLink.count(), 0, "copy belongs in the session menu");
           await actions[1].click();
@@ -285,9 +297,10 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await capture("session-transfer");
           await button("Close").last().click();
           await archive.waitFor({ state: "hidden" });
-          await openSettings();
           assert.equal(await draft.inputValue(), "Unsaved title");
-          await closeSettings();
+          await cancelTitle.click();
+          await draft.waitFor({ state: "hidden" });
+          await editTitle.locator("..").getByText(title, { exact: true }).waitFor();
 
           const selectedChat = link.endsWith(`/${chat.id}`) ? secondChat : chat;
           let selectedTitle = selectedChat.id === chat.id ? "Fixture chat" : "Second fixture chat";
@@ -341,13 +354,14 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
 
           if (width === 1280) {
             await openArea();
-            await openSettings();
+            await editTitle.click();
             await draft.fill("  Renamed area fixture  ");
             await button("Сохранить название").click();
             await draft.waitFor({ state: "hidden" });
-            assert(await areaContents.isVisible(), "saving closes settings and returns to the area");
+            assert(await areaContents.isVisible(), "saving closes the inline editor and keeps the area open");
+            await editTitle.locator("..").getByText("Renamed area fixture", { exact: true }).waitFor();
             assert.equal((await workspaceHandle.refresh()).title, "Renamed area fixture");
-            await openSettings();
+            await editTitle.click();
             assert.equal(await draft.inputValue(), "Renamed area fixture");
             await draft.fill(title);
             await button("Сохранить название").click();
