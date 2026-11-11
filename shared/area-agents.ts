@@ -23,9 +23,10 @@ export function groupAreaAgents(entries: readonly AgentEntry[], modes: Record<st
   return map;
 }
 
-export function compareAreaOrder(a: { id: string; createdAt?: string }, b: { id: string; createdAt?: string }, pinned: Record<string, number>, mode: "auto" | "manual", priorities: Record<string, number>, activity: (id: string) => number): number {
+export function compareAreaOrder(a: { id: string; createdAt?: string }, b: { id: string; createdAt?: string }, pinned: Record<string, number>, mode: "auto" | "manual" | "created", priorities: Record<string, number>, activity: (id: string) => number): number {
   const ap = pinned[a.id] || 0, bp = pinned[b.id] || 0;
   if (ap || bp) return bp - ap || a.id.localeCompare(b.id);
+  if (mode === "created") return (Date.parse(b.createdAt ?? "") || 0) - (Date.parse(a.createdAt ?? "") || 0) || a.id.localeCompare(b.id);
   if (mode === "manual") {
     return (priorities[b.id] ?? 10) - (priorities[a.id] ?? 10)
       || (Date.parse(b.createdAt ?? "") || 0) - (Date.parse(a.createdAt ?? "") || 0)

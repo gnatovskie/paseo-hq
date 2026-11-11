@@ -163,7 +163,7 @@ export const projectSaveRpc = defineRpc({
     priority: z.number().finite().optional(),
     sessionTitleModel: z.string().nullable().optional(),
     sessionsSortMode: z.enum(["auto", "manual"]).optional(),
-    areasSortBy: z.enum(["prompt", "reply"]).optional(),
+    areasSortBy: z.enum(["prompt", "reply", "created"]).optional(),
     sessionOrder: z.array(z.string()).optional(),
   }),
   output: sidebarStateSchema,

@@ -11,7 +11,7 @@ export const projectMetaSchema = z.object({
   priority: z.number().finite().default(10),
   sessionTitleModel: z.string().nullable().default(null),
   sessionsSortMode: z.enum(["auto", "manual"]).default("auto"),
-  areasSortBy: z.enum(["prompt", "reply"]).default("prompt"),
+  areasSortBy: z.enum(["prompt", "reply", "created"]).default("prompt"),
   sessionOrder: z.array(z.string()).default([]),
 });
 

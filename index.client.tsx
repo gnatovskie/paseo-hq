@@ -1030,11 +1030,11 @@ function SortingSettings({ label, enabled, disabled, onToggle, theme, children }
   </View>;
 }
 
-function SortBasisPicker({ value, onChange, theme, disabled = false }: { disabled?: boolean; value: "prompt" | "reply"; onChange: (value: "prompt" | "reply") => void; theme: PluginTheme }) {
-  return <View style={{ gap: 7 }}><Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>ПОДНИМАТЬ ВВЕРХ ПО</Text>
-    {([{ value: "prompt", label: "Последнему промпту", detail: "Когда отправлено новое сообщение", icon: "MessageSquare" }, { value: "reply", label: "Последнему финальному ответу агента", detail: "Когда агент завершил ответ", icon: "CheckCheck" }] as const).map(option =>
+function SortBasisPicker({ value, onChange, onCreated, theme, disabled = false }: { onCreated?: () => void; disabled?: boolean; value: "prompt" | "reply" | "created"; onChange: (value: "prompt" | "reply") => void; theme: PluginTheme }) {
+  return <View style={{ gap: 7 }}><Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>Сортировать по:</Text>
+    {([{ value: "prompt", label: "Последнему промпту", detail: "Когда отправлено новое сообщение", icon: "MessageSquare" }, { value: "reply", label: "Последнему финальному ответу агента", detail: "Когда агент завершил ответ", icon: "CheckCheck" }, ...(onCreated ? [{ value: "created", label: "Дате создания", detail: "Новые области выше", icon: "Calendar" }] as const : [])] as const).map(option =>
       <Pressable key={option.value} disabled={disabled} accessibilityRole="radio" aria-checked={value === option.value} accessibilityState={{ checked: value === option.value }} accessibilityLabel={option.label}
-        onPress={() => onChange(option.value)} style={{ padding: 10, borderRadius: 9, borderWidth: 1, borderColor: value === option.value ? theme.colors.accent : theme.colors.border, flexDirection: "row", alignItems: "center", gap: 9, backgroundColor: theme.colors.surface1 }}>
+        onPress={() => option.value === "created" ? onCreated?.() : onChange(option.value)} style={{ padding: 10, borderRadius: 9, borderWidth: 1, borderColor: value === option.value ? theme.colors.accent : theme.colors.border, flexDirection: "row", alignItems: "center", gap: 9, backgroundColor: theme.colors.surface1 }}>
         <Icon name={option.icon} size={16} color={value === option.value ? theme.colors.accent : theme.colors.foregroundMuted} />
         <View style={{ flex: 1, gap: 3 }}>
           <Text style={{ color: theme.colors.foreground, fontSize: 12, fontWeight: value === option.value ? "600" : "400" }}>{option.label}</Text>
@@ -1957,7 +1957,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
         maxPrompt = Math.max(maxPrompt, chatLastPromptMs(ch, agentPromptMap));
       }
 
-      g.chats.sort((a, b) => compareAreaOrder(a, b, pinnedMap, g.meta.sessionsSortMode, serverState.areaPriorities,
+      g.chats.sort((a, b) => compareAreaOrder(a, b, pinnedMap, g.meta.sessionsSortMode === "manual" || g.meta.areasSortBy === "created" ? "created" : "auto", serverState.areaPriorities,
         id => g.meta.areasSortBy === "reply" ? (areaReplyMap[id] || parseIsoMs(g.chats.find(ch => ch.id === id)?.createdAt))
           : chatLastPromptMs(g.chats.find(ch => ch.id === id)!, agentPromptMap)));
 
@@ -2424,7 +2424,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     hidden?: boolean;
     sessionsSortMode?: "auto" | "manual";
     sessionOrder?: string[];
-    areasSortBy?: "prompt" | "reply";
+    areasSortBy?: "prompt" | "reply" | "created";
     pinned?: boolean;
   }) => {
     if (!editingGroup) return false;
@@ -3958,21 +3958,10 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                         : [...editingGroup.meta.hiddenSections, projectSettingsTab] });
                     }}
                   />
-                  {projectSettingsTab === "areas" ? <SortingSettings label="Автосортировка областей" theme={theme}
-                    enabled={editingGroup.meta.sessionsSortMode === "auto"} disabled={savingProject}
-                    onToggle={enabled => { void saveProjectPatch({ sessionsSortMode: enabled ? "auto" : "manual" }); }}>
-                    {editingGroup.meta.sessionsSortMode === "auto" ? <SortBasisPicker theme={theme} disabled={savingProject} value={editingGroup.meta.areasSortBy}
-                      onChange={areasSortBy => { if (!savingProject) void saveProjectPatch({ areasSortBy }); }} /> : <>
-                      <Text style={{ color: c.foregroundMuted, fontSize: 11, lineHeight: 16 }}>Большее число выше. При равенстве - новые выше. По умолчанию 10.</Text>
-                      {editingGroup.chats.length ? editingGroup.chats.map(chat => <PriorityField key={chat.id} theme={theme}
-                        label={chatTitle(chat, latestAgentByWorkspace[chat.id])} value={serverState.areaPriorities[chat.id] ?? 10}
-                        pinned={Boolean(serverState.pinnedSessions[chat.id])} onSave={priority => {
-                          void readAreaSettings({ workspaceId: chat.id, priority }).then(settings => {
-                            setServerState(prev => ({ ...prev, areaPriorities: { ...prev.areaPriorities, [chat.id]: settings.priority } }));
-                          }).catch(error => toast.error(error instanceof Error ? error.message : "Не удалось сохранить приоритет"));
-                        }} />) : <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>В проекте пока нет областей.</Text>}
-                    </>}
-                  </SortingSettings> : null}
+                  {projectSettingsTab === "areas" ? <SortBasisPicker theme={theme} disabled={savingProject}
+                    value={editingGroup.meta.sessionsSortMode === "manual" ? "created" : editingGroup.meta.areasSortBy}
+                    onChange={areasSortBy => { void saveProjectPatch({ areasSortBy, sessionsSortMode: "auto" }); }}
+                    onCreated={() => { void saveProjectPatch({ areasSortBy: "created", sessionsSortMode: "auto" }); }} /> : null}
                 </View>
               </View>
 

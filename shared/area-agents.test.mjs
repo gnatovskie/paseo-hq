@@ -50,3 +50,9 @@ test("manual area priorities allow arbitrary finite numbers, ties use newest cre
  const order = entries.sort((a,b) => compareAreaOrder(a,b,{},"manual",priorities,()=>999)).map(e=>e.id);
  assert.deepEqual(order, ["high","new","old","low"]);
 });
+
+test("creation sorting ignores priority and activity but respects pinned order", () => {
+ const entries = [{ id: "old", createdAt: at(1) }, { id: "new", createdAt: at(2) }, { id: "pin", createdAt: at(0) }];
+ const order = entries.sort((a,b) => compareAreaOrder(a,b,{pin:1},"created",{old:9999},()=>999)).map(e=>e.id);
+ assert.deepEqual(order, ["pin","new","old"]);
+});
