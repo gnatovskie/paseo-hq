@@ -1,3 +1,4 @@
+import { syncPlugin } from "./client/plugin-sync";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -1410,7 +1411,10 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     setSyncingPlugin(true);
     setSyncResult(null);
     try {
-      const res = await syncPluginRpc({});
+      const res = await syncPlugin(syncPluginRpc, "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => {
+        const value = Math.floor(Math.random() * 16);
+        return (c === "x" ? value : (value & 3) | 8).toString(16);
+      }));
       setSyncResult({ success: res.success, message: res.message });
     } catch (err: any) {
       setSyncResult({

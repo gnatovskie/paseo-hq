@@ -352,8 +352,9 @@ export const sessionTransferRpc = defineRpc({
 
 export const pluginSyncRpc = defineRpc({
   name: "sidebar.plugin-sync",
-  input: z.object({}),
+  input: z.object({ action: z.enum(["start", "status"]), jobId: z.string().uuid() }),
   output: z.object({
+    state: z.enum(["running", "complete", "failed"]),
     success: z.boolean(),
     updated: z.boolean(),
     message: z.string(),
