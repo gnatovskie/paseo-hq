@@ -844,8 +844,10 @@ function ProjectHeaderPressable({
   );
 }
 
+const DEFAULT_AGENT_TITLE = "Агент без названия";
+
 function agentTitle(agent: AgentEntry["agent"]): string {
-  return agent.title?.trim() || "Агент без названия";
+  return agent.title?.trim() || DEFAULT_AGENT_TITLE;
 }
 
 function AgentSummary({ agent, branch, theme, platform, gap = 4, selected }: {
@@ -1581,7 +1583,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     setModeId(next.modeId);
     setThinkingOptionId(next.thinkingOptionId);
   };
-  const [newSessionTitle, setNewSessionTitle] = useState("");
+  const [newSessionTitle, setNewSessionTitle] = useState(DEFAULT_AGENT_TITLE);
   const [newSessionKind, setNewSessionKind] = useState<"agent" | "terminal">("agent");
   const [newAgentModelsError, setNewAgentModelsError] = useState<string | null>(null);
   const agentModelsRequest = useRef(0);
@@ -2021,8 +2023,15 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     }
   };
 
+  const changeCreationKind = (kind: "agent" | "terminal") => {
+    setNewSessionTitle(current => kind === "terminal" && current === DEFAULT_AGENT_TITLE ? ""
+      : kind === "agent" && !current ? DEFAULT_AGENT_TITLE : current);
+    if (newArea) setNewArea({ ...newArea, firstTab: kind === "agent" ? "session" : "terminal" });
+    else setNewSessionKind(kind);
+  };
+
   const openNewArea = (group: ProjectGroup) => {
-    setNewSessionTitle("");
+    setNewSessionTitle(DEFAULT_AGENT_TITLE);
     setNewArea({ projectId: group.id, name: "Новая область", firstTab: "session", place: "project" });
     setWorktreeOptions(null);
     void prepareAgentModels(group);
@@ -2034,7 +2043,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const openNewAreaAgent = (workspaceId: string) => {
     const group = allGroups.find(item => item.chats.some(chat => chat.id === workspaceId));
     if (!group) return;
-    setNewSessionTitle("");
+    setNewSessionTitle(DEFAULT_AGENT_TITLE);
     setNewSessionKind("agent");
     setNewAgentWorkspaceId(workspaceId);
     void prepareAgentModels(group, workspaceId);
@@ -4006,7 +4015,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           open
           onClose={() => setNewArea(null)}
           kind={newArea.firstTab === "session" ? "agent" : "terminal"}
-          onKindChange={(kind) => setNewArea({ ...newArea, firstTab: kind === "agent" ? "session" : "terminal" })}
+          onKindChange={changeCreationKind}
           kindLocked={Boolean(newArea.workspaceId)}
           target={{
             value: newArea.targetWorkspaceId ?? null,
@@ -4374,7 +4383,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           open
           onClose={() => setNewAgentWorkspaceId(null)}
           kind={newSessionKind}
-          onKindChange={setNewSessionKind}
+          onKindChange={changeCreationKind}
           model={newAgentModel}
           modelsError={newAgentModelsError}
           modelOptions={titleModelOptions(newAgentModels, "first_line").filter(option => option.provider)}

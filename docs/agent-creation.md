@@ -10,3 +10,5 @@
 node --test shared/agent-creation-options.test.mjs
 PASEO_CHROMIUM_EXECUTABLE=<путь к Chromium> node --test tests/session-settings/creation-names.mjs
 ```
+
+Поле названия агента изначально содержит «Агент без названия». Это редактируемое значение передается при создании, а не показывается только как запасная подпись. При переключении на терминал стандартное имя агента убирается.
