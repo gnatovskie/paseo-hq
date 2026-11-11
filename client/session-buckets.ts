@@ -1,7 +1,7 @@
 /**
  * Статусы агентов и областей в боковой панели Штаба.
  *
- * Правило Руслана: ошибка одного агента не должна заслонять область, в котором
+ * Правило Руслана: ошибка одного агента не должна заслонять область, в которой
  * есть другой рабочий агент. Поэтому `failed` - самый слабый статус при сборке
  * сводки по области: он виден, только если все агенты области упали.
  */
@@ -41,6 +41,18 @@ export function deriveAgentBucket(a: BucketAgent): UiSessionBucket {
     return "attention";
   }
   return "done";
+}
+
+export function countSessionBuckets(agents: readonly BucketAgent[], terminalCount: number): Record<UiSessionBucket, number> {
+  const counts: Record<UiSessionBucket, number> = {
+    running: 0,
+    attention: 0,
+    done: terminalCount,
+    needs_input: 0,
+    failed: 0,
+  };
+  for (const agent of agents) counts[deriveAgentBucket(agent)] += 1;
+  return counts;
 }
 
 /**

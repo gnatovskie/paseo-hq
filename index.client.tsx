@@ -75,6 +75,7 @@ import {
 } from "./client/artifacts-segment";
 import {
   BUCKET_PRIORITY,
+  countSessionBuckets,
   deriveAgentBucket,
   pickWorkspaceBucket,
   resolveChatBucket,
@@ -85,13 +86,30 @@ import { Markdown } from "@getpaseo/plugin/client/ui";
 
 
 const EMOJI_PRESETS = ["🚀", "⚡", "🛠", "📦", "🧠", "🌐", "💳", "🎨", "🔒", "📱", "🤖", "🔥"];
-const AREA_ICONS = ["📁", "💻", "🛠", "📦", "🚀", "🧪", "📝", "🎨"];
+const AREA_ICONS = [
+  "📁", "💻", "🛠", "📦", "🚀", "🧪", "📝", "🎨",
+  "🧠", "🤖", "📊", "🔒", "🌐", "💳", "📱", "⚡",
+  "🔥", "💡", "🎯", "⭐", "🏠", "☕", "🎮", "🎵",
+  "📚", "💼", "💬", "🧩", "🧭", "🔬", "⚙️", "🗂️",
+  "📐", "✏️", "🧱", "🌱", "🌍", "🏗️", "💎", "🛰️",
+  "🏦", "🛒", "✈️", "🎬", "📷", "🎓", "💪", "❤️",
+];
 const AREA_SESSION_FILTERS = [
   { value: "all", label: "Все" },
   { value: "agents", label: "Агенты" },
   { value: "terminals", label: "Терминалы" },
 ] as const;
-const COLOR_PRESETS = ["#3B82F6", "#8B5CF6", "#10B981", "#F59E0B", "#EF4444", "#EC4899", "#06B6D4", "#64748B"];
+const ICON_COLORS = [
+  { color: "#3B82F6", label: "Синий" },
+  { color: "#8B5CF6", label: "Фиолетовый" },
+  { color: "#10B981", label: "Зеленый" },
+  { color: "#F59E0B", label: "Янтарный" },
+  { color: "#EF4444", label: "Красный" },
+  { color: "#EC4899", label: "Розовый" },
+  { color: "#06B6D4", label: "Бирюзовый" },
+  { color: "#64748B", label: "Серый" },
+];
+const COLOR_PRESETS = ICON_COLORS.map(({ color }) => color);
 
 const DEFAULT_META: ProjectMeta = {
   avatarUri: null,
@@ -526,6 +544,44 @@ function SessionStatusIndicator({
   );
 }
 
+const AREA_SESSION_STATUSES: { bucket: UiSessionBucket; label: string }[] = [
+  { bucket: "running", label: "Запущенных сессий" },
+  { bucket: "attention", label: "Готовых сессий" },
+  { bucket: "done", label: "Неактивных сессий" },
+  { bucket: "needs_input", label: "Ожидающих ввода сессий" },
+  { bucket: "failed", label: "Сессий с ошибкой" },
+];
+
+function AreaSessionBadges({ sessions, terminalCount, theme, platform, inset }: {
+  sessions: readonly AgentEntry[];
+  terminalCount: number;
+  theme: PluginTheme;
+  platform: PluginSidebarItemProps["layout"]["platform"];
+  inset: number;
+}) {
+  const counts = countSessionBuckets(sessions.map(({ agent }) => agent), terminalCount);
+  return (
+    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 5, marginLeft: inset }}>
+      {AREA_SESSION_STATUSES.filter(({ bucket }) => counts[bucket] > 0).map(({ bucket, label }) => (
+        <View
+          key={bucket}
+          accessible
+          accessibilityLabel={`${label}: ${counts[bucket]}`}
+          style={{
+            minHeight: 20, flexDirection: "row", alignItems: "center", gap: 4,
+            paddingHorizontal: 6, borderRadius: 6, backgroundColor: theme.colors.surface2,
+          }}
+        >
+          <Text style={{ fontSize: 11, color: bucket === "done" ? theme.colors.foregroundMuted : theme.colors.foreground }}>
+            {counts[bucket]}
+          </Text>
+          <SessionStatusIndicator bucket={bucket} theme={theme} platform={platform} size={12} />
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function ProjectAvatar({
   name,
   projectId,
@@ -714,9 +770,10 @@ function ChatActionButton({ label, icon, color, disabled, onPress, theme, quiet 
   );
 }
 
-function AreaEmojiButton({ label, emoji, selected, disabled, onPress, theme }: {
+function AreaEmojiButton({ label, emoji, background, selected, disabled, onPress, theme }: {
   label: string;
   emoji?: string;
+  background?: string;
   selected?: boolean;
   disabled: boolean;
   onPress: () => void;
@@ -739,7 +796,7 @@ function AreaEmojiButton({ label, emoji, selected, disabled, onPress, theme }: {
         borderColor: selected ? c.accent : c.border,
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: pressed ? c.surface1 : c.surface2,
+        backgroundColor: background ?? (pressed ? c.surface1 : c.surface2),
         opacity: disabled ? 0.5 : 1,
       })}
     >
@@ -994,6 +1051,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     projects: {},
     nativeIcons: {},
     areaIcons: {},
+    areaIconBgs: {},
     lastRunningAt: {},
     pinnedSessions: {},
     showHostMetrics: true,
@@ -1060,7 +1118,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const [draftNewMode, setDraftNewMode] = useState<"directory" | "worktree">("directory");
   const [draftHidden, setDraftHidden] = useState(false);
   const [draftPinned, setDraftPinned] = useState(false);
-  const [draftTitleModel, setDraftTitleModel] = useState("first_line");
   const [titleProviders, setTitleProviders] = useState<PaseoProviderSnapshotResult["entries"]>([]);
   const [titleModelsError, setTitleModelsError] = useState<string | null>(null);
   const [confirmRemoveProject, setConfirmRemoveProject] = useState(false);
@@ -1325,6 +1382,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const editingChatAgent = editingChat ? latestAgentByWorkspace[editingChat.id] : undefined;
   const editingAreaTitle = editingChat ? chatTitle(editingChat, editingChatAgent) : "";
   const editingAreaIcon = editingChat ? serverState.areaIcons[editingChat.id] : undefined;
+  const editingAreaIconBg = editingChat ? serverState.areaIconBgs[editingChat.id] : undefined;
   const editingChatEntries = (editingChat ? agentsByWorkspace.get(editingChat.id) : undefined) ?? [];
   const editingChatTerminals = terminals.filter((terminal) => terminal.workspaceId === editingChatId);
   const visibleAreaAgents = areaSessionFilter === "terminals" ? [] : editingChatEntries;
@@ -1352,8 +1410,8 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   });
   const terminalMenuItem = terminals.find((terminal) => terminal.id === terminalMenuId);
   const titleSourceAgent = editingChatEntries[0]?.agent;
-  const titleModel = editingChat ? serverState.projects[editingChat.projectId]?.sessionTitleModel : null;
-  const canSuggestTitle = Boolean(titleModel && titleSourceAgent) && !suggestingTitle && !chatMutationPending;
+  const titleModel = areaSettings?.titleModel ?? (editingChat ? serverState.projects[editingChat.projectId]?.sessionTitleModel : null) ?? "first_line";
+  const canSuggestTitle = Boolean(titleSourceAgent) && !suggestingTitle && !chatMutationPending;
   const agentMenuChat = agents.find(({ agent }) =>
     agent.id === agentMenuId && agent.workspaceId && !agent.archivedAt && !agent.internal,
   )?.agent;
@@ -1443,7 +1501,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           ? { config: await projectAgentConfig(paseo, group, agents), cwd: group.rootPath }
           : undefined;
         const created = await paseo.workspaces.create({
-          title: newArea.name.trim() || "Новая сессия",
+          title: newArea.name.trim() || "Новая область",
           agent,
           source: group.meta.newSessionMode === "worktree"
             ? { kind: "worktree", cwd: group.rootPath, projectId: group.id }
@@ -1564,16 +1622,16 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   };
 
   useEffect(() => {
-    if (!editingProjectId) return;
+    if (!editingChatId) return;
     let cancelled = false;
     setTitleModelsError(null);
-    void paseo.providers.waitForReady({ cwd: editingGroup?.rootPath }).then(snapshot => {
+    void paseo.providers.waitForReady({ cwd: editingChat?.workspaceDirectory }).then(snapshot => {
       if (!cancelled) setTitleProviders(snapshot.entries);
     }).catch(error => {
       if (!cancelled) setTitleModelsError(error instanceof Error ? error.message : "Каталог моделей недоступен");
     });
     return () => { cancelled = true; };
-  }, [editingProjectId, editingGroup?.rootPath, paseo]);
+  }, [editingChatId, editingChat?.workspaceDirectory, paseo]);
 
   const openProjectSettings = (group: ProjectGroup) => {
     setEditingProjectId(group.id);
@@ -1583,7 +1641,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     setDraftNewMode(group.meta.newSessionMode);
     setDraftHidden(group.meta.hidden);
     setDraftPinned(group.meta.pinned);
-    setDraftTitleModel(group.meta.sessionTitleModel ?? "first_line");
     setConfirmRemoveProject(false);
   };
 
@@ -1616,7 +1673,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
         newSessionMode: draftNewMode,
         hidden: draftHidden,
         pinned: draftPinned,
-        sessionTitleModel: draftTitleModel === "first_line" ? null : draftTitleModel,
       });
       setServerState((prev) => ({
         ...prev,
@@ -1727,21 +1783,24 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     setTransferIncludeHistory(true);
   };
 
-  const handleSaveAreaSettings = async (change: { defaultBranch?: string | null; icon?: string | null }) => {
+  const handleSaveAreaSettings = async (change: { defaultBranch?: string | null; icon?: string | null; iconBg?: string | null }) => {
     if (!editingChat || chatMutationPending) return;
     const workspaceId = editingChat.id;
     setSavingAreaSettings(true);
     try {
       const settings = await readAreaSettings({ workspaceId, ...change });
       setAreaSettings(settings);
-      if (change.icon !== undefined) {
+      if (change.icon !== undefined || change.iconBg !== undefined) {
         setServerState((prev) => {
           const areaIcons = { ...prev.areaIcons };
+          const areaIconBgs = { ...prev.areaIconBgs };
           if (settings.icon) areaIcons[workspaceId] = settings.icon;
           else delete areaIcons[workspaceId];
-          return { ...prev, areaIcons };
+          if (settings.iconBg) areaIconBgs[workspaceId] = settings.iconBg;
+          else delete areaIconBgs[workspaceId];
+          return { ...prev, areaIcons, areaIconBgs };
         });
-        setAreaSettingsPanel(null);
+        if (change.icon !== undefined) setAreaSettingsPanel(null);
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Не удалось сохранить настройки области");
@@ -1791,14 +1850,17 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     }
   };
 
-  // Предлагает название моделью проекта по последнему промпту и ответу; сохраняет Руслан.
-  const handleSuggestTitle = async () => {
+  // Выбор модели принадлежит области. Название остается черновиком до сохранения.
+  const handleSuggestTitle = async (model: string) => {
     if (!editingChat || !titleSourceAgent || !canSuggestTitle) return;
     if (draftChatTitle === null) startAreaTitleEdit();
     const revision = draftTitleRevision.current;
     setSuggestingTitle(true);
     try {
+      const settings = await readAreaSettings({ workspaceId: editingChat.id, titleModel: model });
+      setAreaSettings(settings);
       const { title } = await suggestSessionTitle({
+        model,
         workspaceId: editingChat.id,
         agentId: titleSourceAgent.id,
         projectId: editingChat.projectId,
@@ -2307,7 +2369,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                     accessibilityRole="button"
                     accessibilityLabel={`Новая область в проекте ${group.name}`}
                     disabled={busy}
-                    onPress={() => setNewArea({ projectId: group.id, name: "Новая сессия", firstTab: "session" })}
+                    onPress={() => setNewArea({ projectId: group.id, name: "Новая область", firstTab: "session" })}
                     style={({ pressed }) => ({
                       width: btnSize,
                       height: btnSize,
@@ -2351,18 +2413,31 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                               aria-expanded={expanded}
                               onPress={() => setExpandedAreaIds((prev) => ({ ...prev, [chat.id]: !prev[chat.id] }))}
                               style={({ pressed }) => ({
-                                flex: 1, minWidth: 0, minHeight: 42, flexDirection: "row", alignItems: "center",
-                                gap: 7, paddingHorizontal: 7, borderRadius: 8,
+                                flex: 1, minWidth: 0, minHeight: 42, justifyContent: "center",
+                                gap: 4, paddingHorizontal: 7, paddingVertical: 6, borderRadius: 8,
                                 backgroundColor: pressed ? c.surface2 : undefined,
                               })}
                             >
-                              <Icon name={expanded ? "ChevronDown" : "ChevronRight"} size={14}
-                                color={expanded || bucket === "running" ? c.accent : c.foregroundMuted} />
-                              {areaIcon ? <Text style={{ fontSize: 14 }}>{areaIcon}</Text> : null}
-                              <Text numberOfLines={1} style={{ flex: 1, color: c.foreground, fontSize: 14, fontWeight: "600" }}>
-                                {title}
-                              </Text>
-                              {isPinned ? <Icon name="Pin" size={12} color={c.accent} /> : null}
+                              <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
+                                <Icon name={expanded ? "ChevronDown" : "ChevronRight"} size={14}
+                                  color={expanded || bucket === "running" ? c.accent : c.foregroundMuted} />
+                                {areaIcon ? (
+                                  <View style={{
+                                    width: 24, height: 24, borderRadius: 6, alignItems: "center", justifyContent: "center",
+                                    backgroundColor: serverState.areaIconBgs[chat.id],
+                                  }}>
+                                    <Text style={{ fontSize: 14 }}>{areaIcon}</Text>
+                                  </View>
+                                ) : null}
+                                <Text numberOfLines={1} style={{ flex: 1, color: c.foreground, fontSize: 14, fontWeight: "600" }}>
+                                  {title}
+                                </Text>
+                                {isPinned ? <Icon name="Pin" size={12} color={c.accent} /> : null}
+                              </View>
+                              {!expanded ? (
+                                <AreaSessionBadges sessions={sessions} terminalCount={areaTerminals.length}
+                                  theme={theme} platform={layout.platform} inset={areaIcon ? 52 : 21} />
+                              ) : null}
                             </Pressable>
                             <Pressable
                               accessibilityRole="button"
@@ -3089,14 +3164,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                     ]}
                     onValueChange={(v) => setDraftNewMode(v)}
                   />
-                  <TitleModelPicker
-                    key={editingGroup.id}
-                    theme={theme}
-                    hint={titleModelsError ? `Не удалось загрузить модели: ${titleModelsError}` : "Модели включенных провайдеров Paseo. При недоступности модели берется первая строка"}
-                    value={draftTitleModel}
-                    options={titleModelOptions(titleProviders, draftTitleModel)}
-                    onValueChange={(v) => setDraftTitleModel(v)}
-                  />
                   <SettingsSwitch
                     label="Закрепить проект наверху"
                     hint="Закрепленные проекты показываются выше остальных"
@@ -3220,6 +3287,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                   <AreaEmojiButton
                     label="Выбрать иконку области"
                     emoji={editingAreaIcon}
+                    background={editingAreaIconBg}
                     disabled={chatMutationPending}
                     onPress={() => setAreaSettingsPanel("icon")}
                     theme={theme}
@@ -3263,19 +3331,17 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                       theme={theme}
                     />
                   </View>
-                  <ChatActionButton
-                    label={suggestingTitle ? "Генерирую название" : "Сгенерировать название"}
-                    icon={suggestingTitle ? "LoaderCircle" : "Sparkles"}
-                    disabled={!canSuggestTitle}
-                    onPress={() => void handleSuggestTitle()}
+                  <TitleModelPicker
                     theme={theme}
+                    value={titleModel}
+                    options={titleModelOptions(titleProviders, titleModel)}
+                    disabled={!canSuggestTitle}
+                    pending={suggestingTitle}
+                    hint={titleModelsError ? `Не удалось загрузить модели: ${titleModelsError}` : undefined}
+                    onValueChange={(model) => void handleSuggestTitle(model)}
                   />
                 </View>
-                {draftChatTitle !== null && !titleModel ? (
-                  <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>
-                    Выбери модель названия в настройках проекта
-                  </Text>
-                ) : null}
+
               </View>
               <View style={{ flexDirection: "row", gap: 8 }}>
                 <ChatActionButton
@@ -3489,12 +3555,39 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
         <Modal.Content>
           {editingChat ? (
             <View style={{ gap: 12 }}>
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, maxWidth: 200 }}>
+              <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>Фон иконки</Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                {[{ color: null, label: "Автоматический" }, ...ICON_COLORS].map(({ color, label }) => {
+                  const selected = (editingAreaIconBg ?? null) === color;
+                  return (
+                    <TooltipPressable
+                      key={label}
+                      tooltip={label}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Фон иконки: ${label}`}
+                      accessibilityState={{ selected }}
+                      disabled={chatMutationPending}
+                      onPress={() => void handleSaveAreaSettings({ iconBg: color })}
+                      style={({ pressed }) => ({
+                        width: 36, height: 36, borderRadius: 9, borderWidth: selected ? 2 : 1,
+                        borderColor: selected ? c.accent : c.border,
+                        backgroundColor: color ?? c.surface2,
+                        alignItems: "center", justifyContent: "center",
+                        opacity: chatMutationPending ? 0.5 : pressed ? 0.7 : 1,
+                      })}
+                    >
+                      {selected ? <Icon name="Check" size={17} color={color ? "#FFFFFF" : c.foreground} /> : null}
+                    </TooltipPressable>
+                  );
+                })}
+              </View>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
                 {AREA_ICONS.map((emoji) => (
                   <AreaEmojiButton
                     key={emoji}
                     label={`Выбрать ${emoji}`}
                     emoji={emoji}
+                    background={editingAreaIconBg}
                     selected={editingAreaIcon === emoji}
                     disabled={chatMutationPending}
                     onPress={() => void handleSaveAreaSettings({ icon: emoji })}

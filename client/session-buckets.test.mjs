@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  countSessionBuckets,
   deriveAgentBucket,
   pickWorkspaceBucket,
   resolveChatBucket,
@@ -44,4 +45,44 @@ test("ошибка агента распознаётся как failed", () => {
   assert.equal(deriveAgentBucket({ status: "running" }), "running");
   assert.equal(deriveAgentBucket({ status: "idle" }), "done");
   assert.equal(deriveAgentBucket({ status: "idle", pendingPermissions: [{}] }), "needs_input");
+});
+
+test("счетчики сохраняют все статусы агентов и учитывают неактивные терминалы", () => {
+  assert.deepEqual(countSessionBuckets([
+    { status: "running" },
+    { status: "running" },
+    { status: "idle", requiresAttention: true, attentionReason: "finished" },
+    { status: "idle" },
+    { status: "error" },
+  ], 4), {
+    running: 2,
+    attention: 1,
+    done: 5,
+    needs_input: 0,
+    failed: 1,
+  });
+});
+
+test("ожидание разрешения имеет отдельный счетчик и не считается готовностью", () => {
+  assert.deepEqual(countSessionBuckets([
+    { status: "running", pendingPermissions: [{}], requiresAttention: true },
+    { status: "idle", attentionReason: "permission" },
+    { status: "idle", attentionReason: "error", requiresAttention: true },
+  ], 0), {
+    running: 0,
+    attention: 0,
+    done: 0,
+    needs_input: 2,
+    failed: 1,
+  });
+});
+
+test("в пустой области счетчики нулевые", () => {
+  assert.deepEqual(countSessionBuckets([], 0), {
+    running: 0,
+    attention: 0,
+    done: 0,
+    needs_input: 0,
+    failed: 0,
+  });
 });

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -46,7 +46,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
     await writeFile(join(home, "config.json"), JSON.stringify({
       pluginsEnabled: true,
       daemon: { listen: endpoint, relay: { enabled: false } },
-      features: { webUi: { enabled: true } },
+      features: { webUi: { enabled: true }, dictation: { enabled: false }, voiceMode: { enabled: false } },
     }));
     paseo("daemon", "start", "--timeout", "25");
     started = true;
@@ -95,6 +95,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
       await t.test(`${width}px`, async () => {
         const page = await browser.newPage({
           viewport: { width, height: 844 },
+          hasTouch: width === 390,
           permissions: ["clipboard-read", "clipboard-write"],
           colorScheme: width === 390 ? "dark" : "light",
         });
@@ -146,16 +147,29 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await sidebar.getByText(/^1 область(?: · .+)?$/).waitFor();
           await button("Новая область в проекте source").click();
           await newAreaName.waitFor();
-          assert.equal(await newAreaName.inputValue(), "Новая сессия");
+          assert.equal(await newAreaName.inputValue(), "Новая область");
           await button("Открыть в новой области: Агент").waitFor();
           assert.equal((await client.workspaces.list({})).entries.length, 1, "opening the form creates nothing");
           await button("Close").last().click();
           await newAreaName.waitFor({ state: "hidden" });
 
+          const modelsMenu = page.getByRole("menu", { name: "Модели для названий областей", exact: true });
+          await button("Настройки проекта source").click();
+          assert.equal(await page.getByText("Модель для названий областей", { exact: true }).count(), 0);
+          await button("Close").last().click();
+          await page.getByText("Настройки проекта", { exact: true }).waitFor({ state: "hidden" });
+
           const areaTitle = areaToggle.getByText(title, { exact: true });
           assert.equal(await areaToggle.getAttribute("aria-expanded"), "false");
           assert.equal(await sidebarSession.count(), 0);
+          const idleSessions = sidebar.getByLabel("Неактивных сессий: 3", { exact: true });
+          await idleSessions.waitFor();
+          assert.equal(await sidebar.getByLabel(/^(Запущенных сессий|Готовых сессий|Сессий с ошибкой): /).count(), 0);
+          const [areaNameBox, counterBox] = await Promise.all([areaTitle.boundingBox(), idleSessions.boundingBox()]);
+          assert(counterBox.y > areaNameBox.y + areaNameBox.height);
+          await capture("collapsed-area-progress");
           await areaToggle.click();
+          await idleSessions.waitFor({ state: "hidden" });
           assert.equal(await areaToggle.getAttribute("aria-expanded"), "true");
           await sidebarSession.waitFor();
           await sidebarTerminal.waitFor();
@@ -262,6 +276,23 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           assert.equal(await page.getByRole("button", { name: /^(ID|Скопировать ID.*)$/ }).count(), 0);
           assert.equal(await page.getByText(/^ID: [a-f\d]{8}/).count(), 0);
           await capture("area-actions");
+          await generate.click();
+          await modelsMenu.waitFor();
+          const availableModel = modelsMenu.getByRole("menuitem", { name: /^Выбрать модель codex\// }).first();
+          await availableModel.waitFor();
+          await availableModel.scrollIntoViewIfNeeded();
+          const [triggerBox, popupBox] = await Promise.all([generate.boundingBox(), modelsMenu.boundingBox()]);
+          assert(popupBox.x >= 10 && popupBox.x + popupBox.width <= width - 10);
+          assert(popupBox.y >= 10 && popupBox.y + popupBox.height <= 834);
+          assert(Math.min(Math.abs(popupBox.y - triggerBox.y - triggerBox.height),
+            Math.abs(popupBox.y + popupBox.height - triggerBox.y)) < 20, "the menu opens next to the generation button");
+          await capture("title-model-dropdown");
+          await modelsMenu.getByPlaceholder("Поиск модели по всем провайдерам").fill("missing-fixture-model");
+          await modelsMenu.getByText("Ничего не найдено", { exact: true }).waitFor();
+          await button("Закрыть список моделей").click();
+          await modelsMenu.waitFor({ state: "hidden" });
+          assert(await areaContents.isVisible());
+
           const openTerminal = button("Открыть терминал Fixture terminal");
           await button("Агенты").click();
           await openTerminal.waitFor({ state: "hidden" });
@@ -285,6 +316,22 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
 
           await areaIcon.click();
           await iconPicker.waitFor();
+          await button("Фон иконки: Фиолетовый").click();
+          await button("Выбрать 🧠").click();
+          await iconPicker.waitFor({ state: "hidden" });
+          const background = (locator) => locator.evaluate((node) => getComputedStyle(node).backgroundColor);
+          assert.equal(await background(areaIcon), "rgb(139, 92, 246)");
+          assert.equal(await background(areaToggle.getByText("🧠", { exact: true }).locator("..")), "rgb(139, 92, 246)");
+          assert.equal(JSON.parse(await readFile(stateFile, "utf8")).areaPreferences[workspace.id].iconBg, "#8B5CF6");
+          await button("Close").last().click();
+          await areaContents.waitFor({ state: "hidden" });
+          await openArea();
+          await areaIcon.getByText("🧠", { exact: true }).waitFor();
+          assert.equal(await background(areaIcon), "rgb(139, 92, 246)");
+          await areaIcon.click({ trial: true });
+          await capture("area-icon-background");
+          await areaIcon.click();
+          await button("Фон иконки: Автоматический").click();
           await button("Выбрать 📦").click({ trial: true });
           await capture("area-emoji-picker");
           await button("Выбрать 📦").click();
@@ -318,13 +365,19 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await button("Сохранить название").click();
           await draft.waitFor({ state: "hidden" });
           assert(daemonSocket);
+          await generate.click();
+          await modelsMenu.waitFor();
           const [generationFrame] = await Promise.all([
             daemonSocket.waitForEvent("framesent", {
               predicate: ({ payload }) => JSON.parse(String(payload)).message?.method === "sidebar.title-suggest",
             }),
-            generate.click(),
+            modelsMenu.getByRole("menuitem", { name: "По первой строке промпта (без ИИ)", exact: true }).click(),
           ]);
-          assert.equal(JSON.parse(String(generationFrame.payload)).message.input.agentId, firstChat.id);
+          const generationInput = JSON.parse(String(generationFrame.payload)).message.input;
+          assert.equal(generationInput.agentId, firstChat.id);
+          assert.equal(generationInput.model, "first_line");
+          assert.equal(JSON.parse(await readFile(stateFile, "utf8")).areaPreferences[workspace.id].titleModel, "first_line");
+          await modelsMenu.waitFor({ state: "hidden" });
           await draft.waitFor();
           await generate.click({ trial: true });
           await draft.fill("Unsaved title");
@@ -554,7 +607,11 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           }
           assert.deepEqual(errors, []);
         } catch (error) {
-          await capture("session-settings-failure");
+          try {
+            await capture("session-settings-failure");
+          } catch (captureError) {
+            console.error("Could not capture the failing screen", captureError);
+          }
           throw error;
         } finally {
           await page.close();

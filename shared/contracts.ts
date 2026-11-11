@@ -11,6 +11,7 @@ export const sidebarStateSchema = z.object({
   projects: z.record(z.string(), projectMetaSchema),
   nativeIcons: z.record(z.string(), z.string()),
   areaIcons: z.record(z.string(), z.string()).default({}),
+  areaIconBgs: z.record(z.string(), z.string()).default({}),
   lastRunningAt: z.record(z.string(), z.number()),
   pinnedSessions: z.record(z.string(), z.number()),
   showHostMetrics: z.boolean().default(true),
@@ -162,6 +163,7 @@ export const sessionTitleSuggestRpc = defineRpc({
     workspaceId: z.string().min(1),
     agentId: z.string().min(1),
     projectId: z.string().min(1),
+    model: z.string().trim().min(1).optional(),
   }),
   output: z.object({ title: z.string() }),
 });
@@ -176,8 +178,12 @@ export const chatRenameRpc = defineRpc({
   output: z.object({}),
 });
 
+const areaIconBackgroundSchema = z.string().regex(/^#[0-9a-f]{6}$/i).nullable();
+
 export const areaPreferencesSchema = z.object({
   icon: z.string().nullable().default(null),
+  iconBg: areaIconBackgroundSchema.default(null),
+  titleModel: z.string().nullable().default(null),
   defaultBranch: z.string().nullable().default(null),
   launchBranches: z.record(z.string(), z.string()).default({}),
 });
@@ -188,6 +194,8 @@ export const areaSettingsRpc = defineRpc({
     workspaceId: z.string().min(1),
     defaultBranch: z.string().min(1).nullable().optional(),
     icon: z.string().trim().min(1).max(16).nullable().optional(),
+    iconBg: areaIconBackgroundSchema.optional(),
+    titleModel: z.string().trim().min(1).nullable().optional(),
   }),
   output: areaPreferencesSchema.extend({
     currentBranch: z.string().nullable(),

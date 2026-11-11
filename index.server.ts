@@ -101,7 +101,7 @@ const MAX_HISTORY_ENTRIES = 500;
 type AreaPreferences = ReturnType<typeof areaPreferencesSchema.parse>;
 
 function emptyAreaPreferences(): AreaPreferences {
-  return { icon: null, defaultBranch: null, launchBranches: {} };
+  return { icon: null, iconBg: null, titleModel: null, defaultBranch: null, launchBranches: {} };
 }
 
 interface StoredData {
@@ -422,6 +422,9 @@ async function buildState(projectIds: string[]): Promise<SidebarState> {
     nativeIcons,
     areaIcons: Object.fromEntries(
       Object.entries(stored.areaPreferences).flatMap(([id, preferences]) => preferences.icon ? [[id, preferences.icon]] : []),
+    ),
+    areaIconBgs: Object.fromEntries(
+      Object.entries(stored.areaPreferences).flatMap(([id, preferences]) => preferences.iconBg ? [[id, preferences.iconBg]] : []),
     ),
     lastRunningAt: stored.lastRunningAt,
     pinnedSessions: stored.pinnedSessions,
@@ -780,18 +783,18 @@ export default function contribute(server: PluginServerContext) {
   });
 
   // Закрепление хранится только внутри нашего виджета и не затрагивает нативный сайдбар Paseo
-  server.handle(sessionTitleSuggestRpc, async ({ workspaceId, agentId, projectId }, { paseo }) => {
-    const model = (await readStored()).projects[projectId]?.sessionTitleModel;
-    if (!model) throw new Error("В настройках проекта не выбрана модель названия");
-    return { title: await suggestTitle(paseo, workspaceId, agentId, model) };
+  server.handle(sessionTitleSuggestRpc, async ({ workspaceId, agentId, projectId, model }, { paseo }) => {
+    const stored = await readStored();
+    const selectedModel = model ?? stored.areaPreferences[workspaceId]?.titleModel ?? stored.projects[projectId]?.sessionTitleModel ?? "first_line";
+    return { title: await suggestTitle(paseo, workspaceId, agentId, selectedModel) };
   });
 
-  server.handle(areaSettingsRpc, async ({ workspaceId, defaultBranch, icon }, { paseo }) => {
+  server.handle(areaSettingsRpc, async ({ workspaceId, defaultBranch, icon, iconBg, titleModel }, { paseo }) => {
     const area = await requireArea(paseo, workspaceId);
     const [currentBranch, branches]: [string | null, string[]] = area.projectKind === "git"
       ? await Promise.all([currentGitBranch(area.workspaceDirectory), localGitBranches(area.workspaceDirectory)])
       : [null, []];
-    if (defaultBranch !== undefined || icon !== undefined) {
+    if (defaultBranch !== undefined || icon !== undefined || iconBg !== undefined || titleModel !== undefined) {
       if (defaultBranch && !branches.includes(defaultBranch)) {
         throw new Error("Ветка не найдена в этой области");
       }
@@ -800,6 +803,8 @@ export default function contribute(server: PluginServerContext) {
         const preferences = stored.areaPreferences[workspaceId] ??= emptyAreaPreferences();
         if (defaultBranch !== undefined) preferences.defaultBranch = defaultBranch;
         if (icon !== undefined) preferences.icon = icon;
+        if (iconBg !== undefined) preferences.iconBg = iconBg;
+        if (titleModel !== undefined) preferences.titleModel = titleModel;
         await saveStored(stored);
       });
     }
