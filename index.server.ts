@@ -24,6 +24,7 @@ import {
   projectRemoveRpc,
   projectSaveRpc,
   sessionPinRpc,
+  terminalRenameRpc,
   sessionTitleSuggestRpc,
   sessionTransferRpc,
   sidebarReadRpc,
@@ -108,6 +109,7 @@ interface StoredData {
   projects: Record<string, ProjectMeta>;
   lastRunningAt: Record<string, number>;
   pinnedSessions: Record<string, number>;
+  terminalNames: Record<string, string>;
   titledSessions: Record<string, number>;
   showHostMetrics: boolean;
   headerTitle: string;
@@ -139,6 +141,16 @@ async function safeRealpath(p: string): Promise<string> {
   } catch {
     return resolve(p);
   }
+}
+
+function parseStringMap(raw: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (raw && typeof raw === "object") {
+    for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
+      if (typeof value === "string" && value.trim()) out[id] = value.trim();
+    }
+  }
+  return out;
 }
 
 function parseNumberMap(raw: unknown): Record<string, number> {
@@ -177,6 +189,7 @@ async function readStored(): Promise<StoredData> {
       projects,
       lastRunningAt: parseNumberMap(raw.lastRunningAt),
       pinnedSessions: parseNumberMap(raw.pinnedSessions),
+      terminalNames: parseStringMap(raw.terminalNames),
       titledSessions: parseNumberMap(raw.titledSessions),
       showHostMetrics: typeof raw.showHostMetrics === "boolean" ? raw.showHostMetrics : true,
       headerTitle: typeof raw.headerTitle === "string" && raw.headerTitle.trim() ? raw.headerTitle.trim() : "Штаб",
@@ -191,6 +204,7 @@ async function readStored(): Promise<StoredData> {
       projects: {},
       lastRunningAt: {},
       pinnedSessions: {},
+      terminalNames: {},
       titledSessions: {},
       showHostMetrics: true,
       headerTitle: "Штаб",
@@ -209,6 +223,7 @@ async function saveStored(data: StoredData): Promise<void> {
     projects: data.projects,
     lastRunningAt: Object.fromEntries(runningEntries),
     pinnedSessions: data.pinnedSessions,
+    terminalNames: data.terminalNames,
     titledSessions: data.titledSessions,
     showHostMetrics: data.showHostMetrics,
     headerTitle: data.headerTitle || "Штаб",
@@ -427,6 +442,7 @@ async function buildState(projectIds: string[]): Promise<SidebarState> {
     ),
     lastRunningAt: stored.lastRunningAt,
     pinnedSessions: stored.pinnedSessions,
+    terminalNames: stored.terminalNames,
     showHostMetrics: stored.showHostMetrics,
     headerTitle: stored.headerTitle || "Штаб",
     projectsSortMode: stored.projectsSortMode || "auto",
@@ -845,6 +861,17 @@ export default function contribute(server: PluginServerContext) {
       } else {
         delete stored.pinnedSessions[workspaceId];
       }
+      await saveStored(stored);
+    });
+    return await buildState(projectIds);
+  });
+
+  server.handle(terminalRenameRpc, async ({ terminalId, title, projectIds }) => {
+    await serializeWrite(async () => {
+      const stored = await readStored();
+      const name = title?.trim();
+      if (name) stored.terminalNames[terminalId] = name;
+      else delete stored.terminalNames[terminalId];
       await saveStored(stored);
     });
     return await buildState(projectIds);

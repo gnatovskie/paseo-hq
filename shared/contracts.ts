@@ -14,6 +14,7 @@ export const sidebarStateSchema = z.object({
   areaIconBgs: z.record(z.string(), z.string()).default({}),
   lastRunningAt: z.record(z.string(), z.number()),
   pinnedSessions: z.record(z.string(), z.number()),
+  terminalNames: z.record(z.string(), z.string()).default({}),
   showHostMetrics: z.boolean().default(true),
   headerTitle: z.string().default("Штаб"),
   projectsSortMode: z.enum(["auto", "manual"]).default("auto"),
@@ -214,6 +215,17 @@ export const sessionPinRpc = defineRpc({
   input: z.object({
     workspaceId: z.string().min(1),
     pinned: z.boolean(),
+    projectIds: z.array(z.string()).default([]),
+  }),
+  output: sidebarStateSchema,
+});
+
+// Имя терминала хранится в Штабе: SDK плагина не умеет переименовывать терминалы Paseo.
+export const terminalRenameRpc = defineRpc({
+  name: "sidebar.terminal-rename",
+  input: z.object({
+    terminalId: z.string().min(1),
+    title: z.string().max(200).nullable(),
     projectIds: z.array(z.string()).default([]),
   }),
   output: sidebarStateSchema,

@@ -41,6 +41,7 @@ import {
   projectRemoveRpc,
   projectSaveRpc,
   sessionPinRpc,
+  terminalRenameRpc,
   sessionTitleSuggestRpc,
   sessionTransferRpc,
   sidebarReadRpc,
@@ -888,8 +889,9 @@ function openTerminalTab(hostId: string, terminal: PaseoTerminal, platform: Plug
   return Linking.openURL(`paseo://${target}`);
 }
 
-function TerminalRow({ terminal, onOpen, onMenu, disabled, theme, nested = false, pinned = false }: {
+function TerminalRow({ terminal, label, onOpen, onMenu, disabled, theme, nested = false, pinned = false }: {
   terminal: PaseoTerminal;
+  label: string;
   onOpen: () => void;
   onMenu: () => void;
   disabled?: boolean;
@@ -902,7 +904,7 @@ function TerminalRow({ terminal, onOpen, onMenu, disabled, theme, nested = false
     <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`Открыть терминал ${terminal.name}`}
+        accessibilityLabel={`Открыть терминал ${label}`}
         onPress={onOpen}
         style={({ pressed }) => ({
           flex: 1, minWidth: 0, flexDirection: "row", alignItems: "flex-start", minHeight: 44,
@@ -915,7 +917,7 @@ function TerminalRow({ terminal, onOpen, onMenu, disabled, theme, nested = false
           <Icon name="Terminal" size={SESSION_STATUS_SIZE} color={c.foregroundMuted} />
         </View>
         <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-          <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 13, lineHeight: 18 }}>{terminal.name}</Text>
+          <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 13, lineHeight: 18 }}>{label}</Text>
           <Text
             numberOfLines={1}
             ellipsizeMode="middle"
@@ -928,7 +930,7 @@ function TerminalRow({ terminal, onOpen, onMenu, disabled, theme, nested = false
       </Pressable>
       {pinned ? <Icon name="Pin" size={12} color={c.accent} /> : null}
       <ChatActionButton
-        label={`Меню терминала ${terminal.name}`}
+        label={`Меню терминала ${label}`}
         icon="MoreHorizontal"
         quiet
         disabled={disabled}
@@ -987,6 +989,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const createAreaSession = useRpc(areaSessionCreateRpc);
   const saveProject = useRpc(projectSaveRpc);
   const pinSession = useRpc(sessionPinRpc);
+  const renameTerminal = useRpc(terminalRenameRpc);
   const suggestSessionTitle = useRpc(sessionTitleSuggestRpc);
   const renameAgent = useRpc(chatRenameRpc);
   const loadCandidates = useRpc(projectCandidatesRpc);
@@ -1009,6 +1012,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     areaIconBgs: {},
     lastRunningAt: {},
     pinnedSessions: {},
+    terminalNames: {},
     showHostMetrics: true,
     headerTitle: "Штаб",
     projectsSortMode: "auto",
@@ -1105,6 +1109,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const agentTitleInput = useRef<React.ElementRef<typeof TextInput>>(null);
   const [confirmClosingSession, setConfirmClosingSession] = useState(false);
   const [terminalMenuId, setTerminalMenuId] = useState<string | null>(null);
+  const [draftTerminalName, setDraftTerminalName] = useState<string | null>(null);
   const [confirmClosingTerminal, setConfirmClosingTerminal] = useState(false);
   const [chatTransferOpen, setChatTransferOpen] = useState(false);
   const [transferTargetProjectId, setTransferTargetProjectId] = useState<string>("");
@@ -1374,6 +1379,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     },
   });
   const terminalMenuItem = terminals.find((terminal) => terminal.id === terminalMenuId);
+  const terminalLabel = (terminal: PaseoTerminal) => serverState.terminalNames[terminal.id] ?? terminal.name;
   const titleSourceAgent = editingChatEntries[0]?.agent;
   const titleModel = areaSettings?.titleModel ?? (editingChat ? serverState.projects[editingChat.projectId]?.sessionTitleModel : null) ?? "first_line";
   const canSuggestTitle = Boolean(titleSourceAgent) && !suggestingTitle && !chatMutationPending;
@@ -1970,8 +1976,28 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   };
 
   const openTerminalMenu = (terminalId: string) => {
+    setDraftTerminalName(null);
     setConfirmClosingTerminal(false);
     setTerminalMenuId(terminalId);
+  };
+
+  const handleRenameTerminal = async () => {
+    if (!terminalMenuItem || draftTerminalName === null) return;
+    const terminal = terminalMenuItem;
+    const title = draftTerminalName.trim();
+    setDraftTerminalName(null);
+    // Пустое название возвращает исходное имя терминала.
+    if (title === terminalLabel(terminal) || (!title && !serverState.terminalNames[terminal.id])) return;
+    try {
+      setServerState(await renameTerminal({
+        terminalId: terminal.id,
+        title: title && title !== terminal.name ? title : null,
+        projectIds: allGroups.map((g) => g.id),
+      }));
+      toast.show("Терминал переименован", { variant: "success" });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Не удалось переименовать терминал");
+    }
   };
 
   const handleCopyTerminalPath = async (terminal: PaseoTerminal) => {
@@ -2511,7 +2537,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                               marginBottom: 4, paddingRight: 3, gap: 2,
                             }}>
                               {orderAreaSessions(sessions, areaTerminals, serverState.pinnedSessions).map((session) => session.kind === "terminal" ? (
-                                <TerminalRow key={session.id} terminal={session.terminal} theme={theme}
+                                <TerminalRow key={session.id} terminal={session.terminal} label={terminalLabel(session.terminal)} theme={theme}
                                   nested
                                   pinned={Boolean(serverState.pinnedSessions[session.id])}
                                   disabled={chatMutationPending}
@@ -3490,7 +3516,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                 {visibleAreaSessions.map((session) => {
                   if (session.kind === "terminal") {
                     return (
-                      <TerminalRow key={session.id} terminal={session.terminal} theme={theme}
+                      <TerminalRow key={session.id} terminal={session.terminal} label={terminalLabel(session.terminal)} theme={theme}
                         pinned={Boolean(serverState.pinnedSessions[session.id])}
                         disabled={chatMutationPending}
                         onMenu={() => openTerminalMenu(session.id)}
@@ -3754,7 +3780,29 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                 <Text style={{ color: c.foreground, fontSize: 14 }}>
                   Терминал и запущенные в нем процессы завершатся.
                 </Text>
-              ) : null}
+              ) : (
+                <View style={{
+                  height: 44, flexDirection: "row", alignItems: "center", paddingHorizontal: 12,
+                  borderRadius: 9, borderWidth: 1, backgroundColor: c.surface2,
+                  borderColor: draftTerminalName === null ? c.border : c.accent,
+                }}>
+                  <TextInput
+                    accessibilityLabel="Название терминала"
+                    placeholder="Название терминала"
+                    placeholderTextColor={c.foregroundMuted}
+                    value={draftTerminalName ?? terminalLabel(terminalMenuItem)}
+                    onChangeText={setDraftTerminalName}
+                    onFocus={() => {
+                      if (draftTerminalName === null) setDraftTerminalName(terminalLabel(terminalMenuItem));
+                    }}
+                    onBlur={() => void handleRenameTerminal()}
+                    onSubmitEditing={() => void handleRenameTerminal()}
+                    maxLength={200}
+                    editable={!chatMutationPending}
+                    style={{ flex: 1, minWidth: 0, padding: 0, outlineWidth: 0, color: c.foreground, fontSize: 15 }}
+                  />
+                </View>
+              )}
               <ItemMenuActions theme={theme} disabled={chatMutationPending} actions={confirmClosingTerminal ? [
                 { label: "Отмена", icon: "ArrowLeft", onPress: () => setConfirmClosingTerminal(false) },
                 { label: "Завершить терминал", icon: "X", danger: true, onPress: () => void handleCloseTerminal(terminalMenuItem) },
