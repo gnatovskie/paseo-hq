@@ -5,6 +5,7 @@ export const projectMetaSchema = z.object({
   avatarEmoji: z.string().nullable().default(null),
   avatarBg: z.string().nullable().default(null),
   hidden: z.boolean().default(false),
+  hiddenSections: z.array(z.enum(["areas", "pools"])).default([]),
   pinned: z.boolean().default(false),
   sessionTitleModel: z.string().nullable().default(null),
   sessionsSortMode: z.enum(["auto", "manual"]).default("auto"),

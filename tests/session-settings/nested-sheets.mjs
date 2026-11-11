@@ -266,6 +266,22 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
 
           const stored = async () => Object.values(JSON.parse(await readFile(stateFile, "utf8")).projects);
           await button("Настройки проекта source").click();
+          await button("Скрыть раздел Пулы").click();
+          await button("Показать раздел Пулы").waitFor();
+          await button("Закрыть").last().click();
+          assert.equal(await sidebar.getByRole("tab", { name: "Пулы", exact: true }).count(), 0);
+          assert.equal(await sidebar.getByRole("tab", { name: "Области", exact: true }).count(), 1);
+          await button("Настройки проекта source").click();
+          await button("Скрыть раздел Области").click();
+          await button("Показать раздел Области").waitFor();
+          await button("Закрыть").last().click();
+          assert.equal(await sidebar.getByRole("tab").count(), 0);
+          assert.equal(await button("Новая область в проекте source").count(), 0);
+          await button("Настройки проекта source").click();
+          await button("Показать раздел Пулы").click();
+          await button("Скрыть раздел Пулы").waitFor();
+          await button("Показать раздел Области").click();
+          await button("Скрыть раздел Области").waitFor();
           const projectName = page.getByRole("textbox", { name: "Название проекта", exact: true });
           await projectName.waitFor();
           assert.equal(await button("Принять название").count(), 0);

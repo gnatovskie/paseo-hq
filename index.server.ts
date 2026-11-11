@@ -1010,6 +1010,7 @@ export default function contribute(server: PluginServerContext) {
       customName,
       avatar,
       hidden,
+      hiddenSections,
       pinned,
       sessionTitleModel,
       sessionsSortMode,
@@ -1060,6 +1061,7 @@ export default function contribute(server: PluginServerContext) {
           sessionTitleModel: null,
           sessionsSortMode: "auto",
           sessionOrder: [],
+          hiddenSections: [],
         };
         const next: ProjectMeta = { ...prev };
 
@@ -1077,6 +1079,7 @@ export default function contribute(server: PluginServerContext) {
           next.avatarBg = null;
         }
 
+        if (hiddenSections !== undefined) next.hiddenSections = hiddenSections;
         if (hidden !== undefined) {
           next.hidden = hidden;
         }

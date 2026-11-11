@@ -116,6 +116,7 @@ const DEFAULT_META: ProjectMeta = {
   sessionTitleModel: null,
   sessionsSortMode: "auto",
   sessionOrder: [],
+  hiddenSections: [],
 };
 
 type AddProjectMode = "existing" | "create" | "clone";
@@ -2296,6 +2297,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const saveProjectPatch = async (patch: {
     customName?: string | null;
     avatar?: AvatarUpdate;
+    hiddenSections?: ("areas" | "pools")[];
     hidden?: boolean;
     pinned?: boolean;
   }) => {
@@ -3055,7 +3057,9 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           {visibleGroups.map((group, idx) => {
             const isOpen = isProjectOpen(group.id, idx === 0);
             const busy = creatingId === group.id;
-            const section = projectSections[group.id] ?? "areas";
+            const sections = ([{ key: "areas", label: "Области" }, { key: "pools", label: "Пулы" }] as const)
+              .filter(tab => !group.meta.hiddenSections.includes(tab.key));
+            const section = sections.find(tab => tab.key === projectSections[group.id])?.key ?? sections[0]?.key;
             const showAll = Boolean(expandedAllChats[group.id]);
             const displayedChats = showAll ? group.chats : group.chats.slice(0, 8);
             const moreCount = group.chats.length - displayedChats.length;
@@ -3131,8 +3135,8 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                   </Pressable> : null}
                 </View>
 
-                {isOpen ? <View style={{ flexDirection: "row", gap: 4, paddingHorizontal: 10, paddingBottom: 8 }}>
-                  {([{ key: "areas", label: "Области" }, { key: "pools", label: "Пулы" }] as const).map((tab) => <Pressable key={tab.key} accessibilityRole="tab" accessibilityState={{ selected: section === tab.key }} onPress={() => setProjectSections((prev) => ({ ...prev, [group.id]: tab.key }))} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 7, backgroundColor: section === tab.key ? c.surface2 : "transparent" }}><Text style={{ color: section === tab.key ? c.foreground : c.foregroundMuted, fontSize: 12, fontWeight: section === tab.key ? "600" : "400" }}>{tab.label}</Text></Pressable>)}
+                {isOpen && sections.length ? <View style={{ flexDirection: "row", gap: 4, paddingHorizontal: 10, paddingBottom: 8 }}>
+                  {sections.map((tab) => <Pressable key={tab.key} accessibilityRole="tab" accessibilityState={{ selected: section === tab.key }} onPress={() => setProjectSections((prev) => ({ ...prev, [group.id]: tab.key }))} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 7, backgroundColor: section === tab.key ? c.surface2 : "transparent" }}><Text style={{ color: section === tab.key ? c.foreground : c.foregroundMuted, fontSize: 12, fontWeight: section === tab.key ? "600" : "400" }}>{tab.label}</Text></Pressable>)}
                 </View> : null}
                 {isOpen && section === "pools" ? <View style={{ borderTopWidth: 1, borderTopColor: c.border, padding: 16, gap: 5 }}><Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>Пул генераций</Text><Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Сервис готовится. Здесь появятся пулы генераций проекта.</Text></View> : null}
 
@@ -3806,6 +3810,20 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                   ) : null}
                 </View>
                 <SessionInformation theme={theme} path={editingGroup.rootPath} project />
+                <View style={{ marginTop: 10, padding: 12, gap: 8, borderRadius: 12, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface2 }}>
+                  <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>Отображаемые разделы</Text>
+                  {([{ key: "areas", label: "Области" }, { key: "pools", label: "Пулы" }] as const).map(item => {
+                    const hidden = editingGroup.meta.hiddenSections.includes(item.key);
+                    return <View key={item.key} style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                      <Text style={{ flex: 1, color: hidden ? c.foregroundMuted : c.foreground, fontSize: 13 }}>{item.label}</Text>
+                      <ChatActionButton theme={theme} icon={hidden ? "EyeOff" : "Eye"}
+                        label={`${hidden ? "Показать" : "Скрыть"} раздел ${item.label}`} disabled={savingProject}
+                        onPress={() => void saveProjectPatch({ hiddenSections: hidden
+                          ? editingGroup.meta.hiddenSections.filter(key => key !== item.key)
+                          : [...editingGroup.meta.hiddenSections, item.key] })} />
+                    </View>;
+                  })}
+                </View>
               </View>
 
               {confirmRemoveProject ? (

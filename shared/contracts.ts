@@ -153,6 +153,7 @@ export const projectSaveRpc = defineRpc({
     customName: z.string().nullable().optional(),
     avatar: avatarUpdateSchema.default({ kind: "keep" }),
     hidden: z.boolean().optional(),
+    hiddenSections: z.array(z.enum(["areas", "pools"])).optional(),
     pinned: z.boolean().optional(),
     sessionTitleModel: z.string().nullable().optional(),
     sessionsSortMode: z.enum(["auto", "manual"]).optional(),
