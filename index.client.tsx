@@ -1659,6 +1659,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const [confirmClosingSession, setConfirmClosingSession] = useState(false);
   const [terminalMenuId, setTerminalMenuId] = useState<string | null>(null);
   const [draftTerminalName, setDraftTerminalName] = useState<string | null>(null);
+  const [projectSettingsTab, setProjectSettingsTab] = useState<"areas" | "pools">("areas");
   const [projectIconOpen, setProjectIconOpen] = useState(false);
   const [projectNameFocused, setProjectNameFocused] = useState(false);
   const projectNameInput = useRef<React.ElementRef<typeof TextInput>>(null);
@@ -3811,18 +3812,25 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                 </View>
                 <SessionInformation theme={theme} path={editingGroup.rootPath} project />
                 <View style={{ marginTop: 10, padding: 12, gap: 8, borderRadius: 12, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface2 }}>
-                  <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>Отображаемые разделы</Text>
-                  {([{ key: "areas", label: "Области" }, { key: "pools", label: "Пулы" }] as const).map(item => {
-                    const hidden = editingGroup.meta.hiddenSections.includes(item.key);
-                    return <View key={item.key} style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                      <Text style={{ flex: 1, color: hidden ? c.foregroundMuted : c.foreground, fontSize: 13 }}>{item.label}</Text>
-                      <ChatActionButton theme={theme} icon={hidden ? "EyeOff" : "Eye"}
-                        label={`${hidden ? "Показать" : "Скрыть"} раздел ${item.label}`} disabled={savingProject}
-                        onPress={() => void saveProjectPatch({ hiddenSections: hidden
-                          ? editingGroup.meta.hiddenSections.filter(key => key !== item.key)
-                          : [...editingGroup.meta.hiddenSections, item.key] })} />
-                    </View>;
-                  })}
+                  <View accessibilityRole="tablist" style={{ flexDirection: "row", gap: 4 }}>
+                    {([{ key: "areas", label: "Области" }, { key: "pools", label: "Пулы" }] as const).map(tab => (
+                      <Pressable key={tab.key} accessibilityRole="tab" accessibilityState={{ selected: projectSettingsTab === tab.key }}
+                        onPress={() => setProjectSettingsTab(tab.key)}
+                        style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 7, backgroundColor: projectSettingsTab === tab.key ? c.surface1 : "transparent" }}>
+                        <Text style={{ color: projectSettingsTab === tab.key ? c.foreground : c.foregroundMuted, fontSize: 12, fontWeight: projectSettingsTab === tab.key ? "600" : "400" }}>{tab.label}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                  <SettingsSwitch
+                    label="Показывать в сайдбаре"
+                    value={!editingGroup.meta.hiddenSections.includes(projectSettingsTab)}
+                    onValueChange={(visible) => {
+                      if (savingProject) return;
+                      void saveProjectPatch({ hiddenSections: visible
+                        ? editingGroup.meta.hiddenSections.filter(key => key !== projectSettingsTab)
+                        : [...editingGroup.meta.hiddenSections, projectSettingsTab] });
+                    }}
+                  />
                 </View>
               </View>
 
