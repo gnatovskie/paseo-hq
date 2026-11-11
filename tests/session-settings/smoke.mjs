@@ -217,7 +217,8 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await expectSessionActions();
           await capture("sidebar-session-menu");
           await copySessionLink.click();
-          await copySessionLink.waitFor({ state: "hidden" });
+          assert(await copySessionLink.isVisible(), "copy keeps the action window open");
+          await button("Закрыть").last().click();
           const link = await clipboard();
           assert.match(link, /^paseo:\/\/\/h\/[^/]+\/agent\//);
           assert.equal(link.split("/").at(-1), chat.id);

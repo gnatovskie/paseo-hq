@@ -1342,18 +1342,24 @@ function ItemMenuActions({ actions, theme, disabled }: {
   );
 }
 
-function SessionInformation({ theme, agent, workspace, path, branch, project = false }: {
+function SessionInformation({ theme, agent, workspace, path, branch, agentLink, project = false }: {
   theme: PluginTheme; agent?: AgentEntry["agent"]; workspace?: PaseoWorkspace;
-  path: string; branch?: string; project?: boolean;
+  path: string; branch?: string; agentLink?: string; project?: boolean;
 }) {
   const c = theme.colors;
+  const toast = useToast();
+  const copy = async (value: string) => {
+    try { await copyText(value); toast.show("Скопировано", { variant: "info" }); }
+    catch { toast.error("Не удалось скопировать"); }
+  };
   const rows = [
     ...(agent ? [
       { label: "Провайдер", value: agent.provider.split("/")[0], a11y: "Провайдер агента", icon: "Bot" },
       { label: "Модель", value: agent.model || agent.provider.split("/").slice(1).join("/") || "Не указана", a11y: "Модель агента", icon: "Cpu" },
     ] : []),
-    ...(workspace?.projectKind === "git" ? [{ label: "Текущая ветка", value: branch || "Ветка не определена", a11y: "Текущая ветка", icon: "GitBranch" }] : []),
-    { label: project ? "Папка проекта" : "Рабочая папка", value: path, a11y: project ? "Папка проекта" : "Рабочая папка сессии", icon: "Folder" },
+    ...(agentLink ? [{ label: "Ссылка на агента", value: agentLink, a11y: "Ссылка на агента", icon: "Link2", copy: true }] : []),
+    ...(workspace?.projectKind === "git" ? [{ label: "Текущая ветка", value: branch || "Ветка не определена", a11y: "Текущая ветка", icon: "GitBranch", copy: Boolean(branch) }] : []),
+    { label: project ? "Папка проекта" : "Рабочая папка", value: path, a11y: project ? "Папка проекта" : "Рабочая папка сессии", icon: "Folder", copy: Boolean(path && path !== "Папка недоступна") },
   ];
   return <View style={{ gap: 12, marginTop: 8, padding: 12, borderRadius: 9, borderWidth: 1, borderColor: c.border }}>
     {rows.map(row => <View key={row.label} style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
@@ -1362,6 +1368,7 @@ function SessionInformation({ theme, agent, workspace, path, branch, project = f
         <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>{row.label}</Text>
         <Text selectable accessibilityLabel={`${row.a11y}: ${row.value}`} style={{ color: c.foreground, fontSize: 12 }}>{row.value}</Text>
       </View>
+      {"copy" in row && row.copy ? <Pressable accessibilityRole="button" accessibilityLabel={row.icon === "GitBranch" ? "Скопировать ветку" : row.icon === "Link2" ? "Скопировать ссылку на агента" : project ? "Скопировать папку проекта" : "Скопировать рабочую папку"} onPress={() => void copy(row.value)} style={({ pressed }) => ({ padding: 7, borderRadius: 7, backgroundColor: pressed ? c.surface2 : "transparent" })}><Icon name="Copy" size={15} color={c.foregroundMuted} /></Pressable> : null}
     </View>)}
   </View>;
 }
@@ -2500,16 +2507,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     savedAgentTitle.current = null;
     setConfirmClosingSession(false);
     setAgentMenuId(agentId);
-  };
-
-  const handleCopyAgentLink = async (agentId: string) => {
-    try {
-      await copyText(`paseo:///h/${host.id || "local"}/agent/${agentId}`);
-      setAgentMenuId((current) => current === agentId ? null : current);
-      toast.show("Ссылка на агента скопирована", { variant: "info" });
-    } catch {
-      toast.error("Не удалось скопировать ссылку");
-    }
   };
 
   const handleAgentMenuAction = async (action: "reload" | "close") => {
@@ -4369,7 +4366,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                   icon: serverState.pinnedSessions[agentMenuChat.id] ? "PinOff" : "Pin",
                   onPress: () => void handleTogglePinAgent(agentMenuChat.id),
                 },
-                { label: "Скопировать ссылку на агента", icon: "Link2", onPress: () => void handleCopyAgentLink(agentMenuChat.id) },
                 { label: "Перезагрузить агента", icon: "RefreshCw", onPress: () => void handleAgentMenuAction("reload") },
                 {
                   label: "Закрыть агента",
@@ -4444,6 +4440,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                 </View>
               )}
               {!confirmClosingSession ? <SessionInformation theme={theme} agent={agentMenuChat} workspace={agentMenuWorkspace}
+                agentLink={`paseo:///h/${host.id || "local"}/agent/${agentMenuChat.id}`}
                 path={agentMenuChat.cwd || agentMenuWorkspace?.workspaceDirectory || "Папка недоступна"}
                 branch={agentMenuChat.workspaceId ? areaBranches[agentMenuChat.workspaceId] : undefined} /> : null}
             </View>

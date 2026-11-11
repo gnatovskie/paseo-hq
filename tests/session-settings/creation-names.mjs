@@ -180,6 +180,8 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await info().getByLabel(`Модель агента: ${snapshot.model || snapshot.provider.split("/").slice(1).join("/") || "Не указана"}`, { exact: true }).waitFor();
           await info().getByLabel("Текущая ветка: hq-next", { exact: true }).waitFor();
           await info().getByLabel(`Рабочая папка сессии: ${workspace.workspaceDirectory}`, { exact: true }).waitFor();
+          await info().getByLabel(`Ссылка на агента: paseo:///h/local/agent/${chat.id}`, { exact: true }).waitFor();
+          for (const label of ["Скопировать ссылку на агента", "Скопировать ветку", "Скопировать рабочую папку"]) await info().getByRole("button", { name: label, exact: true }).waitFor();
           await capture("agent-session-information");
           await button("Закрыть").last().click();
           await page.getByRole("dialog").last().getByRole("button", { name: "Меню терминала Fixture terminal", exact: true }).click();
