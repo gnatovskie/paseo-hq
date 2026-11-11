@@ -718,12 +718,14 @@ function openUsageLimits(serverId?: string) {
   }
 }
 
-function ChatActionButton({ label, icon, color, disabled, onPress, theme, quiet = false }: {
+function ChatActionButton({ label, icon, color, disabled, onPress, onPressIn, theme, quiet = false }: {
   label: string;
   icon: string;
   color?: string;
   disabled?: boolean;
   onPress: () => void;
+  /** Срабатывает до потери фокуса полем ввода, поэтому кнопка не теряет нажатие при blur. */
+  onPressIn?: () => void;
   theme: PluginTheme;
   quiet?: boolean;
 }) {
@@ -735,6 +737,7 @@ function ChatActionButton({ label, icon, color, disabled, onPress, theme, quiet 
       tooltip={label}
       disabled={disabled}
       onPress={onPress}
+      onPressIn={onPressIn}
       style={({ pressed }) => ({
         width: quiet ? 34 : 44,
         height: quiet ? 36 : 44,
@@ -1159,10 +1162,17 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const [draftAgentTitle, setDraftAgentTitle] = useState<string | null>(null);
   const [agentTitleModelChoice, setAgentTitleModelChoice] = useState<string | null>(null);
   const [suggestingAgentTitle, setSuggestingAgentTitle] = useState(false);
+  const terminalNameInput = useRef<React.ElementRef<typeof TextInput>>(null);
   const agentTitleInput = useRef<React.ElementRef<typeof TextInput>>(null);
   const [confirmClosingSession, setConfirmClosingSession] = useState(false);
   const [terminalMenuId, setTerminalMenuId] = useState<string | null>(null);
   const [draftTerminalName, setDraftTerminalName] = useState<string | null>(null);
+  const [areaTitleFocused, setAreaTitleFocused] = useState(false);
+  const [agentTitleFocused, setAgentTitleFocused] = useState(false);
+  const [terminalNameFocused, setTerminalNameFocused] = useState(false);
+  const savedAreaRevision = useRef(-1);
+  const savedAgentTitle = useRef<string | null>(null);
+  const savedTerminalName = useRef<string | null>(null);
   const [confirmClosingTerminal, setConfirmClosingTerminal] = useState(false);
   const [chatTransferOpen, setChatTransferOpen] = useState(false);
   const [transferTargetProjectId, setTransferTargetProjectId] = useState<string>("");
@@ -1898,6 +1908,9 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       return;
     }
     const revision = draftTitleRevision.current;
+    // Потеря фокуса и закрытие окна приходят вместе: одну правку сохраняем один раз.
+    if (savedAreaRevision.current === revision) return;
+    savedAreaRevision.current = revision;
     pendingTitleSaves.current += 1;
     titleSaveQueue.current = titleSaveQueue.current.then(async () => {
       try {
@@ -1913,6 +1926,11 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
         pendingTitleSaves.current -= 1;
       }
     });
+  };
+
+  const acceptAreaTitle = () => {
+    handleRenameChat();
+    areaTitleInput.current?.blur();
   };
 
   // Выбор модели принадлежит области. Название остается черновиком до сохранения.
@@ -1954,6 +1972,8 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       return;
     }
     const { workspaceId, id: agentId } = agentMenuChat;
+    if (savedAgentTitle.current === `${agentId}:${title}`) return;
+    savedAgentTitle.current = `${agentId}:${title}`;
     try {
       await renameAgent({ workspaceId, agentId, title });
       setDraftAgentTitle(null);
@@ -1962,6 +1982,11 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Не удалось переименовать агента");
     }
+  };
+
+  const acceptAgentTitle = () => {
+    void handleRenameAgent();
+    agentTitleInput.current?.blur();
   };
 
   const handleSuggestAgentTitle = async (model: string) => {
@@ -1987,6 +2012,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const openAgentMenu = (agentId: string) => {
     setAgentTitleModelChoice(null);
     setDraftAgentTitle(null);
+    savedAgentTitle.current = null;
     setConfirmClosingSession(false);
     setAgentMenuId(agentId);
   };
@@ -2030,6 +2056,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
 
   const openTerminalMenu = (terminalId: string) => {
     setDraftTerminalName(null);
+    savedTerminalName.current = null;
     setConfirmClosingTerminal(false);
     setTerminalMenuId(terminalId);
   };
@@ -2038,6 +2065,8 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     if (!terminalMenuItem || draftTerminalName === null) return;
     const terminal = terminalMenuItem;
     const title = draftTerminalName.trim();
+    if (savedTerminalName.current === `${terminal.id}:${title}`) return;
+    savedTerminalName.current = `${terminal.id}:${title}`;
     setDraftTerminalName(null);
     // Пустое название возвращает исходное имя терминала.
     if (title === terminalLabel(terminal) || (!title && !serverState.terminalNames[terminal.id])) return;
@@ -2051,6 +2080,11 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Не удалось переименовать терминал");
     }
+  };
+
+  const acceptTerminalName = () => {
+    void handleRenameTerminal();
+    terminalNameInput.current?.blur();
   };
 
   const handleCopyTerminalPath = async (terminal: PaseoTerminal) => {
@@ -3487,6 +3521,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                       value={draftChatTitle ?? editingAreaTitle}
                       onChangeText={updateDraftChatTitle}
                       onFocus={() => {
+                        setAreaTitleFocused(true);
                         if (draftChatTitle === null) updateDraftChatTitle(editingAreaTitle);
                       }}
                       selection={draftTitleSelection}
@@ -3495,22 +3530,37 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                           setDraftTitleSelection(undefined);
                         }
                       }}
-                      onBlur={handleRenameChat}
+                      onBlur={() => {
+                        setAreaTitleFocused(false);
+                        handleRenameChat();
+                      }}
                       placeholder="Новая область"
                       placeholderTextColor={c.foregroundMuted}
                       editable={!chatMutationPending}
                       style={{ flex: 1, minWidth: 0, padding: 0, outlineWidth: 0, color: c.foreground, fontSize: 15 }}
                     />
                   </View>
-                  <TitleModelPicker
-                    theme={theme}
-                    value={titleModel}
-                    options={titleModelOptions(titleProviders, titleModel)}
-                    disabled={!canSuggestTitle}
-                    pending={suggestingTitle}
-                    hint={titleModelsError ? `Не удалось загрузить модели: ${titleModelsError}` : undefined}
-                    onValueChange={(model) => void handleSuggestTitle(model)}
-                  />
+                  {areaTitleFocused ? (
+                    <ChatActionButton
+                      label="Принять название"
+                      icon="Check"
+                      color={c.accent}
+                      disabled={chatMutationPending}
+                      onPressIn={acceptAreaTitle}
+                      onPress={acceptAreaTitle}
+                      theme={theme}
+                    />
+                  ) : (
+                    <TitleModelPicker
+                      theme={theme}
+                      value={titleModel}
+                      options={titleModelOptions(titleProviders, titleModel)}
+                      disabled={!canSuggestTitle}
+                      pending={suggestingTitle}
+                      hint={titleModelsError ? `Не удалось загрузить модели: ${titleModelsError}` : undefined}
+                      onValueChange={(model) => void handleSuggestTitle(model)}
+                    />
+                  )}
                 </View>
 
               </View>
@@ -3726,7 +3776,10 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           ? "Закрыть работающего агента"
           : "Действия с агентом"}
         open={Boolean(agentMenuChat)}
-        onClose={() => setAgentMenuId(null)}
+        onClose={() => {
+          void handleRenameAgent();
+          setAgentMenuId(null);
+        }}
         theme={theme}
         disabled={chatMutationPending}
         actions={agentMenuChat ? confirmClosingSession ? [
@@ -3774,24 +3827,41 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                         value={draftAgentTitle ?? agentMenuChat.title ?? ""}
                         onChangeText={setDraftAgentTitle}
                         onFocus={() => {
+                          setAgentTitleFocused(true);
+                          savedAgentTitle.current = null;
                           if (draftAgentTitle === null) setDraftAgentTitle(agentMenuChat.title ?? "");
                         }}
-                        onBlur={() => void handleRenameAgent()}
+                        onBlur={() => {
+                          setAgentTitleFocused(false);
+                          void handleRenameAgent();
+                        }}
                         onSubmitEditing={() => void handleRenameAgent()}
                         maxLength={200}
                         editable={!chatMutationPending}
                         style={{ flex: 1, minWidth: 0, padding: 0, outlineWidth: 0, color: c.foreground, fontSize: 15 }}
                       />
                     </View>
-                    <TitleModelPicker
-                      theme={theme}
-                      value={agentTitleModel}
-                      options={titleModelOptions(titleProviders, agentTitleModel)}
-                      disabled={suggestingAgentTitle || chatMutationPending}
-                      pending={suggestingAgentTitle}
-                      hint={titleModelsError ? `Не удалось загрузить модели: ${titleModelsError}` : undefined}
-                      onValueChange={(model) => void handleSuggestAgentTitle(model)}
-                    />
+                    {agentTitleFocused ? (
+                      <ChatActionButton
+                        label="Принять название"
+                        icon="Check"
+                        color={c.accent}
+                        disabled={chatMutationPending}
+                        onPressIn={acceptAgentTitle}
+                        onPress={acceptAgentTitle}
+                        theme={theme}
+                      />
+                    ) : (
+                      <TitleModelPicker
+                        theme={theme}
+                        value={agentTitleModel}
+                        options={titleModelOptions(titleProviders, agentTitleModel)}
+                        disabled={suggestingAgentTitle || chatMutationPending}
+                        pending={suggestingAgentTitle}
+                        hint={titleModelsError ? `Не удалось загрузить модели: ${titleModelsError}` : undefined}
+                        onValueChange={(model) => void handleSuggestAgentTitle(model)}
+                      />
+                    )}
                   </View>
                 </View>
               )}
@@ -3803,7 +3873,10 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       <ActionSheet
         title={confirmClosingTerminal ? "Закрыть терминал" : "Настройки терминала"}
         open={Boolean(terminalMenuItem)}
-        onClose={() => { if (!chatMutationPending) setTerminalMenuId(null); }}
+        onClose={() => {
+          void handleRenameTerminal();
+          if (!chatMutationPending) setTerminalMenuId(null);
+        }}
         theme={theme}
         disabled={chatMutationPending}
         actions={terminalMenuItem ? confirmClosingTerminal ? [
@@ -3826,26 +3899,45 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                   Терминал и запущенные в нем процессы завершатся.
                 </Text>
               ) : (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                 <View style={{
-                  height: 44, flexDirection: "row", alignItems: "center", paddingHorizontal: 12,
+                  flex: 1, minWidth: 0, height: 44, flexDirection: "row", alignItems: "center", paddingHorizontal: 12,
                   borderRadius: 9, borderWidth: 1, backgroundColor: c.surface2,
                   borderColor: draftTerminalName === null ? c.border : c.accent,
                 }}>
                   <TextInput
+                    ref={terminalNameInput}
                     accessibilityLabel="Название терминала"
                     placeholder="Название терминала"
                     placeholderTextColor={c.foregroundMuted}
                     value={draftTerminalName ?? terminalLabel(terminalMenuItem)}
                     onChangeText={setDraftTerminalName}
                     onFocus={() => {
+                      setTerminalNameFocused(true);
+                      savedTerminalName.current = null;
                       if (draftTerminalName === null) setDraftTerminalName(terminalLabel(terminalMenuItem));
                     }}
-                    onBlur={() => void handleRenameTerminal()}
+                    onBlur={() => {
+                      setTerminalNameFocused(false);
+                      void handleRenameTerminal();
+                    }}
                     onSubmitEditing={() => void handleRenameTerminal()}
                     maxLength={200}
                     editable={!chatMutationPending}
                     style={{ flex: 1, minWidth: 0, padding: 0, outlineWidth: 0, color: c.foreground, fontSize: 15 }}
                   />
+                </View>
+                {terminalNameFocused ? (
+                  <ChatActionButton
+                    label="Принять название"
+                    icon="Check"
+                    color={c.accent}
+                    disabled={chatMutationPending}
+                    onPressIn={acceptTerminalName}
+                    onPress={acceptTerminalName}
+                    theme={theme}
+                  />
+                ) : null}
                 </View>
               )}
               
