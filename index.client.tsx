@@ -942,29 +942,18 @@ function ItemMenuActions({ actions, theme, disabled }: {
   theme: PluginTheme;
   disabled: boolean;
 }) {
-  const c = theme.colors;
   return (
-    <View style={{ gap: 8 }}>
+    <View style={{ flexDirection: "row", gap: 8, justifyContent: "flex-end" }}>
       {actions.map(({ label, icon, onPress, danger }) => (
-        <Pressable
+        <ChatActionButton
           key={label}
-          accessibilityRole="button"
+          label={label}
+          icon={icon}
+          color={danger ? theme.colors.statusDanger : undefined}
           disabled={disabled}
           onPress={onPress}
-          style={({ pressed }) => ({
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 10,
-            minHeight: 44,
-            paddingHorizontal: 12,
-            borderRadius: 9,
-            backgroundColor: pressed ? c.surface1 : c.surface2,
-            opacity: disabled ? 0.5 : 1,
-          })}
-        >
-          <Icon name={icon} size={16} color={danger ? c.statusDanger : c.foreground} />
-          <Text style={{ color: danger ? c.statusDanger : c.foreground, fontSize: 14 }}>{label}</Text>
-        </Pressable>
+          theme={theme}
+        />
       ))}
     </View>
   );
@@ -3364,7 +3353,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                 </View>
 
               </View>
-              <View style={{ flexDirection: "row", gap: 8 }}>
+              <View style={{ flexDirection: "row", gap: 8, justifyContent: "flex-end" }}>
                 <ChatActionButton
                   label="Новый агент"
                   icon="Plus"
