@@ -59,7 +59,8 @@ import {
 import { agentCreationOptions } from "./shared/agent-creation-options";
 import { projectAgentConfig } from "./shared/project-agent-config";
 import { compareProjectOrder } from "./shared/project-order";
-import { groupAreaAgents } from "./shared/area-agents";
+import { findFinalReply } from "./shared/reply-time";
+import { groupAreaAgents, compareAreaOrder } from "./shared/area-agents";
 import { GENERATOR_TITLE, titleModelOptions } from "./shared/title-models";
 import { useActiveSession } from "./client/active-session.client";
 import { ProviderLogo } from "./client/provider-logo.client";
@@ -117,6 +118,7 @@ const DEFAULT_META: ProjectMeta = {
   pinned: false,
   sessionTitleModel: null,
   sessionsSortMode: "auto",
+  areasSortBy: "prompt",
   sessionOrder: [],
   hiddenSections: [],
 };
@@ -967,7 +969,7 @@ type AreaSession =
   | { kind: "agent"; id: string; entry: AgentEntry }
   | { kind: "terminal"; id: string; terminal: PaseoTerminal };
 
-// Закрепленные идут первыми в порядке закрепления и не зависят от активности, остальные - агенты, затем терминалы.
+// Закрепленные идут первыми, последнее закрепление сверху, остальные - агенты, затем терминалы.
 function orderAreaSessions(
   agents: AgentEntry[],
   terminals: PaseoTerminal[],
@@ -977,8 +979,19 @@ function orderAreaSessions(
     ...agents.map((entry): AreaSession => ({ kind: "agent", id: entry.agent.id, entry })),
     ...terminals.map((terminal): AreaSession => ({ kind: "terminal", id: terminal.id, terminal })),
   ];
-  const pinnedItems = items.filter(item => pinned[item.id]).sort((a, b) => pinned[a.id]! - pinned[b.id]!);
+  const pinnedItems = items.filter(item => pinned[item.id]).sort((a, b) => pinned[b.id]! - pinned[a.id]!);
   return [...pinnedItems, ...items.filter(item => !pinned[item.id])];
+}
+
+function SortBasisPicker({ value, onChange, theme, disabled = false }: { disabled?: boolean; value: "prompt" | "reply"; onChange: (value: "prompt" | "reply") => void; theme: PluginTheme }) {
+  return <View style={{ gap: 4 }}><Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>Сортировать по</Text>
+    {([{ value: "prompt", label: "Последнему промпту" }, { value: "reply", label: "Последнему финальному ответу агента" }] as const).map(option =>
+      <Pressable key={option.value} disabled={disabled} accessibilityRole="radio" aria-checked={value === option.value} accessibilityState={{ checked: value === option.value }} accessibilityLabel={option.label}
+        onPress={() => onChange(option.value)} style={{ padding: 8, borderRadius: 7, flexDirection: "row", gap: 8, backgroundColor: value === option.value ? theme.colors.surface1 : undefined }}>
+        <Icon name={value === option.value ? "CircleDot" : "Circle"} size={16} color={theme.colors.foregroundMuted} />
+        <Text style={{ color: theme.colors.foreground, fontSize: 12, flexShrink: 1 }}>{option.label}</Text>
+      </Pressable>)}
+  </View>;
 }
 
 type SheetAction = { label: string; icon: string; onPress: () => void; danger?: boolean; disabled?: boolean; color?: string; selected?: boolean };
@@ -1528,6 +1541,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     nativeIcons: {},
     areaIcons: {},
     areaIconBgs: {},
+    areaSessionSortBy: {},
     areaWorktrees: {},
     lastRunningAt: {},
     pinnedSessions: {},
@@ -1768,7 +1782,50 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     return { agentBucketByWorkspace: bucketMap, agentTurnFinishMap: finishMap, agentPromptMap: promptMap, latestAgentByWorkspace: agentMap };
   }, [agents]);
 
-  const agentsByWorkspace = useMemo(() => groupAreaAgents(agents), [agents]);
+  const [replyTimes, setReplyTimes] = useState<Record<string, number>>({});
+  const replyCache = useRef(new Map<string, string>());
+  const replyRequests = useRef(new Set<string>());
+  const replyMounted = useRef(true);
+  useEffect(() => { replyMounted.current = true; return () => { replyMounted.current = false; }; }, []);
+  useEffect(() => {
+    const relevant = agents.filter(({ agent }) => !agent.archivedAt && !agent.internal && agent.workspaceId &&
+      (serverState.areaSessionSortBy[agent.workspaceId] === "reply" || serverState.projects[workspaces.find(w => w.id === agent.workspaceId)?.projectId ?? ""]?.areasSortBy === "reply"));
+    void (async () => {
+      for (const { agent } of relevant) {
+        if (!replyMounted.current) break;
+        if (replyRequests.current.has(agent.id)) continue;
+        if (agent.status === "running" && !agent.activeTurn?.turnId) continue;
+        const signature = agent.status === "running" ? agent.activeTurn!.turnId : agent.updatedAt;
+        if (replyCache.current.get(agent.id) === signature) continue;
+        replyRequests.current.add(agent.id);
+        try {
+          let page = await paseo.agents.ref(agent.id).timeline.refetch({ direction: "tail", limit: 100, projection: "canonical" });
+          let found = 0;
+          const excludedTurns = new Set<string>();
+          if (agent.activeTurn?.turnId) excludedTurns.add(agent.activeTurn.turnId);
+          while (true) {
+            if (page.error) throw new Error(page.error);
+            const row = findFinalReply(page.entries, excludedTurns, agent.status === "idle");
+            if (row) { found = parseIsoMs(row.timestamp); break; }
+            if (!page.hasOlder || !page.startCursor) break;
+            page = await paseo.agents.ref(agent.id).timeline.refetch({ direction: "before", cursor: page.startCursor, limit: 100, projection: "canonical" });
+          }
+          if (replyMounted.current) {
+            replyCache.current.set(agent.id, signature);
+            setReplyTimes(prev => ({ ...prev, [agent.id]: found }));
+          }
+        } catch (error) { if (replyMounted.current) toast.error(error instanceof Error ? error.message : "Не удалось прочитать время ответа"); }
+        finally { replyRequests.current.delete(agent.id); }
+      }
+    })();
+  }, [agents, serverState.areaSessionSortBy, serverState.projects, workspaces, paseo]);
+  const areaReplyMap = useMemo(() => {
+    const result: Record<string, number> = {};
+    for (const { agent } of agents) if (!agent.archivedAt && !agent.internal && agent.workspaceId)
+      result[agent.workspaceId] = Math.max(result[agent.workspaceId] || 0, replyTimes[agent.id] || 0);
+    return result;
+  }, [agents, replyTimes]);
+  const agentsByWorkspace = useMemo(() => groupAreaAgents(agents, serverState.areaSessionSortBy, replyTimes), [agents, serverState.areaSessionSortBy, replyTimes]);
 
   const allGroups = useMemo<ProjectGroup[]>(() => {
     const byProject = new Map<string, ProjectGroup>();
@@ -1837,17 +1894,9 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
         maxPrompt = Math.max(maxPrompt, chatLastPromptMs(ch, agentPromptMap));
       }
 
-      g.chats.sort((a, b) => {
-        const aPin = Boolean(pinnedMap[a.id]);
-        const bPin = Boolean(pinnedMap[b.id]);
-        if (aPin !== bPin) return aPin ? -1 : 1;
-
-        const aTs = chatLastPromptMs(a, agentPromptMap);
-        const bTs = chatLastPromptMs(b, agentPromptMap);
-        if (bTs !== aTs) return bTs - aTs;
-
-        return (pinnedMap[b.id] ?? 0) - (pinnedMap[a.id] ?? 0);
-      });
+      g.chats.sort((a, b) => compareAreaOrder(a, b, pinnedMap, g.meta.sessionsSortMode, g.meta.sessionOrder,
+        id => g.meta.areasSortBy === "reply" ? (areaReplyMap[id] || parseIsoMs(g.chats.find(ch => ch.id === id)?.createdAt))
+          : chatLastPromptMs(g.chats.find(ch => ch.id === id)!, agentPromptMap)));
 
       g.lastRunningAt = maxRun;
       g.lastPromptAt = maxPrompt;
@@ -1857,7 +1906,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
 
     list.sort(compareProjectOrder);
     return list;
-  }, [projects, workspaces, archivedIds, serverState, agentBucketByWorkspace, agentTurnFinishMap, agentPromptMap]);
+  }, [projects, workspaces, archivedIds, serverState, agentBucketByWorkspace, agentTurnFinishMap, agentPromptMap, areaReplyMap]);
 
   const hiddenCount = useMemo(() => allGroups.filter((g) => g.meta.hidden).length, [allGroups]);
   const visibleGroups = useMemo(
@@ -2309,6 +2358,9 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     avatar?: AvatarUpdate;
     hiddenSections?: ("areas" | "pools")[];
     hidden?: boolean;
+    sessionsSortMode?: "auto" | "manual";
+    sessionOrder?: string[];
+    areasSortBy?: "prompt" | "reply";
     pinned?: boolean;
   }) => {
     if (!editingGroup) return false;
@@ -3842,6 +3894,12 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                         : [...editingGroup.meta.hiddenSections, projectSettingsTab] });
                     }}
                   />
+                  {projectSettingsTab === "areas" ? <>
+                    <SettingsSwitch label="Автосортировка областей" disabled={savingProject} value={editingGroup.meta.sessionsSortMode === "auto"}
+                      onValueChange={enabled => { if (!savingProject) void saveProjectPatch({ sessionsSortMode: enabled ? "auto" : "manual", sessionOrder: editingGroup.chats.map(chat => chat.id) }); }} />
+                    {editingGroup.meta.sessionsSortMode === "auto" ? <SortBasisPicker theme={theme} disabled={savingProject} value={editingGroup.meta.areasSortBy}
+                      onChange={areasSortBy => { if (!savingProject) void saveProjectPatch({ areasSortBy }); }} /> : null}
+                  </> : null}
                 </View>
               </View>
 
@@ -4262,6 +4320,15 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                 ) : null}
               </View>
 
+              <View style={{ padding: 12, gap: 8, borderRadius: 12, backgroundColor: c.surface2 }}>
+                <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>Сортировка сессий</Text>
+                <SortBasisPicker theme={theme} value={serverState.areaSessionSortBy[editingChat.id] ?? "prompt"} onChange={sessionsSortBy => {
+                  void readAreaSettings({ workspaceId: editingChat.id, sessionsSortBy }).then(settings => {
+                    setAreaSettings(settings);
+                    setServerState(prev => ({ ...prev, areaSessionSortBy: { ...prev.areaSessionSortBy, [editingChat.id]: settings.sessionsSortBy } }));
+                  }).catch(error => toast.error(error instanceof Error ? error.message : "Не удалось сохранить сортировку"));
+                }} />
+              </View>
               <View
                 style={{
                   borderRadius: 12,

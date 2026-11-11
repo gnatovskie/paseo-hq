@@ -9,6 +9,7 @@ export const projectMetaSchema = z.object({
   pinned: z.boolean().default(false),
   sessionTitleModel: z.string().nullable().default(null),
   sessionsSortMode: z.enum(["auto", "manual"]).default("auto"),
+  areasSortBy: z.enum(["prompt", "reply"]).default("prompt"),
   sessionOrder: z.array(z.string()).default([]),
 });
 

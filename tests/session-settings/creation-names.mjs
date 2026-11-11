@@ -175,6 +175,28 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
 
         try {
           await enterSidebar();
+          await button("Настройки проекта source").click();
+          const automatic = page.getByRole("switch", { name: "Автосортировка областей", exact: true });
+          await automatic.waitFor();
+          if (await automatic.getAttribute("aria-checked") !== "true") await automatic.click();
+          const replyChoice = page.getByRole("radio", { name: "Последнему финальному ответу агента", exact: true });
+          await replyChoice.click();
+          await page.getByRole("radio", { name: "Последнему финальному ответу агента", exact: true, checked: true }).waitFor();
+          await automatic.click();
+          await replyChoice.waitFor({ state: "hidden" });
+          await automatic.click();
+          await replyChoice.waitFor();
+          await page.getByRole("radio", { name: "Последнему промпту", exact: true }).click();
+          await button("Закрыть").last().click();
+          await openArea();
+          await replyChoice.click();
+          await page.getByRole("radio", { name: "Последнему финальному ответу агента", exact: true, checked: true }).waitFor();
+          await button("Закрыть").last().click();
+          await openArea();
+          assert.equal(await replyChoice.getAttribute("aria-checked"), "true", "area sorting persists after reopening");
+          await page.getByRole("radio", { name: "Последнему промпту", exact: true }).click();
+          await button("Закрыть").last().click();
+
           if (!await sidebar.getByRole("tab", { name: "Пулы" }).isVisible()) await sidebar.getByText("source", { exact: true }).click();
           await sidebar.getByRole("tab", { name: "Пулы" }).click();
           await page.getByText("Сервис готовится. Здесь появятся пулы генераций проекта.").waitFor();

@@ -108,7 +108,7 @@ const MAX_HISTORY_ENTRIES = 500;
 type AreaPreferences = ReturnType<typeof areaPreferencesSchema.parse>;
 
 function emptyAreaPreferences(): AreaPreferences {
-  return { icon: null, iconBg: null, titleModel: null, defaultBranch: null, launchBranches: {}, worktree: null };
+  return { sessionsSortBy: "prompt", icon: null, iconBg: null, titleModel: null, defaultBranch: null, launchBranches: {}, worktree: null };
 }
 
 interface StoredData {
@@ -445,6 +445,7 @@ async function buildState(projectIds: string[]): Promise<SidebarState> {
   return {
     projects: stored.projects,
     nativeIcons,
+    areaSessionSortBy: Object.fromEntries(Object.entries(stored.areaPreferences).map(([id, pref]) => [id, pref.sessionsSortBy])),
     areaIcons: Object.fromEntries(
       Object.entries(stored.areaPreferences).flatMap(([id, preferences]) => preferences.icon ? [[id, preferences.icon]] : []),
     ),
@@ -759,18 +760,19 @@ export default function contribute(server: PluginServerContext) {
     return { title: await suggestTitle(paseo, workspaceId, agentId, selectedModel) };
   });
 
-  server.handle(areaSettingsRpc, async ({ workspaceId, defaultBranch, icon, iconBg, titleModel }, { paseo }) => {
+  server.handle(areaSettingsRpc, async ({ workspaceId, defaultBranch, icon, iconBg, titleModel, sessionsSortBy }, { paseo }) => {
     const area = await requireArea(paseo, workspaceId);
     const [currentBranch, branches]: [string | null, string[]] = area.projectKind === "git"
       ? await Promise.all([currentGitBranch(area.workspaceDirectory), localGitBranches(area.workspaceDirectory)])
       : [null, []];
-    if (defaultBranch !== undefined || icon !== undefined || iconBg !== undefined || titleModel !== undefined) {
+    if (sessionsSortBy !== undefined || defaultBranch !== undefined || icon !== undefined || iconBg !== undefined || titleModel !== undefined) {
       if (defaultBranch && !branches.includes(defaultBranch)) {
         throw new Error("Ветка не найдена в этой области");
       }
       await serializeWrite(async () => {
         const stored = await readStored();
         const preferences = stored.areaPreferences[workspaceId] ??= emptyAreaPreferences();
+        if (sessionsSortBy !== undefined) preferences.sessionsSortBy = sessionsSortBy;
         if (defaultBranch !== undefined) preferences.defaultBranch = defaultBranch;
         if (icon !== undefined) preferences.icon = icon;
         if (iconBg !== undefined) preferences.iconBg = iconBg;
@@ -1011,6 +1013,7 @@ export default function contribute(server: PluginServerContext) {
       pinned,
       sessionTitleModel,
       sessionsSortMode,
+      areasSortBy,
       sessionOrder,
     }) => {
       let resolvedAvatar: { dataUri: string; buffer: Buffer; mime: string } | null = null;
@@ -1057,6 +1060,7 @@ export default function contribute(server: PluginServerContext) {
           pinned: false,
           sessionTitleModel: null,
           sessionsSortMode: "auto",
+          areasSortBy: "prompt",
           sessionOrder: [],
           hiddenSections: [],
         };
@@ -1089,6 +1093,7 @@ export default function contribute(server: PluginServerContext) {
         if (sessionsSortMode === "auto" || sessionsSortMode === "manual") {
           next.sessionsSortMode = sessionsSortMode;
         }
+        if (areasSortBy !== undefined) next.areasSortBy = areasSortBy;
         if (Array.isArray(sessionOrder)) {
           next.sessionOrder = sessionOrder;
         }

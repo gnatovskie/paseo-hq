@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { groupAreaAgents } from "./area-agents.ts";
+import { groupAreaAgents, compareAreaOrder } from "./area-agents.ts";
 const at = n => `2026-11-11T12:${String(n).padStart(2, "0")}:00Z`;
 const entry = (id, prompt, extra = {}) => ({ agent: { id, workspaceId: "w", createdAt: at(0), lastUserMessageAt: prompt && at(prompt), updatedAt: at(55), ...extra } });
 const ids = entries => groupAreaAgents(entries).get("w").map(({ agent }) => agent.id);
@@ -27,4 +27,19 @@ test("archived, internal and workspace-less agents stay out of visible groups", 
   const entries = [entry("visible", 10), entry("archived", 59, { archivedAt: at(59) }), entry("internal", 59, { internal: true }), entry("detached", 59, { workspaceId: null })];
   assert.deepEqual(ids(entries), ["visible"]);
   assert.equal(entries.length, 4);
+});
+
+test("reply sorting uses final reply times, not prompts or runtime activity", () => {
+  const entries = [entry("prompt", 50), entry("reply", 10)];
+  const replies = { prompt: Date.parse(at(20)), reply: Date.parse(at(40)) };
+  assert.deepEqual(groupAreaAgents(entries, { w: "reply" }, replies).get("w").map(e => e.agent.id), ["reply", "prompt"]);
+  assert.deepEqual(ids(entries), ["prompt", "reply"]);
+});
+
+test("pins override activity newest first, manual order stays frozen", () => {
+  const entries = [{ id: "oldpin" }, { id: "newpin" }, { id: "a" }, { id: "b" }];
+  const pins = { oldpin: 1, newpin: 2 };
+  const activity = id => ({ oldpin: 900, newpin: 1, a: 10, b: 20 })[id];
+  assert.deepEqual([...entries].sort((a,b) => compareAreaOrder(a,b,pins,"auto",[],activity)).map(e=>e.id), ["newpin","oldpin","b","a"]);
+  assert.deepEqual([...entries].sort((a,b) => compareAreaOrder(a,b,pins,"manual",["a","b"],activity)).map(e=>e.id), ["newpin","oldpin","a","b"]);
 });
