@@ -145,6 +145,11 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
         try {
           await enterSidebar();
           await openArea();
+          const closeTop = async () => (await button("Закрыть").last().boundingBox()).y;
+          const topBefore = await closeTop();
+          await page.getByRole("button", { name: /^Закрытые/ }).click();
+          await page.getByRole("button", { name: "Терминалы", exact: true }).click();
+          assert.equal(await closeTop(), topBefore, "area window keeps its height whatever the list length");
           await page.getByRole("button", { name: /^Закрытые/ }).click();
           await page.getByText(/Нет закрытых сессий|Открыть закрытого/).first().waitFor();
           assert.equal(await button("Меню агента Fixture chat").count(), 0, "closed filter hides open sessions");

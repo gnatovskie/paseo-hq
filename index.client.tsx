@@ -983,13 +983,15 @@ function HqModalLayer({ visible, children }: { visible: boolean; children: React
   );
 }
 
-function HqModal({ title, open, onOpenChange, theme, actions, actionsDisabled = false, children }: {
+function HqModal({ title, open, onOpenChange, theme, actions, actionsDisabled = false, fixedHeight = false, children }: {
   title: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   theme: PluginTheme;
   actions?: SheetAction[];
   actionsDisabled?: boolean;
+  /** Окно всегда одной высоты, не зависит от длины содержимого. */
+  fixedHeight?: boolean;
   children: React.ReactNode;
 }) {
   const c = theme.colors;
@@ -1017,7 +1019,7 @@ function HqModal({ title, open, onOpenChange, theme, actions, actionsDisabled = 
         style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: "rgba(0,0,0,0.55)" }}
       />
       <View style={{
-        width: "100%", maxWidth: 520, maxHeight: "90%", borderRadius: 16,
+        width: "100%", maxWidth: 520, maxHeight: "90%", ...(fixedHeight ? { height: "85%" } : null), borderRadius: 16,
         borderWidth: 1, borderColor: c.border, backgroundColor: c.surface1, overflow: "hidden",
       }}>
         <View style={{ paddingLeft: 16, paddingRight: 8, paddingTop: 8, paddingBottom: 8, gap: 8 }}>
@@ -1044,7 +1046,7 @@ function HqModal({ title, open, onOpenChange, theme, actions, actionsDisabled = 
           ) : null}
         </View>
         <View style={{ height: 1, backgroundColor: c.border }} />
-        <ScrollView keyboardShouldPersistTaps="handled" style={{ flexShrink: 1 }} contentContainerStyle={{ padding: 16, gap: 16 }}>
+        <ScrollView keyboardShouldPersistTaps="handled" style={fixedHeight ? { flex: 1 } : { flexShrink: 1 }} contentContainerStyle={{ padding: 16, gap: 16 }}>
           {children}
         </ScrollView>
       </View>
@@ -1056,18 +1058,19 @@ HqModal.Content = function HqModalContent({ children }: { children: React.ReactN
   return <>{children}</>;
 };
 
-function ActionSheet({ title, open, onClose, theme, actions, disabled, children }: {
+function ActionSheet({ title, open, onClose, theme, actions, disabled, fixedHeight, children }: {
   title: string;
   open: boolean;
   onClose: () => void;
   theme: PluginTheme;
   actions: SheetAction[];
   disabled: boolean;
+  fixedHeight?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <HqModal title={title} open={open} onOpenChange={(next) => { if (!next) onClose(); }}
-      theme={theme} actions={actions} actionsDisabled={disabled}>
+      theme={theme} actions={actions} actionsDisabled={disabled} fixedHeight={fixedHeight}>
       {children}
     </HqModal>
   );
@@ -3514,6 +3517,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
 
       <ActionSheet
         title="Функционал области"
+        fixedHeight
         open={Boolean(editingChat)}
         onClose={() => {
           handleRenameChat();
