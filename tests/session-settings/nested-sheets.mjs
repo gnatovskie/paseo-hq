@@ -153,6 +153,11 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
 
         try {
           await enterSidebar();
+          const initiallyExpanded = await areaToggle.getAttribute("aria-expanded") === "true";
+          await button(`${initiallyExpanded ? "Свернуть" : "Развернуть"} область ${title}`).click();
+          assert.equal(await areaToggle.getAttribute("aria-expanded"), String(!initiallyExpanded));
+          await button(`${initiallyExpanded ? "Развернуть" : "Свернуть"} область ${title}`).click();
+          assert.equal(await areaToggle.getAttribute("aria-expanded"), String(initiallyExpanded));
           await button("Настройки штаба").click();
           await page.getByText("Автогенерация названий", { exact: true }).waitFor();
           await page.getByText("Модель генерации названий", { exact: true }).waitFor();
@@ -182,6 +187,16 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await monitoring.click();
           await button("Закрыть").last().click();
           await openArea();
+          const archivedFixture = await workspaceHandle.agents.create({ title: `Archived view ${width}`, config: { provider: "codex/gpt-5.4" } });
+          await archivedFixture.archive();
+          await button("Закрыть").last().click();
+          await openArea();
+          await page.getByRole("button", { name: /^Закрытые/ }).click();
+          await button(`Открыть закрытого агента Archived view ${width}`).click();
+          await page.getByRole("button", { name: /^(Unarchive|Разархивировать)$/, exact: true }).waitFor();
+          await assertInHistory(archivedFixture.id, workspace.id, `Archived view ${width}`);
+          await enterSidebar();
+          await openArea();
           const closeTop = async () => (await button("Закрыть").last().boundingBox()).y;
           const topBefore = await closeTop();
           await page.getByRole("button", { name: /^Закрытые/ }).click();
@@ -189,7 +204,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           assert.equal(await closeTop(), topBefore, "area window keeps its height whatever the list length");
           await capture("area-window");
           await page.getByRole("button", { name: /^Закрытые/ }).click();
-          await page.getByText(/Нет закрытых сессий|Открыть закрытого/).first().waitFor();
+          await button(`Открыть закрытого агента Archived view ${width}`).waitFor();
           assert.equal(await button("Меню агента Fixture chat").count(), 0, "closed filter hides open sessions");
           await button("Все").click();
           const [agentBox, terminalBox, filterBox, sessionBox] = await Promise.all([
@@ -241,13 +256,13 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await page.getByText("Модель нового агента", { exact: true }).waitFor({ state: "hidden" });
           await button("Закрыть").last().click();
           await page.getByText("Сессии", { exact: true }).waitFor({ state: "hidden" });
-          await areaToggle.click();
+          if (await button(`Развернуть область ${title}`).count()) await button(`Развернуть область ${title}`).click();
           await sidebarSession.waitFor();
           await page.getByLabel(/^Ветка области .+/).first().waitFor();
           await capture("area-expanded-sessions");
-          await areaToggle.click();
+          await button(`Свернуть область ${title}`).click();
           await sidebarSession.waitFor({ state: "hidden" });
-          await areaToggle.click();
+          await button(`Развернуть область ${title}`).click();
 
           const stored = async () => Object.values(JSON.parse(await readFile(stateFile, "utf8")).projects);
           await button("Настройки проекта source").click();
