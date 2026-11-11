@@ -205,7 +205,7 @@ export const areaSettingsRpc = defineRpc({
 
 export const areaSessionCreateRpc = defineRpc({
   name: "sidebar.area-session-create",
-  input: z.object({ workspaceId: z.string().min(1) }),
+  input: z.object({ workspaceId: z.string().min(1), model: z.string().min(1) }),
   output: z.object({ agentId: z.string() }),
 });
 

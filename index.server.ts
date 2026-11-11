@@ -42,7 +42,6 @@ import {
   type SidebarState,
 } from "./shared/contracts";
 import { currentGitBranch, localGitBranches } from "./server/area-git.server";
-import { projectAgentConfig } from "./shared/project-agent-config";
 import { GENERATOR_TITLE } from "./shared/title-models";
 import { ArtifactsService } from "./server/artifacts-service.server";
 import {
@@ -812,15 +811,17 @@ export default function contribute(server: PluginServerContext) {
     return { ...preferences, currentBranch, branches };
   });
 
-  server.handle(areaSessionCreateRpc, async ({ workspaceId }, { paseo }) => {
+  server.handle(areaSessionCreateRpc, async ({ workspaceId, model }, { paseo }) => {
     const area = await requireArea(paseo, workspaceId);
-    const { entries } = await paseo.agents.list({});
-    const config = await projectAgentConfig(paseo, { rootPath: area.workspaceDirectory, chats: [area] }, entries);
+    const snapshot = await paseo.providers.waitForReady({ cwd: area.workspaceDirectory });
+    const selected = snapshot.entries.some(entry => entry.enabled && entry.status === "ready"
+      && (entry.models ?? []).some(option => option.isSelectable !== false && `${entry.provider}/${option.id}` === model));
+    if (!selected) throw new Error("Выбранная модель недоступна в этой области");
     const branch = (await readStored()).areaPreferences[workspaceId]?.defaultBranch;
     if (branch && await currentGitBranch(area.workspaceDirectory) !== branch) {
       throw new Error(`Переключите область на ветку «${branch}», чтобы создать агента`);
     }
-    const agent = await paseo.workspaces.ref(area).agents.create({ config });
+    const agent = await paseo.workspaces.ref(area).agents.create({ config: { provider: model } });
     return { agentId: agent.id };
   });
 

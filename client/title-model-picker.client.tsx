@@ -12,7 +12,7 @@ interface Anchor {
   height: number;
 }
 
-export function TitleModelPicker({ theme, options, value, hint, disabled, pending, onValueChange }: {
+export function TitleModelPicker({ theme, options, value, hint, disabled, pending, onValueChange, label = "Сгенерировать название", icon = "Sparkles", menuLabel = "Модели для названий областей" }: {
   theme: PluginTheme;
   options: readonly TitleModelOption[];
   value: string;
@@ -20,6 +20,9 @@ export function TitleModelPicker({ theme, options, value, hint, disabled, pendin
   disabled?: boolean;
   pending?: boolean;
   onValueChange(value: string): void;
+  label?: string;
+  icon?: string;
+  menuLabel?: string;
 }) {
   const c = theme.colors;
   const { width, height } = useWindowDimensions();
@@ -132,7 +135,7 @@ export function TitleModelPicker({ theme, options, value, hint, disabled, pendin
     <View
       ref={popup}
       accessibilityRole="menu"
-      accessibilityLabel="Модели для названий областей"
+      accessibilityLabel={menuLabel}
       accessibilityViewIsModal
       style={{
         position: "absolute", left, top, bottom, width: popupWidth, maxHeight,
@@ -197,7 +200,7 @@ export function TitleModelPicker({ theme, options, value, hint, disabled, pendin
       <Pressable
         ref={trigger}
         accessibilityRole="button"
-        accessibilityLabel={pending ? "Генерирую название" : "Сгенерировать название"}
+        accessibilityLabel={pending ? `${label}...` : label}
         aria-expanded={isOpen}
         disabled={disabled}
         onPress={open}
@@ -208,7 +211,7 @@ export function TitleModelPicker({ theme, options, value, hint, disabled, pendin
           alignItems: "center", justifyContent: "center", opacity: disabled ? 0.5 : 1,
         })}
       >
-        <Icon name={pending ? "LoaderCircle" : "Sparkles"} size={18} color={c.foreground} />
+        <Icon name={pending ? "LoaderCircle" : icon} size={18} color={c.foreground} />
       </Pressable>
       {Platform.OS === "web" ? content : (
         <Modal

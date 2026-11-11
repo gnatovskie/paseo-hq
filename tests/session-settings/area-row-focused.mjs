@@ -145,6 +145,27 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
         try {
           await enterSidebar();
           await openArea();
+          const previousAgents = (await client.agents.list({})).entries.map(({ agent }) => agent);
+          const previousAgentIds = new Set(previousAgents.map(agent => agent.id));
+          await button("Новый агент").click();
+          await page.getByText("Модель нового агента", { exact: true }).waitFor();
+          assert.equal((await client.agents.list({})).entries.filter(({ agent }) => agent.workspaceId === workspace.id).length,
+            previousAgents.filter(agent => agent.workspaceId === workspace.id).length);
+          await button("Выбрать модель нового агента").click();
+          const agentModels = page.getByRole("menu", { name: "Модели нового агента" });
+          await agentModels.waitFor();
+          const choices = agentModels.getByRole("menuitem", { name: /^Выбрать модель / });
+          assert((await choices.count()) > 1, "fixture needs more than one available model");
+          const chosenModel = (await choices.last().getAttribute("aria-label")).replace("Выбрать модель ", "");
+          await choices.last().click();
+          await button("Создать агента с выбранной моделью").click();
+          await page.getByText("Модель нового агента", { exact: true }).waitFor({ state: "hidden" });
+          const createdAgent = (await client.agents.list({})).entries.find(({ agent }) =>
+            agent.workspaceId === workspace.id && !previousAgentIds.has(agent.id))?.agent;
+          assert(createdAgent, "plus creates the selected agent");
+          assert.equal(`${createdAgent.provider}/${createdAgent.model}`, chosenModel);
+          await enterSidebar();
+          await openArea();
           const input = page.getByRole("textbox", { name: "Название области", exact: true });
           await input.waitFor();
           assert.equal(await button("Выбрать иконку области").count(), 0);
@@ -164,6 +185,23 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await page.getByText("Сессии", { exact: true }).click();
           await page.waitForFunction(expected => Boolean(document.querySelector(`[aria-label="Сессии области ${expected}"]`)), title);
           assert.equal((await workspaceHandle.refresh()).title, title);
+          await button("Close").last().click();
+          await button("Новая область в проекте source").click();
+          await page.getByText("Модель нового агента", { exact: true }).waitFor();
+          const newAreaTitle = `Model choice area ${width}`;
+          await newAreaName.fill(newAreaTitle);
+          await button("Выбрать модель нового агента").click();
+          const newAreaChoice = page.getByRole("menu", { name: "Модели нового агента" })
+            .getByRole("menuitem", { name: /^Выбрать модель / }).last();
+          const newAreaModel = (await newAreaChoice.getAttribute("aria-label")).replace("Выбрать модель ", "");
+          await newAreaChoice.click();
+          await button("Создать область").click();
+          await page.getByRole("textbox", { name: "Название новой области" }).waitFor({ state: "hidden" });
+          const createdArea = (await client.workspaces.list({})).entries.find(area => area.title === newAreaTitle);
+          assert(createdArea, "project plus creates the new area");
+          const firstAgent = (await client.agents.list({})).entries.find(({ agent }) => agent.workspaceId === createdArea.id)?.agent;
+          assert(firstAgent, "new area starts with an agent");
+          assert.equal(`${firstAgent.provider}/${firstAgent.model}`, newAreaModel);
           assert.deepEqual(errors, []);
         } catch (error) {
           try {
