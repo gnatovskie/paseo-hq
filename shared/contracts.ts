@@ -193,6 +193,13 @@ export const areaPreferencesSchema = z.object({
   worktree: z.object({ path: z.string(), branch: z.string(), rootPath: z.string().optional() }).nullable().default(null),
 });
 
+// Текущая ветка каждой области: у родных worktree Paseo и у области в папке проекта ее знает только git.
+export const areaBranchesRpc = defineRpc({
+  name: "sidebar.area-branches",
+  input: z.object({ workspaceIds: z.array(z.string()).max(500) }),
+  output: z.object({ branches: z.record(z.string(), z.string()) }),
+});
+
 export const areaWorktreeOptionsRpc = defineRpc({
   name: "sidebar.area-worktree-options",
   input: z.object({ projectId: z.string().min(1) }),

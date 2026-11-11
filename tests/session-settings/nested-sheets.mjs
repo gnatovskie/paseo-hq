@@ -185,6 +185,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await page.getByText("Сессии", { exact: true }).waitFor({ state: "hidden" });
           await areaToggle.click();
           await sidebarSession.waitFor();
+          await page.getByLabel(/^Ветка области .+/).first().waitFor();
           await areaToggle.click();
           await sidebarSession.waitFor({ state: "hidden" });
           await areaToggle.click();
@@ -256,7 +257,10 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await until(async () => existsSync(wtPath), "worktree folder created next to the project");
           assert.equal(execFileSync("git", ["-C", wtPath, "branch", "--show-current"], { encoding: "utf8" }).trim(), wtBranch);
           await enterSidebar();
+          assert.equal(await page.getByLabel(`Ветка области ${wtBranch}`).count(), 0, "collapsed area shows status badges, not the branch");
+          await button(`Сессии области ${wtTitle}`).click();
           await page.getByLabel(`Ветка области ${wtBranch}`).waitFor();
+          await capture("area-branch-badge");
           await writeFile(join(wtPath, "dirty.txt"), "uncommitted");
           await button(`Действия области ${wtTitle}`).click();
           await page.getByText(new RegExp(`^Worktree на ветке ${wtBranch}`)).waitFor();

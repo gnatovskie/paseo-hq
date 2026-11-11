@@ -43,6 +43,7 @@ import {
   projectSaveRpc,
   sessionPinRpc,
   terminalRenameRpc,
+  areaBranchesRpc,
   areaWorktreeOptionsRpc,
   areaWorktreeCreateRpc,
   areaWorktreeInfoRpc,
@@ -1293,7 +1294,9 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const createAreaSession = useRpc(areaSessionCreateRpc);
   const saveProject = useRpc(projectSaveRpc);
   const pinSession = useRpc(sessionPinRpc);
+  const readAreaBranches = useRpc(areaBranchesRpc);
   const readWorktreeOptions = useRpc(areaWorktreeOptionsRpc);
+  const [areaBranches, setAreaBranches] = useState<Record<string, string>>({});
   const createAreaWorktree = useRpc(areaWorktreeCreateRpc);
   const readAreaWorktree = useRpc(areaWorktreeInfoRpc);
   const removeAreaWorktree = useRpc(areaWorktreeRemoveRpc);
@@ -1483,6 +1486,8 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       );
       const st = await readSidebar({ projectIds: ids });
       setServerState(st);
+      void readAreaBranches({ workspaceIds: nextWorkspaces.map((w) => w.id) })
+        .then(({ branches }) => setAreaBranches(branches), () => {});
     } catch {
       // Сохраняем прошлый снимок при временной сетевой ошибке.
     }
@@ -2954,18 +2959,23 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                                 <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 14, fontWeight: "600" }}>
                                   {title}
                                 </Text>
-                                {serverState.areaWorktrees[chat.id] ? (
-                                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                                    <Icon name="GitBranch" size={11} color={c.foregroundMuted} />
-                                    <Text numberOfLines={1} accessibilityLabel={`Ветка области ${serverState.areaWorktrees[chat.id]!.branch}`}
-                                      style={{ flexShrink: 1, color: c.foregroundMuted, fontSize: 11 }}>
-                                      {serverState.areaWorktrees[chat.id]!.branch}
-                                    </Text>
-                                  </View>
-                                ) : null}
                                 {!expanded ? (
                                   <AreaSessionBadges sessions={sessions} terminalCount={areaTerminals.length}
                                     theme={theme} platform={layout.platform} />
+                                ) : areaBranches[chat.id] ?? serverState.areaWorktrees[chat.id]?.branch ? (
+                                  <View
+                                    accessible
+                                    accessibilityLabel={`Ветка области ${areaBranches[chat.id] ?? serverState.areaWorktrees[chat.id]?.branch}`}
+                                    style={{
+                                      alignSelf: "flex-start", minHeight: 20, maxWidth: "100%", flexDirection: "row", alignItems: "center",
+                                      gap: 4, paddingHorizontal: 6, borderRadius: 6, backgroundColor: c.surface2,
+                                    }}
+                                  >
+                                    <Icon name="GitBranch" size={11} color={c.foregroundMuted} />
+                                    <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 11, color: c.foregroundMuted }}>
+                                      {areaBranches[chat.id] ?? serverState.areaWorktrees[chat.id]?.branch}
+                                    </Text>
+                                  </View>
                                 ) : null}
                               </View>
                               {isPinned ? <Icon name="Pin" size={12} color={c.accent} /> : null}

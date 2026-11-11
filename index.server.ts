@@ -25,6 +25,7 @@ import {
   projectSaveRpc,
   sessionPinRpc,
   terminalRenameRpc,
+  areaBranchesRpc,
   areaWorktreeOptionsRpc,
   areaWorktreeCreateRpc,
   areaWorktreeInfoRpc,
@@ -880,6 +881,18 @@ export default function contribute(server: PluginServerContext) {
     if (!project) throw new Error("Проект не найден");
     return project.projectRootPath;
   };
+
+  server.handle(areaBranchesRpc, async ({ workspaceIds }, { paseo }) => {
+    const wanted = new Set(workspaceIds);
+    const areas = ((await paseo.workspaces.list()).entries ?? []).filter(
+      (area) => wanted.has(area.id) && area.projectKind === "git" && area.workspaceDirectory,
+    );
+    const found = await Promise.all(areas.map(async (area) => {
+      const branch = await currentGitBranch(area.workspaceDirectory!).catch(() => null);
+      return branch ? ([area.id, branch] as const) : null;
+    }));
+    return { branches: Object.fromEntries(found.filter((entry) => entry !== null)) };
+  });
 
   server.handle(areaWorktreeOptionsRpc, async ({ projectId }, { paseo }) => {
     const rootPath = await projectRoot(paseo, projectId);
