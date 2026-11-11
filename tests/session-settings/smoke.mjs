@@ -428,7 +428,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
             const reloadResult = page.getByText(/Агент перезагружен|thread\/items\/list is not supported yet/);
             await reloadResult.waitFor();
             if (await reloadChat.isVisible()) {
-              await button("Close").last().click();
+              await button("Закрыть").last().click();
               await reloadChat.waitFor({ state: "hidden" });
             }
           }

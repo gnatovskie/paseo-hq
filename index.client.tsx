@@ -5,6 +5,7 @@ import {
   Easing,
   Image,
   Linking,
+  Modal as NativeModal,
   Pressable,
   ScrollView,
   Text,
@@ -959,13 +960,61 @@ function orderAreaSessions(
   return [...pinnedItems, ...items.filter(item => !pinned[item.id])];
 }
 
+// Свое окно вместо Modal хоста: хост рисует крестик в заголовке и его нельзя ни укрупнить, ни выровнять.
+// Слева название с рядом действий под ним, справа крупный крестик по центру этого блока.
+function ActionSheet({ title, open, onClose, theme, actions, disabled, children }: {
+  title: string;
+  open: boolean;
+  onClose: () => void;
+  theme: PluginTheme;
+  actions: { label: string; icon: string; onPress: () => void; danger?: boolean }[];
+  disabled: boolean;
+  children: React.ReactNode;
+}) {
+  const c = theme.colors;
+  return (
+    <NativeModal transparent visible={open} animationType="fade" onRequestClose={onClose}>
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 16 }}>
+        <Pressable
+          accessibilityLabel="Закрыть окно"
+          onPress={onClose}
+          style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: "rgba(0,0,0,0.55)" }}
+        />
+        <View style={{
+          width: "100%", maxWidth: 480, padding: 16, gap: 14, borderRadius: 16,
+          borderWidth: 1, borderColor: c.border, backgroundColor: c.surface1,
+        }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+            <View style={{ flex: 1, minWidth: 0, gap: 10 }}>
+              <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 18, fontWeight: "600" }}>{title}</Text>
+              <ItemMenuActions theme={theme} disabled={disabled} actions={actions} />
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Закрыть"
+              onPress={onClose}
+              style={({ pressed }) => ({
+                width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center",
+                backgroundColor: pressed ? c.surface2 : undefined,
+              })}
+            >
+              <Icon name="X" size={28} color={c.foreground} />
+            </Pressable>
+          </View>
+          {children}
+        </View>
+      </View>
+    </NativeModal>
+  );
+}
+
 function ItemMenuActions({ actions, theme, disabled }: {
   actions: { label: string; icon: string; onPress: () => void; danger?: boolean }[];
   theme: PluginTheme;
   disabled: boolean;
 }) {
   return (
-    <View style={{ flexDirection: "row", gap: 8, justifyContent: "flex-end" }}>
+    <View style={{ flexDirection: "row", gap: 8, justifyContent: "flex-start" }}>
       {actions.map(({ label, icon, onPress, danger }) => (
         <ChatActionButton
           key={label}
@@ -3686,16 +3735,36 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
         </Modal.Content>
       </Modal>
 
-      <Modal
+      <ActionSheet
         title={confirmClosingSession
           ? "Закрыть работающего агента"
           : "Действия с агентом"}
         open={Boolean(agentMenuChat)}
-        onOpenChange={(open) => {
-          if (!open) setAgentMenuId(null);
-        }}
+        onClose={() => setAgentMenuId(null)}
+        theme={theme}
+        disabled={chatMutationPending}
+        actions={agentMenuChat ? confirmClosingSession ? [
+                { label: "Отмена", icon: "ArrowLeft", onPress: () => setConfirmClosingSession(false) },
+                { label: "Остановить и закрыть", icon: "Archive", danger: true, onPress: () => void handleAgentMenuAction("close") },
+              ] : [
+                {
+                  label: serverState.pinnedSessions[agentMenuChat.id] ? "Открепить агента" : "Закрепить агента",
+                  icon: serverState.pinnedSessions[agentMenuChat.id] ? "PinOff" : "Pin",
+                  onPress: () => void handleTogglePinAgent(agentMenuChat.id),
+                },
+                { label: "Скопировать ссылку на агента", icon: "Link2", onPress: () => void handleCopyAgentLink(agentMenuChat.id) },
+                { label: "Перезагрузить агента", icon: "RefreshCw", onPress: () => void handleAgentMenuAction("reload") },
+                {
+                  label: "Закрыть агента",
+                  icon: "Archive",
+                  danger: true,
+                  onPress: () => {
+                    if (agentMenuChat.status === "running") setConfirmClosingSession(true);
+                    else void handleAgentMenuAction("close");
+                  },
+                },
+              ] : []}
       >
-        <Modal.Content>
           {agentMenuChat && (
             <View style={{ gap: 8 }}>
               {confirmClosingSession ? (
@@ -3740,40 +3809,30 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                   </View>
                 </View>
               )}
-              <ItemMenuActions theme={theme} disabled={chatMutationPending} actions={confirmClosingSession ? [
-                { label: "Отмена", icon: "ArrowLeft", onPress: () => setConfirmClosingSession(false) },
-                { label: "Остановить и закрыть", icon: "Archive", danger: true, onPress: () => void handleAgentMenuAction("close") },
-              ] : [
-                {
-                  label: serverState.pinnedSessions[agentMenuChat.id] ? "Открепить агента" : "Закрепить агента",
-                  icon: serverState.pinnedSessions[agentMenuChat.id] ? "PinOff" : "Pin",
-                  onPress: () => void handleTogglePinAgent(agentMenuChat.id),
-                },
-                { label: "Скопировать ссылку на агента", icon: "Link2", onPress: () => void handleCopyAgentLink(agentMenuChat.id) },
-                { label: "Перезагрузить агента", icon: "RefreshCw", onPress: () => void handleAgentMenuAction("reload") },
-                {
-                  label: "Закрыть агента",
-                  icon: "Archive",
-                  danger: true,
-                  onPress: () => {
-                    if (agentMenuChat.status === "running") setConfirmClosingSession(true);
-                    else void handleAgentMenuAction("close");
-                  },
-                },
-              ]} />
+              
             </View>
           )}
-        </Modal.Content>
-      </Modal>
+      </ActionSheet>
 
-      <Modal
+      <ActionSheet
         title={confirmClosingTerminal ? "Закрыть терминал" : "Настройки терминала"}
         open={Boolean(terminalMenuItem)}
-        onOpenChange={(open) => {
-          if (!open && !chatMutationPending) setTerminalMenuId(null);
-        }}
+        onClose={() => { if (!chatMutationPending) setTerminalMenuId(null); }}
+        theme={theme}
+        disabled={chatMutationPending}
+        actions={terminalMenuItem ? confirmClosingTerminal ? [
+                { label: "Отмена", icon: "ArrowLeft", onPress: () => setConfirmClosingTerminal(false) },
+                { label: "Завершить терминал", icon: "X", danger: true, onPress: () => void handleCloseTerminal(terminalMenuItem) },
+              ] : [
+                {
+                  label: serverState.pinnedSessions[terminalMenuItem.id] ? "Открепить терминал" : "Закрепить терминал",
+                  icon: serverState.pinnedSessions[terminalMenuItem.id] ? "PinOff" : "Pin",
+                  onPress: () => void handleTogglePinTerminal(terminalMenuItem.id),
+                },
+                { label: "Скопировать путь терминала", icon: "Copy", onPress: () => void handleCopyTerminalPath(terminalMenuItem) },
+                { label: "Закрыть терминал", icon: "X", danger: true, onPress: () => setConfirmClosingTerminal(true) },
+              ] : []}
       >
-        <Modal.Content>
           {terminalMenuItem ? (
             <View style={{ gap: 10 }}>
               {confirmClosingTerminal ? (
@@ -3803,22 +3862,10 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                   />
                 </View>
               )}
-              <ItemMenuActions theme={theme} disabled={chatMutationPending} actions={confirmClosingTerminal ? [
-                { label: "Отмена", icon: "ArrowLeft", onPress: () => setConfirmClosingTerminal(false) },
-                { label: "Завершить терминал", icon: "X", danger: true, onPress: () => void handleCloseTerminal(terminalMenuItem) },
-              ] : [
-                {
-                  label: serverState.pinnedSessions[terminalMenuItem.id] ? "Открепить терминал" : "Закрепить терминал",
-                  icon: serverState.pinnedSessions[terminalMenuItem.id] ? "PinOff" : "Pin",
-                  onPress: () => void handleTogglePinTerminal(terminalMenuItem.id),
-                },
-                { label: "Скопировать путь терминала", icon: "Copy", onPress: () => void handleCopyTerminalPath(terminalMenuItem) },
-                { label: "Закрыть терминал", icon: "X", danger: true, onPress: () => setConfirmClosingTerminal(true) },
-              ]} />
+              
             </View>
           ) : null}
-        </Modal.Content>
-      </Modal>
+      </ActionSheet>
 
       <Modal
         title="Перенос области в проект"
