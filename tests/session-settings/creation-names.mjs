@@ -180,7 +180,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await info().getByLabel(`Модель агента: ${snapshot.model || snapshot.provider.split("/").slice(1).join("/") || "Не указана"}`, { exact: true }).waitFor();
           await info().getByLabel("Текущая ветка: hq-next", { exact: true }).waitFor();
           await info().getByLabel(`Рабочая папка сессии: ${workspace.workspaceDirectory}`, { exact: true }).waitFor();
-          await info().getByLabel(`ID агента: ${chat.id}`, { exact: true }).waitFor();
+          await info().getByLabel(`Ссылка на агента: ID: ${chat.id}`, { exact: true }).waitFor();
           for (const label of ["Скопировать ссылку на агента", "Скопировать ветку", "Скопировать рабочую папку"]) await info().getByRole("button", { name: label, exact: true }).waitFor();
           await capture("agent-session-information");
           await button("Закрыть").last().click();

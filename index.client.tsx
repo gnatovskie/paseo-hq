@@ -1357,7 +1357,7 @@ function SessionInformation({ theme, agent, workspace, path, branch, agentLink, 
       { label: "Провайдер", value: agent.provider.split("/")[0], a11y: "Провайдер агента", icon: "Bot" },
       { label: "Модель", value: agent.model || agent.provider.split("/").slice(1).join("/") || "Не указана", a11y: "Модель агента", icon: "Cpu" },
     ] : []),
-    ...(agentLink ? [{ label: "ID агента", value: agent!.id, a11y: "ID агента", icon: "Link2", copy: true }] : []),
+    ...(agentLink ? [{ label: "Ссылка на агента", value: `ID: ${agent!.id}`, a11y: "Ссылка на агента", icon: "Link2", copy: true }] : []),
     ...(workspace?.projectKind === "git" ? [{ label: "Текущая ветка", value: branch || "Ветка не определена", a11y: "Текущая ветка", icon: "GitBranch", copy: Boolean(branch) }] : []),
     { label: project ? "Папка проекта" : "Рабочая папка", value: path, a11y: project ? "Папка проекта" : "Рабочая папка сессии", icon: "Folder", copy: Boolean(path && path !== "Папка недоступна") },
   ];
