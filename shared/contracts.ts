@@ -160,13 +160,6 @@ export const projectSaveRpc = defineRpc({
   output: sidebarStateSchema,
 });
 
-export const sessionDraftTitleRpc = defineRpc({
-  name: "sidebar.session-draft-title",
-  input: z.object({ projectId: z.string().min(1), workspaceId: z.string().min(1).optional(),
-    model: z.string().min(1), material: z.string().trim().min(1).max(4000) }),
-  output: z.object({ title: z.string() }),
-});
-
 export const sessionTitleSuggestRpc = defineRpc({
   name: "sidebar.title-suggest",
   input: z.object({

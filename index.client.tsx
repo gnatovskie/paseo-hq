@@ -50,7 +50,6 @@ import {
   areaWorktreeInfoRpc,
   areaWorktreeRemoveRpc,
   sessionTitleSuggestRpc,
-  sessionDraftTitleRpc,
   sessionTransferRpc,
   sidebarReadRpc,
   type AvatarUpdate,
@@ -1168,37 +1167,19 @@ function ChoiceList<T>({ theme, options, value, onChange, disabled }: {
 type SessionNaming = {
   value: string;
   onChange: (title: string) => void;
-  suggest: (model: string) => Promise<string>;
 };
 
-function NewSessionName({ theme, kind, naming, options, disabled }: {
+function NewSessionName({ theme, kind, naming, disabled }: {
   theme: PluginTheme; kind: "agent" | "terminal"; naming: SessionNaming;
-  options: ReturnType<typeof titleModelOptions>; disabled: boolean;
+  disabled: boolean;
 }) {
   const input = useRef<React.ElementRef<typeof TextInput>>(null);
-  const revision = useRef(0);
   const [focused, setFocused] = useState(false);
-  const [pending, setPending] = useState(false);
-  const [model, setModel] = useState("first_line");
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => { revision.current += 1; }, [kind]);
-  useEffect(() => () => { revision.current += 1; }, []);
+  const [selection, setSelection] = useState<{ start: number; end: number }>();
   const label = kind === "agent" ? "Название нового агента" : "Название нового терминала";
-  const accept = () => input.current?.blur();
-  const suggest = async (selected: string) => {
-    const current = ++revision.current;
-    setModel(selected);
-    setPending(true);
-    setError(null);
-    try {
-      const title = await naming.suggest(selected);
-      if (revision.current === current) {
-        naming.onChange(title);
-        requestAnimationFrame(() => input.current?.focus());
-      }
-    } catch (err) {
-      if (revision.current === current) setError(err instanceof Error ? err.message : "Не удалось сгенерировать название");
-    } finally { setPending(false); }
+  const edit = () => {
+    setSelection({ start: naming.value.length, end: naming.value.length });
+    input.current?.focus();
   };
   return <View style={{ gap: 6 }}>
     <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>{kind === "agent" ? "Название агента" : "Название терминала"}</Text>
@@ -1207,16 +1188,16 @@ function NewSessionName({ theme, kind, naming, options, disabled }: {
         borderWidth: 1, borderRadius: 9, borderColor: focused ? theme.colors.accent : theme.colors.border, backgroundColor: theme.colors.surface2 }}>
         <TextInput ref={input} accessibilityLabel={label} value={naming.value} placeholder="Необязательно"
           placeholderTextColor={theme.colors.foregroundMuted} maxLength={200} editable={!disabled}
-          onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} onSubmitEditing={accept}
-          onChangeText={value => { revision.current += 1; naming.onChange(value); setError(null); }}
+          onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} onSubmitEditing={() => input.current?.blur()}
+          onChangeText={naming.onChange} selection={selection}
+          onSelectionChange={({ nativeEvent: { selection: next } }) => {
+            if (next.start === selection?.start && next.end === selection.end) setSelection(undefined);
+          }}
           style={{ padding: 0, outlineWidth: 0, color: theme.colors.foreground, fontSize: 15 }} />
       </View>
-      {focused ? <ChatActionButton theme={theme} label="Принять название сессии" icon="Check" color={theme.colors.accent}
-        disabled={disabled} onPressIn={accept} onPress={accept} /> :
-        <TitleModelPicker theme={theme} value={model} options={[...titleModelOptions([], "first_line").map(option => ({ ...option, label: "По введенному тексту (без ИИ)" })), ...options]} disabled={disabled || pending} pending={pending}
-          label="Сгенерировать название сессии" menuLabel="Модели для названия сессии" onValueChange={selected => void suggest(selected)} />}
+      <ChatActionButton theme={theme} label="Редактировать название сессии" icon="Pencil"
+        disabled={disabled} onPress={edit} />
     </View>
-    {error ? <Text accessibilityRole="alert" style={{ color: theme.colors.statusDanger, fontSize: 12 }}>{error}</Text> : null}
   </View>;
 }
 
@@ -1295,7 +1276,7 @@ function NewSessionWindow({ theme, title, open, onClose, narrow, kind, onKindCha
           </View>
         ) : null}
         {extra}
-        <NewSessionName theme={theme} kind={kind} naming={naming} options={modelOptions} disabled={busy} />
+        <NewSessionName theme={theme} kind={kind} naming={naming} disabled={busy} />
         {kind === "agent" ? (
           <View style={{ gap: 6 }}>
             <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Модель нового агента</Text>
@@ -1360,6 +1341,30 @@ function ItemMenuActions({ actions, theme, disabled }: {
       ))}
     </View>
   );
+}
+
+function SessionInformation({ theme, agent, workspace, path, branch }: {
+  theme: PluginTheme; agent?: AgentEntry["agent"]; workspace?: PaseoWorkspace;
+  path: string; branch?: string;
+}) {
+  const c = theme.colors;
+  const rows = [
+    ...(agent ? [
+      { label: "Провайдер", value: agent.provider.split("/")[0], a11y: "Провайдер агента", icon: "Bot" },
+      { label: "Модель", value: agent.model || agent.provider.split("/").slice(1).join("/") || "Не указана", a11y: "Модель агента", icon: "Cpu" },
+    ] : []),
+    ...(workspace?.projectKind === "git" ? [{ label: "Текущая ветка", value: branch || "Ветка не определена", a11y: "Текущая ветка", icon: "GitBranch" }] : []),
+    { label: "Рабочая папка", value: path, a11y: "Рабочая папка сессии", icon: "Folder" },
+  ];
+  return <View style={{ gap: 12, marginTop: 8, padding: 12, borderRadius: 9, borderWidth: 1, borderColor: c.border }}>
+    {rows.map(row => <View key={row.label} style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+      <Icon name={row.icon} size={15} color={c.foregroundMuted} />
+      <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
+        <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>{row.label}</Text>
+        <Text selectable accessibilityLabel={`${row.a11y}: ${row.value}`} style={{ color: c.foreground, fontSize: 12 }}>{row.value}</Text>
+      </View>
+    </View>)}
+  </View>;
 }
 
 function BranchInformation({ branch, path, kind, theme }: { branch: string; path: string; kind?: "project" | "worktree"; theme: PluginTheme }) {
@@ -1440,7 +1445,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const removeAreaWorktree = useRpc(areaWorktreeRemoveRpc);
   const renameTerminal = useRpc(terminalRenameRpc);
   const suggestSessionTitle = useRpc(sessionTitleSuggestRpc);
-  const suggestDraftSessionTitle = useRpc(sessionDraftTitleRpc);
   const renameAgent = useRpc(chatRenameRpc);
   const loadCandidates = useRpc(projectCandidatesRpc);
   const addProjectRpc = useRpc(projectAddRpc);
@@ -1862,6 +1866,10 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     },
   });
   const terminalMenuItem = terminals.find((terminal) => terminal.id === terminalMenuId);
+  const terminalMenuWorkspace = workspaces.find(workspace => workspace.id === terminalMenuItem?.workspaceId);
+  useEffect(() => {
+    if (agentMenuId || terminalMenuId) void reloadAll();
+  }, [agentMenuId, terminalMenuId, reloadAll]);
   const terminalLabel = (terminal: PaseoTerminal) => serverState.terminalNames[terminal.id] ?? terminal.name;
   const titleSourceAgent = editingChatEntries[0]?.agent;
   const titleModel = areaSettings?.titleModel ?? (editingChat ? serverState.projects[editingChat.projectId]?.sessionTitleModel : null) ?? "first_line";
@@ -3940,10 +3948,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           theme={theme}
           key={newAreaTarget?.id ?? newArea.projectId}
           title="Новая область"
-          naming={{ value: newSessionTitle, onChange: setNewSessionTitle,
-            suggest: async (model) => (await suggestDraftSessionTitle({ projectId: newArea.projectId,
-              workspaceId: newAreaTarget?.id,
-              model, material: newSessionTitle.trim() || `${newArea.firstTab === "session" ? "Агент" : "Терминал"}: ${newAreaTarget?.title || newArea.name}. Проект ${newAreaGroup?.name ?? ""}` })).title }}
+          naming={{ value: newSessionTitle, onChange: setNewSessionTitle }}
           open
           onClose={() => setNewArea(null)}
           kind={newArea.firstTab === "session" ? "agent" : "terminal"}
@@ -4331,12 +4336,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           theme={theme}
           narrow
           title="Новая сессия"
-          naming={{ value: newSessionTitle, onChange: setNewSessionTitle,
-            suggest: async (model) => {
-              if (!newSessionWorkspace) throw new Error("Область недоступна");
-              return (await suggestDraftSessionTitle({ projectId: newSessionWorkspace.projectId, workspaceId: newSessionWorkspace.id,
-                model, material: newSessionTitle.trim() || `${newSessionKind === "agent" ? "Агент" : "Терминал"}: ${newSessionWorkspace.title || "Новая сессия"}` })).title;
-            } }}
+          naming={{ value: newSessionTitle, onChange: setNewSessionTitle }}
           open
           onClose={() => setNewAgentWorkspaceId(null)}
           kind={newSessionKind}
@@ -4452,7 +4452,9 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                   </View>
                 </View>
               )}
-              
+              {!confirmClosingSession ? <SessionInformation theme={theme} agent={agentMenuChat} workspace={agentMenuWorkspace}
+                path={agentMenuChat.cwd || agentMenuWorkspace?.workspaceDirectory || "Папка недоступна"}
+                branch={agentMenuChat.workspaceId ? areaBranches[agentMenuChat.workspaceId] : undefined} /> : null}
             </View>
           )}
       </ActionSheet>
@@ -4528,7 +4530,8 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                 ) : null}
                 </View>
               )}
-              
+              {!confirmClosingTerminal ? <SessionInformation theme={theme} workspace={terminalMenuWorkspace}
+                path={terminalMenuItem.cwd} branch={areaBranches[terminalMenuItem.workspaceId]} /> : null}
             </View>
           ) : null}
       </ActionSheet>

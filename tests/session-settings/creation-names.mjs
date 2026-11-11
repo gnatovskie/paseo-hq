@@ -155,16 +155,36 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
         try {
           await enterSidebar();
           await openArea();
+          const info = () => page.getByRole("dialog").last();
+          await button("Меню агента Fixture chat").click();
+          const snapshot = (await client.agents.list()).entries.find(({ agent }) => agent.id === chat.id).agent;
+          await info().getByLabel(`Провайдер агента: ${snapshot.provider.split("/")[0]}`, { exact: true }).waitFor();
+          await info().getByLabel(`Модель агента: ${snapshot.model || snapshot.provider.split("/").slice(1).join("/") || "Не указана"}`, { exact: true }).waitFor();
+          await info().getByLabel("Текущая ветка: hq-next", { exact: true }).waitFor();
+          await info().getByLabel(`Рабочая папка сессии: ${workspace.workspaceDirectory}`, { exact: true }).waitFor();
+          await capture("agent-session-information");
+          await button("Закрыть").last().click();
+          await button("Меню терминала Fixture terminal").click();
+          await info().getByLabel("Текущая ветка: hq-next", { exact: true }).waitFor();
+          await info().getByLabel(`Рабочая папка сессии: ${workspace.workspaceDirectory}`, { exact: true }).waitFor();
+          assert.equal(await info().getByText("Провайдер", { exact: true }).count(), 0);
+          await capture("terminal-session-information");
+          await button("Закрыть").last().click();
           await button("Новая сессия").click();
           const agentName = page.getByRole("textbox", { name: "Название нового агента", exact: true });
           const terminalName = page.getByRole("textbox", { name: "Название нового терминала", exact: true });
           await agentName.fill(`Проверка агента ${width}`);
-          await button("Принять название сессии").click();
-          await button("Сгенерировать название сессии").click();
-          await page.getByRole("menuitem", { name: "По введенному тексту (без ИИ)", exact: true }).click();
-          await button("Принять название сессии").waitFor();
-          assert.equal(await agentName.inputValue(), `Проверка агента ${width}`);
-          await button("Принять название сессии").click();
+          assert.equal(await button("Сгенерировать название сессии").count(), 0);
+          const editAtEnd = async (field) => {
+            await field.evaluate(input => { input.focus(); input.setSelectionRange(0, 0); });
+            await button("Редактировать название сессии").click();
+            await page.waitForFunction(label => {
+              const input = document.querySelector(`input[aria-label="${label}"]`);
+              return document.activeElement === input && input.selectionStart === input.value.length && input.selectionEnd === input.value.length;
+            }, await field.getAttribute("aria-label"));
+          };
+          await editAtEnd(agentName);
+          await editAtEnd(agentName);
           await capture("session-name-agent");
           await selectCodex();
           await button("Создать агента с выбранной моделью").click();
@@ -179,7 +199,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           assert.equal(await agentName.inputValue(), "", "a new form has no stale draft");
           await button("Терминал").click();
           await terminalName.fill(`Терминал ${width}`);
-          await button("Принять название сессии").click();
+          await editAtEnd(terminalName);
           await capture("session-name-terminal");
           await button("Создать терминал").click();
           await terminalName.waitFor({ state: "hidden" });
@@ -188,7 +208,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await button("Новая область в проекте target").click();
           await newAreaName.fill(`Новая ${width}`);
           await agentName.fill(`Первый ${width}`);
-          await button("Принять название сессии").click();
+          await editAtEnd(agentName);
           await selectCodex();
           await button("Создать область").click();
           await agentName.waitFor({ state: "hidden" });
@@ -200,7 +220,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await newAreaName.fill(`Область терминала ${width}`);
           await button("Терминал").click();
           await terminalName.fill(`Первый терминал ${width}`);
-          await button("Принять название сессии").click();
+          await editAtEnd(terminalName);
           await button("Создать область").click();
           await terminalName.waitFor({ state: "hidden" });
           const terminalArea = (await client.workspaces.list()).entries.find(item => item.title === `Область терминала ${width}`);

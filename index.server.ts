@@ -32,7 +32,6 @@ import {
   areaWorktreeInfoRpc,
   areaWorktreeRemoveRpc,
   sessionTitleSuggestRpc,
-  sessionDraftTitleRpc,
   sessionTransferRpc,
   sidebarReadRpc,
   zorActivityRpc,
@@ -74,7 +73,7 @@ import {
   syncBoard,
 } from "./server/team.server";
 
-import { contributeSessionTitles, suggestTitle, suggestDraftTitle } from "./server/session-titles.server";
+import { contributeSessionTitles, suggestTitle } from "./server/session-titles.server";
 import { startSampler } from "./server/sampler";
 import { readZorActivity, readZorStats } from "./server/zor";
 import { readAllWorkers } from "./server/workers";
@@ -817,15 +816,6 @@ export default function contribute(server: PluginServerContext) {
     if (!project) throw new Error("Проект не найден");
     return project.projectRootPath;
   };
-
-  server.handle(sessionDraftTitleRpc, async ({ projectId, workspaceId, model, material }, { paseo }) => {
-    const rootPath = await projectRoot(paseo, projectId);
-    if (workspaceId) {
-      const area = await requireArea(paseo, workspaceId);
-      if (area.projectId !== projectId) throw new Error("Область принадлежит другому проекту");
-    }
-    return { title: await suggestDraftTitle(paseo, { projectId, rootPath, workspaceId, model, material }) };
-  });
 
   server.handle(areaBranchesRpc, async ({ workspaceIds }, { paseo }) => {
     const wanted = new Set(workspaceIds);
