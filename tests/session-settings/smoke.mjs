@@ -155,6 +155,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
 
           const modelsMenu = page.getByRole("menu", { name: "Модели для названий областей", exact: true });
           await button("Настройки проекта source").click();
+          await page.getByLabel(`Папка проекта: ${source}`, { exact: true }).waitFor();
           assert.equal(await page.getByText("Модель для названий областей", { exact: true }).count(), 0);
           await button("Закрыть").last().click();
           await page.getByText("Настройки проекта", { exact: true }).waitFor({ state: "hidden" });

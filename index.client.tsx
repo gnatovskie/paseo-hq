@@ -1342,9 +1342,9 @@ function ItemMenuActions({ actions, theme, disabled }: {
   );
 }
 
-function SessionInformation({ theme, agent, workspace, path, branch }: {
+function SessionInformation({ theme, agent, workspace, path, branch, project = false }: {
   theme: PluginTheme; agent?: AgentEntry["agent"]; workspace?: PaseoWorkspace;
-  path: string; branch?: string;
+  path: string; branch?: string; project?: boolean;
 }) {
   const c = theme.colors;
   const rows = [
@@ -1353,7 +1353,7 @@ function SessionInformation({ theme, agent, workspace, path, branch }: {
       { label: "Модель", value: agent.model || agent.provider.split("/").slice(1).join("/") || "Не указана", a11y: "Модель агента", icon: "Cpu" },
     ] : []),
     ...(workspace?.projectKind === "git" ? [{ label: "Текущая ветка", value: branch || "Ветка не определена", a11y: "Текущая ветка", icon: "GitBranch" }] : []),
-    { label: "Рабочая папка", value: path, a11y: "Рабочая папка сессии", icon: "Folder" },
+    { label: project ? "Папка проекта" : "Рабочая папка", value: path, a11y: project ? "Папка проекта" : "Рабочая папка сессии", icon: "Folder" },
   ];
   return <View style={{ gap: 12, marginTop: 8, padding: 12, borderRadius: 9, borderWidth: 1, borderColor: c.border }}>
     {rows.map(row => <View key={row.label} style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
@@ -3724,9 +3724,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                     />
                   ) : null}
                 </View>
-                <Text numberOfLines={1} style={{ color: c.foregroundMuted, fontSize: 11 }}>
-                  Папка: {editingGroup.rootPath}
-                </Text>
+                <SessionInformation theme={theme} path={editingGroup.rootPath} project />
               </View>
 
               {confirmRemoveProject ? (
