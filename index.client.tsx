@@ -999,7 +999,7 @@ function HqModalLayer({ visible, children }: { visible: boolean; children: React
   );
 }
 
-function HqModal({ title, open, onOpenChange, theme, actions, actionsDisabled = false, fixedHeight = false, children }: {
+function HqModal({ title, open, onOpenChange, theme, actions, actionsDisabled = false, fixedHeight = false, narrow = false, children }: {
   title: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -1008,6 +1008,8 @@ function HqModal({ title, open, onOpenChange, theme, actions, actionsDisabled = 
   actionsDisabled?: boolean;
   /** Окно всегда одной высоты, не зависит от длины содержимого. */
   fixedHeight?: boolean;
+  /** Окно, открытое поверх другого: уже родительского. */
+  narrow?: boolean;
   children: React.ReactNode;
 }) {
   const c = theme.colors;
@@ -1036,7 +1038,7 @@ function HqModal({ title, open, onOpenChange, theme, actions, actionsDisabled = 
         style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: "rgba(0,0,0,0.55)" }}
       />
       <View style={{
-        width: "100%", maxWidth: 520, maxHeight: "90%", ...(fixedHeight ? { height: "85%" } : null), borderRadius: 16,
+        width: "100%", maxWidth: narrow ? 400 : 520, maxHeight: "90%", ...(fixedHeight ? { height: "85%" } : null), borderRadius: 16,
         borderWidth: 1, borderColor: c.border, backgroundColor: c.surface1, overflow: "hidden",
       }}>
         <View style={{ paddingLeft: 16, paddingRight: 8, paddingTop: 8, paddingBottom: 8, gap: 8 }}>
@@ -1075,7 +1077,7 @@ HqModal.Content = function HqModalContent({ children }: { children: React.ReactN
   return <>{children}</>;
 };
 
-function ActionSheet({ title, open, onClose, theme, actions, disabled, fixedHeight, children }: {
+function ActionSheet({ title, open, onClose, theme, actions, disabled, fixedHeight, narrow, children }: {
   title: string;
   open: boolean;
   onClose: () => void;
@@ -1083,11 +1085,12 @@ function ActionSheet({ title, open, onClose, theme, actions, disabled, fixedHeig
   actions: SheetAction[];
   disabled: boolean;
   fixedHeight?: boolean;
+  narrow?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <HqModal title={title} open={open} onOpenChange={(next) => { if (!next) onClose(); }}
-      theme={theme} actions={actions} actionsDisabled={disabled} fixedHeight={fixedHeight}>
+      theme={theme} actions={actions} actionsDisabled={disabled} fixedHeight={fixedHeight} narrow={narrow}>
       {children}
     </HqModal>
   );
@@ -3344,6 +3347,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
 
       {/* Иконка или картинка проекта */}
       <HqModal theme={theme}
+        narrow
         title="Иконка проекта"
         open={projectIconOpen && Boolean(editingGroup)}
         onOpenChange={(open) => {
@@ -3855,7 +3859,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           ) : null}
       </ActionSheet>
 
-      <HqModal theme={theme} title="Новая сессия" open={Boolean(newAgentWorkspaceId)} onOpenChange={(open) => {
+      <HqModal theme={theme} narrow title="Новая сессия" open={Boolean(newAgentWorkspaceId)} onOpenChange={(open) => {
         if (!open && !Object.values(creatingAreaIds).some(Boolean) && !creatingTerminalId) setNewAgentWorkspaceId(null);
       }}
         actions={[
@@ -3925,6 +3929,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       </HqModal>
 
       <HqModal theme={theme}
+        narrow
         title="Настройки области"
         open={Boolean(editingChat && areaSettingsPanel === "branch")}
         onOpenChange={(open) => {
@@ -3960,6 +3965,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       </HqModal>
 
       <ActionSheet
+        narrow
         title={confirmClosingSession
           ? "Закрыть работающего агента"
           : "Действия с агентом"}
@@ -4059,6 +4065,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       </ActionSheet>
 
       <ActionSheet
+        narrow
         title={confirmClosingTerminal ? "Закрыть терминал" : "Настройки терминала"}
         open={Boolean(terminalMenuItem)}
         onClose={() => {
@@ -4134,6 +4141,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       </ActionSheet>
 
       <HqModal theme={theme}
+        narrow
         title="Перенос области в проект"
         open={Boolean(editingChat && chatTransferOpen)}
         onOpenChange={setChatTransferOpen}
