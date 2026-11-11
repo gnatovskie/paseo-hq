@@ -3173,7 +3173,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                                     onPress={() => jumpToAgent(session.id)}
                                     style={({ pressed }) => ({
                                       flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center",
-                                      paddingLeft: NESTED_ITEM_INSET, paddingRight: 10, paddingVertical: 5, minHeight: 44, borderRadius: 8,
+                                      paddingLeft: NESTED_ITEM_INSET, paddingRight: 10, paddingTop: 3, paddingBottom: 7, minHeight: 44, borderRadius: 8,
                                       backgroundColor: pressed ? c.surface2 : undefined,
                                     })}
                                   >
