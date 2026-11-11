@@ -145,6 +145,10 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
         try {
           await enterSidebar();
           await openArea();
+          await page.getByRole("button", { name: /^Закрытые/ }).click();
+          await page.getByText(/Нет закрытых сессий|Открыть закрытого/).first().waitFor();
+          assert.equal(await button("Меню агента Fixture chat").count(), 0, "closed filter hides open sessions");
+          await button("Все").click();
           await button("Меню агента Fixture chat").click();
           const agentName = page.getByRole("textbox", { name: "Название агента", exact: true });
           await agentName.waitFor();

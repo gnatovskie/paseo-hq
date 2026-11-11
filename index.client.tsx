@@ -91,6 +91,7 @@ const AREA_SESSION_FILTERS = [
   { value: "all", label: "Все" },
   { value: "agents", label: "Агенты" },
   { value: "terminals", label: "Терминалы" },
+  { value: "closed", label: "Закрытые" },
 ] as const;
 const COLOR_PRESETS = ["#3B82F6", "#8B5CF6", "#10B981", "#F59E0B", "#EF4444", "#EC4899", "#06B6D4", "#64748B"];
 
@@ -1474,8 +1475,9 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const editingAreaTitle = editingChat ? chatTitle(editingChat, editingChatAgent) : "";
   const editingChatEntries = (editingChat ? agentsByWorkspace.get(editingChat.id) : undefined) ?? [];
   const editingChatTerminals = terminals.filter((terminal) => terminal.workspaceId === editingChatId);
-  const visibleAreaAgents = areaSessionFilter === "terminals" ? [] : editingChatEntries;
-  const visibleAreaTerminals = areaSessionFilter === "agents" ? [] : editingChatTerminals;
+  const closedFilter = areaSessionFilter === "closed";
+  const visibleAreaAgents = areaSessionFilter === "terminals" || closedFilter ? [] : editingChatEntries;
+  const visibleAreaTerminals = areaSessionFilter === "agents" || closedFilter ? [] : editingChatTerminals;
   const visibleAreaSessions = orderAreaSessions(visibleAreaAgents, visibleAreaTerminals, serverState.pinnedSessions);
   const queryClient = useQueryClient();
   const closedAgents = useQuery({
@@ -3653,7 +3655,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                         })}
                       >
                         <Text style={{ color: selected ? c.accentForeground : c.foreground, fontSize: 12 }}>
-                          {label}
+                          {value === "closed" && closedAgents.data?.length ? `${label} ${closedAgents.data.length}` : label}
                         </Text>
                       </Pressable>
                     );
@@ -3728,7 +3730,39 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                     </View>
                   );
                 })}
-                {terminalListFailed && areaSessionFilter !== "agents" ? (
+                {closedFilter ? (
+                  <>
+                    {closedAgents.data?.map((agent) => (
+                      <Pressable
+                        key={agent.id}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Открыть закрытого агента ${agentTitle(agent)}`}
+                        onPress={() => {
+                          setEditingChatId(null);
+                          jumpToAgent(agent.id);
+                        }}
+                        style={({ pressed }) => ({
+                          minHeight: 44, flexDirection: "row", alignItems: "center", gap: 8,
+                          paddingHorizontal: 10, borderRadius: 8,
+                          backgroundColor: pressed ? c.surface2 : c.surface1,
+                        })}
+                      >
+                        <Icon name="Bot" size={15} color={c.foregroundMuted} />
+                        <Text numberOfLines={1} style={{ flex: 1, color: c.foreground, fontSize: 13 }}>
+                          {agentTitle(agent)}
+                        </Text>
+                        <Icon name="ChevronRight" size={14} color={c.foregroundMuted} />
+                      </Pressable>
+                    ))}
+                    {closedAgents.isError ? (
+                      <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Не удалось загрузить историю агентов</Text>
+                    ) : closedAgents.isPending ? (
+                      <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Загружаю…</Text>
+                    ) : !closedAgents.data?.length ? (
+                      <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Нет закрытых сессий</Text>
+                    ) : null}
+                  </>
+                ) : terminalListFailed && areaSessionFilter !== "agents" ? (
                   <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Не удалось загрузить терминалы</Text>
                 ) : !visibleAreaAgents.length && !visibleAreaTerminals.length ? (
                   <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>
@@ -3736,36 +3770,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                   </Text>
                 ) : null}
               </View>
-              {closedAgents.data?.length || closedAgents.isError ? (
-                <View style={{ padding: 12, gap: 8, borderRadius: 12, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface2 }}>
-                  <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>Закрытые сессии</Text>
-                  {closedAgents.isError ? (
-                    <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Не удалось загрузить историю агентов</Text>
-                  ) : null}
-                  {closedAgents.data?.map((agent) => (
-                    <Pressable
-                      key={agent.id}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Открыть закрытого агента ${agentTitle(agent)}`}
-                      onPress={() => {
-                        setEditingChatId(null);
-                        jumpToAgent(agent.id);
-                      }}
-                      style={({ pressed }) => ({
-                        minHeight: 44, flexDirection: "row", alignItems: "center", gap: 8,
-                        paddingHorizontal: 10, borderRadius: 8,
-                        backgroundColor: pressed ? c.surface2 : c.surface1,
-                      })}
-                    >
-                      <Icon name="Bot" size={15} color={c.foregroundMuted} />
-                      <Text numberOfLines={1} style={{ flex: 1, color: c.foreground, fontSize: 13 }}>
-                        {agentTitle(agent)}
-                      </Text>
-                      <Icon name="ChevronRight" size={14} color={c.foregroundMuted} />
-                    </Pressable>
-                  ))}
-                </View>
-              ) : null}
             </View>
           ) : null}
       </ActionSheet>
