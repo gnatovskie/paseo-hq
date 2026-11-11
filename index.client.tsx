@@ -3126,7 +3126,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                               accessibilityLabel={`${expanded ? "Свернуть" : "Развернуть"} область ${title}`}
                               aria-expanded={expanded}
                               onPress={() => setExpandedAreaIds(prev => ({ ...prev, [chat.id]: !prev[chat.id] }))}
-                              style={({ pressed }) => ({ width: btnSize, height: btnSize, borderRadius: 8,
+                              style={({ pressed }) => ({ width: layout.compact ? 26 : 22, height: btnSize, borderRadius: 8,
                                 alignItems: "center", justifyContent: "center", backgroundColor: pressed ? c.surface2 : undefined })}>
                               <Icon name={expanded ? "ChevronDown" : "ChevronRight"} size={14} color={c.foregroundMuted} />
                             </Pressable>
