@@ -156,6 +156,14 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await page.getByText(/Нет закрытых сессий|Открыть закрытого/).first().waitFor();
           assert.equal(await button("Меню агента Fixture chat").count(), 0, "closed filter hides open sessions");
           await button("Все").click();
+          const [agentBox, terminalBox, filterBox, sessionBox] = await Promise.all([
+            button("Меню агента Fixture chat").boundingBox(),
+            button("Меню терминала Fixture terminal").boundingBox(),
+            button("Все").boundingBox(),
+            button("Открыть агента Fixture chat").boundingBox(),
+          ]);
+          assert(Math.abs(agentBox.x - terminalBox.x) < 1, "agent and terminal menus share a vertical axis");
+          assert(sessionBox.y - (filterBox.y + filterBox.height) >= 18, "session list has space below filters");
           await button("Меню агента Fixture chat").click();
           const agentName = page.getByRole("textbox", { name: "Название агента", exact: true });
           await agentName.waitFor();

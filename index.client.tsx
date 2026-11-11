@@ -919,7 +919,7 @@ function TerminalRow({ terminal, label, onOpen, onMenu, disabled, theme, nested 
 }) {
   const c = theme.colors;
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingRight: nested ? 0 : 11 }}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`Открыть терминал ${label}`}
@@ -4124,7 +4124,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                     theme={theme}
                   />
                 </View>
-                <View style={{ flexWrap: "wrap", flexDirection: "row", gap: 6 }}>
+                <View style={{ flexWrap: "wrap", flexDirection: "row", gap: 6, marginBottom: 8 }}>
                   {AREA_SESSION_FILTERS.map(({ value, label }) => {
                     const selected = areaSessionFilter === value;
                     return (
