@@ -1002,7 +1002,6 @@ export default function contribute(server: PluginServerContext) {
       projectId,
       customName,
       avatar,
-      newSessionMode,
       hidden,
       pinned,
       sessionTitleModel,
@@ -1049,7 +1048,6 @@ export default function contribute(server: PluginServerContext) {
           avatarUri: null,
           avatarEmoji: null,
           avatarBg: null,
-          newSessionMode: "directory",
           hidden: false,
           pinned: false,
           sessionTitleModel: null,
@@ -1072,9 +1070,6 @@ export default function contribute(server: PluginServerContext) {
           next.avatarBg = null;
         }
 
-        if (newSessionMode !== undefined) {
-          next.newSessionMode = newSessionMode;
-        }
         if (hidden !== undefined) {
           next.hidden = hidden;
         }
@@ -1133,9 +1128,6 @@ export default function contribute(server: PluginServerContext) {
         }
       }
 
-      const stored = await readStored();
-      const targetMeta = stored.projects[targetProjectId];
-      const newSessionMode = targetMeta?.newSessionMode ?? "directory";
 
       const title = sourceWs.title || sourceWs.projectDisplayName || "Область";
       const targetPath = targetProject.projectRootPath;
@@ -1156,10 +1148,7 @@ export default function contribute(server: PluginServerContext) {
 
       const createdWs = await paseo.workspaces.create({
         title,
-        source:
-          newSessionMode === "worktree"
-            ? { kind: "worktree", cwd: targetPath, projectId: targetProjectId }
-            : { kind: "directory", path: targetPath, projectId: targetProjectId },
+        source: { kind: "directory", path: targetPath, projectId: targetProjectId },
         agent: agentPayload,
       });
 

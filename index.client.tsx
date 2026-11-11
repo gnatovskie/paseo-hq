@@ -108,7 +108,6 @@ const DEFAULT_META: ProjectMeta = {
   avatarUri: null,
   avatarEmoji: null,
   avatarBg: null,
-  newSessionMode: "directory",
   hidden: false,
   pinned: false,
   sessionTitleModel: null,
@@ -1554,7 +1553,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const [draftProjectName, setDraftProjectName] = useState("");
   const [draftAvatarUrl, setDraftAvatarUrl] = useState("");
   const [draftAvatarUpdate, setDraftAvatarUpdate] = useState<AvatarUpdate>({ kind: "keep" });
-  const [draftNewMode, setDraftNewMode] = useState<"directory" | "worktree">("directory");
   const [draftHidden, setDraftHidden] = useState(false);
   const [draftPinned, setDraftPinned] = useState(false);
   const [titleProviders, setTitleProviders] = useState<PaseoProviderSnapshotResult["entries"]>([]);
@@ -1891,9 +1889,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     : newArea?.worktreePath ?? (newAreaBranch ? defaultWorktreePath(worktreeOptions.rootPath, newAreaBranch) : "");
   const newAreaFolder = newAreaPlace !== "project" ? newAreaWorktreePath || "Укажите ветку"
     : !newAreaGroup ? ""
-    : newAreaGroup.meta.newSessionMode === "worktree"
-      ? `${newAreaGroup.rootPath} (отдельный worktree создастся вместе с областью)`
-      : newAreaGroup.rootPath;
+    : newAreaGroup.rootPath;
   const hqWindowOpen = Boolean(worktreeArchive) || addModalOpen || Boolean(editingGroup) || Boolean(newArea) || Boolean(editingChat)
     || Boolean(newAgentWorkspaceId) || Boolean(agentMenuChat) || Boolean(terminalMenuItem) || panelSettingsOpen;
 
@@ -2063,9 +2059,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
         const created = await paseo.workspaces.create({
           title: newArea.name.trim() || "Новая область",
           agent,
-          source: group.meta.newSessionMode === "worktree"
-            ? { kind: "worktree", cwd: group.rootPath, projectId: group.id }
-            : { kind: "directory", path: group.rootPath, projectId: group.id },
+          source: { kind: "directory", path: group.rootPath, projectId: group.id },
         });
         workspaceId = created.id;
         setNewArea({ ...newArea, workspaceId });
@@ -2202,7 +2196,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     setDraftProjectName(group.customName ?? group.name);
     setDraftAvatarUrl("");
     setDraftAvatarUpdate({ kind: "keep" });
-    setDraftNewMode(group.meta.newSessionMode);
     setDraftHidden(group.meta.hidden);
     setDraftPinned(group.meta.pinned);
     setConfirmRemoveProject(false);
@@ -2222,7 +2215,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const saveProjectPatch = async (patch: {
     customName?: string | null;
     avatar?: AvatarUpdate;
-    newSessionMode?: "directory" | "worktree";
     hidden?: boolean;
     pinned?: boolean;
   }) => {
@@ -3721,20 +3713,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                   Папка: {editingGroup.rootPath}
                 </Text>
               </View>
-
-              <SettingsSelect
-                label="Рабочая папка новой области"
-                hint="Выберите общую папку репозитория или изолированный git worktree"
-                value={draftNewMode}
-                options={[
-                  { label: "В папке проекта", value: "directory" },
-                  { label: "В отдельном worktree", value: "worktree" },
-                ]}
-                onValueChange={(v) => {
-                  setDraftNewMode(v);
-                  void saveProjectPatch({ newSessionMode: v });
-                }}
-              />
 
               {confirmRemoveProject ? (
                 <Text style={{ color: c.statusDanger, fontSize: 13 }}>

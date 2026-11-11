@@ -150,7 +150,6 @@ export const projectSaveRpc = defineRpc({
     projectId: z.string().min(1),
     customName: z.string().nullable().optional(),
     avatar: avatarUpdateSchema.default({ kind: "keep" }),
-    newSessionMode: z.enum(["directory", "worktree"]).optional(),
     hidden: z.boolean().optional(),
     pinned: z.boolean().optional(),
     sessionTitleModel: z.string().nullable().optional(),
