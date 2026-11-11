@@ -91,6 +91,7 @@ import {
 import { z } from "zod";
 import { Markdown } from "@getpaseo/plugin/client/ui";
 import { defaultWorktreePath } from "./shared/worktree";
+import { clearProviders, peekProviders, providersSnapshot } from "./shared/provider-cache";
 
 
 const EMOJI_PRESETS = ["🚀", "⚡", "🛠", "📦", "🧠", "🌐", "💳", "🎨", "🔒", "📱", "🤖", "🔥"];
@@ -1804,15 +1805,20 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       const preferred = await projectAgentConfig(paseo, group, agents);
       if (request !== agentModelsRequest.current) return;
       setNewAgentModel(preferred.provider);
-      // Полный список моделей нужен только для выбора из него: грузим в фоне, создание не ждет.
-      void paseo.providers.waitForReady({ cwd }).then((snapshot) => {
-        if (request !== agentModelsRequest.current) return;
+      // Полный список нужен только для выбора из него. Кэш показывает прошлый список сразу и не дергает
+      // провайдеров, пока он свежий (корень проекта как ключ, а не папка каждой области).
+      const applySnapshot = (snapshot: NonNullable<ReturnType<typeof peekProviders>>) => {
         const available = snapshot.entries.filter(entry => entry.enabled && entry.status === "ready");
         const options = titleModelOptions(available, "first_line").filter(option => option.provider);
         setNewAgentModels(available);
         setNewAgentModel((current) => current && options.some(option => option.value === current)
           ? current : options[0]?.value ?? current);
         if (!options.length) setNewAgentModelsError("Нет доступных моделей для нового агента");
+      };
+      const known = peekProviders(group.rootPath);
+      if (known) applySnapshot(known);
+      void providersSnapshot(paseo, group.rootPath).then((snapshot) => {
+        if (request === agentModelsRequest.current && snapshot !== known) applySnapshot(snapshot);
       }).catch((error) => {
         if (request === agentModelsRequest.current) setNewAgentModelsError(
           error instanceof Error ? error.message : "Не удалось загрузить модели");
@@ -1853,6 +1859,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       jumpToAgent(agentId);
       void reloadAll();
     } catch (error) {
+      clearProviders();
       toast.error(error instanceof Error ? error.message : "Не удалось создать агента");
     } finally {
       setCreatingAreaIds((prev) => {
@@ -2042,13 +2049,16 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     if (!editingChatId && !agentMenuId) return;
     let cancelled = false;
     setTitleModelsError(null);
-    void paseo.providers.waitForReady({ cwd: (editingChat ?? agentMenuWorkspace)?.workspaceDirectory }).then(snapshot => {
+    const projectRoot = (editingChat ?? agentMenuWorkspace)?.projectRootPath;
+    const known = peekProviders(projectRoot);
+    if (known) setTitleProviders(known.entries);
+    void providersSnapshot(paseo, projectRoot).then(snapshot => {
       if (!cancelled) setTitleProviders(snapshot.entries);
     }).catch(error => {
       if (!cancelled) setTitleModelsError(error instanceof Error ? error.message : "Каталог моделей недоступен");
     });
     return () => { cancelled = true; };
-  }, [editingChatId, agentMenuId, editingChat?.workspaceDirectory, agentMenuWorkspace?.workspaceDirectory, paseo]);
+  }, [editingChatId, agentMenuId, editingChat?.projectRootPath, agentMenuWorkspace?.projectRootPath, paseo]);
 
   const openProjectSettings = (group: ProjectGroup) => {
     setEditingProjectId(group.id);
@@ -2973,8 +2983,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                                 backgroundColor: pressed ? c.surface2 : undefined,
                               })}
                             >
-                              <Icon name={expanded ? "ChevronDown" : "ChevronRight"} size={18}
-                                color={c.foregroundMuted} />
                               <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
                                 <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 14, fontWeight: "600" }}>
                                   {title}
@@ -3019,7 +3027,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                               marginTop: 2, marginBottom: 8, padding: 4, gap: 2,
                               borderRadius: 10, backgroundColor: c.surface2,
                               borderWidth: 1, borderColor: c.border,
-                              borderLeftWidth: 3, borderLeftColor: c.accent,
+                              borderLeftWidth: 1.5, borderLeftColor: c.accent,
                             }}>
                               {orderAreaSessions(sessions, areaTerminals, serverState.pinnedSessions).map((session) => session.kind === "terminal" ? (
                                 <TerminalRow key={session.id} terminal={session.terminal} label={terminalLabel(session.terminal)} theme={theme}

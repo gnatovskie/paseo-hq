@@ -1,4 +1,5 @@
 import type { PaseoApi, PaseoAgent, PaseoAgentConfig, PaseoAgentListResult } from "@getpaseo/client";
+import { providersSnapshot } from "./provider-cache";
 
 /** Reuse the project's last agent choice without copying its prompt or session. */
 export async function projectAgentConfig(
@@ -13,7 +14,7 @@ export async function projectAgentConfig(
   const previous = recent.find(agent => agent.workspaceId && workspaceIds.has(agent.workspaceId)) ?? recent[0];
   if (previous) return agentConfig(previous);
 
-  const snapshot = await paseo.providers.waitForReady({ cwd: project.rootPath });
+  const snapshot = await providersSnapshot(paseo, project.rootPath);
   const provider = snapshot.entries.find(entry => entry.enabled && entry.status === "ready");
   if (!provider) throw new Error("Нет доступного провайдера для нового агента");
   const selectable = provider.models?.filter(model => model.isSelectable !== false);
