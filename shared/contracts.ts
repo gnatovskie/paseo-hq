@@ -160,6 +160,13 @@ export const projectSaveRpc = defineRpc({
   output: sidebarStateSchema,
 });
 
+export const sessionDraftTitleRpc = defineRpc({
+  name: "sidebar.session-draft-title",
+  input: z.object({ projectId: z.string().min(1), workspaceId: z.string().min(1).optional(),
+    model: z.string().min(1), material: z.string().trim().min(1).max(4000) }),
+  output: z.object({ title: z.string() }),
+});
+
 export const sessionTitleSuggestRpc = defineRpc({
   name: "sidebar.title-suggest",
   input: z.object({
@@ -224,6 +231,7 @@ export const areaWorktreeCreateRpc = defineRpc({
     baseBranch: z.string().optional(),
     /** Модель первого агента; без нее область создается пустой. */
     agentModel: z.string().optional(),
+    agentTitle: z.string().trim().max(200).optional(),
   }),
   output: z.object({ workspaceId: z.string(), path: z.string() }),
 });
@@ -261,7 +269,7 @@ export const areaSettingsRpc = defineRpc({
 
 export const areaSessionCreateRpc = defineRpc({
   name: "sidebar.area-session-create",
-  input: z.object({ workspaceId: z.string().min(1), model: z.string().min(1) }),
+  input: z.object({ workspaceId: z.string().min(1), model: z.string().min(1), title: z.string().trim().max(200).optional() }),
   output: z.object({ agentId: z.string() }),
 });
 

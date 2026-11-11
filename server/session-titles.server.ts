@@ -143,3 +143,24 @@ export async function suggestTitle(paseo: PaseoApi, workspaceId: string, agentId
   if (!generated || generated.includes("\n") || generated.length > 80) throw new Error("Модель вернула неподходящее название");
   return shortTitle(generated);
 }
+
+/** Draft generation never creates the user's session. Empty projects get a temporary directory area. */
+export async function suggestDraftTitle(paseo: PaseoApi, input: {
+  projectId: string; rootPath: string; workspaceId?: string; model: string; material: string;
+}): Promise<string> {
+  if (input.model === "first_line") return shortTitle(firstLine(input.material));
+  const existing = input.workspaceId ?? (await paseo.workspaces.list()).entries.find(area => area.projectId === input.projectId)?.id;
+  const temporary = existing ? null : await paseo.workspaces.create({
+    title: GENERATOR_TITLE, source: { kind: "directory", path: input.rootPath, projectId: input.projectId },
+  });
+  try {
+    const generated = (await generate(paseo, existing ?? temporary!.id, input.model, input.material)).trim().replace(/^["«]|["»]$/g, "");
+    if (!generated || generated.includes("\n") || generated.length > 80) throw new Error("Модель вернула неподходящее название");
+    return shortTitle(generated);
+  } finally {
+    if (temporary) {
+      const result = await temporary.archive();
+      if (result.error) throw new Error(`Не удалось убрать область генератора: ${result.error}`);
+    }
+  }
+}

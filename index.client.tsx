@@ -50,6 +50,7 @@ import {
   areaWorktreeInfoRpc,
   areaWorktreeRemoveRpc,
   sessionTitleSuggestRpc,
+  sessionDraftTitleRpc,
   sessionTransferRpc,
   sidebarReadRpc,
   type AvatarUpdate,
@@ -1164,9 +1165,64 @@ function ChoiceList<T>({ theme, options, value, onChange, disabled }: {
   );
 }
 
-// Общее окно создания: «Новая область» (с названием) и «Новая сессия» (без названия) отличаются только полем названия.
+type SessionNaming = {
+  value: string;
+  onChange: (title: string) => void;
+  suggest: (model: string) => Promise<string>;
+};
+
+function NewSessionName({ theme, kind, naming, options, disabled }: {
+  theme: PluginTheme; kind: "agent" | "terminal"; naming: SessionNaming;
+  options: ReturnType<typeof titleModelOptions>; disabled: boolean;
+}) {
+  const input = useRef<React.ElementRef<typeof TextInput>>(null);
+  const revision = useRef(0);
+  const [focused, setFocused] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [model, setModel] = useState("first_line");
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { revision.current += 1; }, [kind]);
+  useEffect(() => () => { revision.current += 1; }, []);
+  const label = kind === "agent" ? "Название нового агента" : "Название нового терминала";
+  const accept = () => input.current?.blur();
+  const suggest = async (selected: string) => {
+    const current = ++revision.current;
+    setModel(selected);
+    setPending(true);
+    setError(null);
+    try {
+      const title = await naming.suggest(selected);
+      if (revision.current === current) {
+        naming.onChange(title);
+        requestAnimationFrame(() => input.current?.focus());
+      }
+    } catch (err) {
+      if (revision.current === current) setError(err instanceof Error ? err.message : "Не удалось сгенерировать название");
+    } finally { setPending(false); }
+  };
+  return <View style={{ gap: 6 }}>
+    <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>{kind === "agent" ? "Название агента" : "Название терминала"}</Text>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+      <View style={{ flex: 1, minWidth: 0, height: 44, justifyContent: "center", paddingHorizontal: 12,
+        borderWidth: 1, borderRadius: 9, borderColor: focused ? theme.colors.accent : theme.colors.border, backgroundColor: theme.colors.surface2 }}>
+        <TextInput ref={input} accessibilityLabel={label} value={naming.value} placeholder="Необязательно"
+          placeholderTextColor={theme.colors.foregroundMuted} maxLength={200} editable={!disabled}
+          onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} onSubmitEditing={accept}
+          onChangeText={value => { revision.current += 1; naming.onChange(value); setError(null); }}
+          style={{ padding: 0, outlineWidth: 0, color: theme.colors.foreground, fontSize: 15 }} />
+      </View>
+      {focused ? <ChatActionButton theme={theme} label="Принять название сессии" icon="Check" color={theme.colors.accent}
+        disabled={disabled} onPressIn={accept} onPress={accept} /> :
+        <TitleModelPicker theme={theme} value={model} options={[...titleModelOptions([], "first_line").map(option => ({ ...option, label: "По введенному тексту (без ИИ)" })), ...options]} disabled={disabled || pending} pending={pending}
+          label="Сгенерировать название сессии" menuLabel="Модели для названия сессии" onValueChange={selected => void suggest(selected)} />}
+    </View>
+    {error ? <Text accessibilityRole="alert" style={{ color: theme.colors.statusDanger, fontSize: 12 }}>{error}</Text> : null}
+  </View>;
+}
+
+// Одна форма для новой области и новой сессии.
 function NewSessionWindow({ theme, title, open, onClose, narrow, kind, onKindChange, kindLocked, name, onNameChange, nameEditable,
-  target, extra, model, modelsError, modelOptions, onModelChange, folder, busy, submitLabel, submitAgentLabel, onSubmit }: {
+  target, extra, naming, model, modelsError, modelOptions, onModelChange, folder, busy, submitLabel, submitAgentLabel, onSubmit }: {
   theme: PluginTheme;
   title: string;
   open: boolean;
@@ -1182,6 +1238,7 @@ function NewSessionWindow({ theme, title, open, onClose, narrow, kind, onKindCha
   /** Куда создавать: новая область или одна из имеющихся (value = id области, null = новая). */
   /** Дополнительные поля после названия (ветка и папка worktree у новой области). */
   extra?: React.ReactNode;
+  naming: SessionNaming;
   target?: { value: string | null; options: { value: string; label: string; branch?: string }[]; onChange: (value: string | null) => void; locked?: boolean };
   model: string | null;
   modelsError: string | null;
@@ -1238,6 +1295,7 @@ function NewSessionWindow({ theme, title, open, onClose, narrow, kind, onKindCha
           </View>
         ) : null}
         {extra}
+        <NewSessionName theme={theme} kind={kind} naming={naming} options={modelOptions} disabled={busy} />
         {kind === "agent" ? (
           <View style={{ gap: 6 }}>
             <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Модель нового агента</Text>
@@ -1374,6 +1432,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const removeAreaWorktree = useRpc(areaWorktreeRemoveRpc);
   const renameTerminal = useRpc(terminalRenameRpc);
   const suggestSessionTitle = useRpc(sessionTitleSuggestRpc);
+  const suggestDraftSessionTitle = useRpc(sessionDraftTitleRpc);
   const renameAgent = useRpc(chatRenameRpc);
   const loadCandidates = useRpc(projectCandidatesRpc);
   const addProjectRpc = useRpc(projectAddRpc);
@@ -1439,6 +1498,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const [newAgentWorkspaceId, setNewAgentWorkspaceId] = useState<string | null>(null);
   const [newAgentModels, setNewAgentModels] = useState<PaseoProviderSnapshotResult["entries"]>([]);
   const [newAgentModel, setNewAgentModel] = useState<string | null>(null);
+  const [newSessionTitle, setNewSessionTitle] = useState("");
   const [newSessionKind, setNewSessionKind] = useState<"agent" | "terminal">("agent");
   const [newAgentModelsError, setNewAgentModelsError] = useState<string | null>(null);
   const agentModelsRequest = useRef(0);
@@ -1890,6 +1950,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   };
 
   const openNewArea = (group: ProjectGroup) => {
+    setNewSessionTitle("");
     setNewArea({ projectId: group.id, name: "Новая область", firstTab: "session", place: "project" });
     setWorktreeOptions(null);
     void prepareAgentModels(group);
@@ -1901,6 +1962,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const openNewAreaAgent = (workspaceId: string) => {
     const group = allGroups.find(item => item.chats.some(chat => chat.id === workspaceId));
     if (!group) return;
+    setNewSessionTitle("");
     setNewSessionKind("agent");
     setNewAgentWorkspaceId(workspaceId);
     void prepareAgentModels(group, workspaceId);
@@ -1911,7 +1973,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     if (creatingAreaIds[workspaceId]) return;
     setCreatingAreaIds((prev) => ({ ...prev, [workspaceId]: true }));
     try {
-      const { agentId } = await createAreaSession({ workspaceId, model: newAgentModel });
+      const { agentId } = await createAreaSession({ workspaceId, model: newAgentModel, title: newSessionTitle.trim() });
       setExpandedAreaIds((prev) => ({ ...prev, [workspaceId]: true }));
       setEditingChatId((current) => current === workspaceId ? null : current);
       setNewAgentWorkspaceId(null);
@@ -1940,7 +2002,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     if (creatingTerminalId) return;
     setCreatingTerminalId(workspaceId);
     try {
-      const terminal = await paseo.workspaces.ref(workspaceId).terminals.create();
+      const terminal = await paseo.workspaces.ref(workspaceId).terminals.create({ name: newSessionTitle.trim() || undefined });
       const snapshot = terminal.current();
       if (!snapshot) throw new Error("Терминал создан, но его данные недоступны");
       setExpandedAreaIds((prev) => ({ ...prev, [workspaceId]: true }));
@@ -1974,6 +2036,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           newBranch: newAreaPlace === "new",
           baseBranch: newAreaPlace === "new" ? newAreaBaseBranch : undefined,
           agentModel: newArea.firstTab === "session" ? newAgentModel ?? undefined : undefined,
+          agentTitle: newSessionTitle.trim(),
         });
         workspaceId = created.workspaceId;
         setNewArea({ ...newArea, workspaceId });
@@ -1981,7 +2044,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       if (!workspaceId) {
         if (newArea.firstTab === "session" && !newAgentModel) throw new Error("Выберите модель агента");
         const agent = newArea.firstTab === "session"
-          ? { config: { provider: newAgentModel! }, cwd: group.rootPath }
+          ? { config: { provider: newAgentModel! }, title: newSessionTitle.trim() || undefined, cwd: group.rootPath }
           : undefined;
         const created = await paseo.workspaces.create({
           title: newArea.name.trim() || "Новая область",
@@ -1997,7 +2060,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       setExpandedProjectIds((prev) => ({ ...prev, [group.id]: true }));
       setExpandedAreaIds((prev) => ({ ...prev, [workspaceId]: true }));
       if (newArea.firstTab === "terminal") {
-        const terminal = await paseo.workspaces.ref(workspaceId).terminals.create();
+        const terminal = await paseo.workspaces.ref(workspaceId).terminals.create({ name: newSessionTitle.trim() || undefined });
         const snapshot = terminal.current();
         if (!snapshot) throw new Error("Терминал создан, но его данные недоступны");
         openAreaTerminal(snapshot);
@@ -3885,7 +3948,12 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       {newArea ? (
         <NewSessionWindow
           theme={theme}
+          key={newAreaTarget?.id ?? newArea.projectId}
           title="Новая область"
+          naming={{ value: newSessionTitle, onChange: setNewSessionTitle,
+            suggest: async (model) => (await suggestDraftSessionTitle({ projectId: newArea.projectId,
+              workspaceId: newAreaTarget?.id,
+              model, material: newSessionTitle.trim() || `${newArea.firstTab === "session" ? "Агент" : "Терминал"}: ${newAreaTarget?.title || newArea.name}. Проект ${newAreaGroup?.name ?? ""}` })).title }}
           open
           onClose={() => setNewArea(null)}
           kind={newArea.firstTab === "session" ? "agent" : "terminal"}
@@ -4273,6 +4341,12 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           theme={theme}
           narrow
           title="Новая сессия"
+          naming={{ value: newSessionTitle, onChange: setNewSessionTitle,
+            suggest: async (model) => {
+              if (!newSessionWorkspace) throw new Error("Область недоступна");
+              return (await suggestDraftSessionTitle({ projectId: newSessionWorkspace.projectId, workspaceId: newSessionWorkspace.id,
+                model, material: newSessionTitle.trim() || `${newSessionKind === "agent" ? "Агент" : "Терминал"}: ${newSessionWorkspace.title || "Новая сессия"}` })).title;
+            } }}
           open
           onClose={() => setNewAgentWorkspaceId(null)}
           kind={newSessionKind}

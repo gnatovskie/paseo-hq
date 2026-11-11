@@ -136,3 +136,56 @@ test("regeneration uses project model on the session context", async () => {
   assert.equal(await suggestTitle(paseo, "w", "a", "codex/gpt-6-luna"), "Сортировка проектов");
   assert.match(material, /Почини сортировку/); assert.match(material, /Готово/);
 });
+
+test("new session draft generates before a session exists and cleans an empty project's area", async () => {
+  const { suggestDraftTitle } = await import("./session-titles.server.ts");
+  let areaArchived = false;
+  let generatorArchived = false;
+  const paseo = {
+    providers: { waitForReady: async () => ({ entries: [] }) },
+    workspaces: {
+      list: async () => ({ entries: [] }),
+      create: async options => {
+        assert.equal(options.agent, undefined);
+        assert.deepEqual(options.source, { kind: "directory", path: "/project", projectId: "p" });
+        return { id: "temporary", archive: async () => { areaArchived = true; return { error: null }; } };
+      },
+      ref: id => {
+        assert.equal(id, "temporary");
+        return { agents: { create: async () => ({
+          run: async prompt => { assert.match(prompt, /Проверка терминала/); return { status: "idle", lastMessage: "Тестовый терминал" }; },
+          archive: async () => { generatorArchived = true; },
+        }) } };
+      },
+    },
+  };
+  assert.equal(await suggestDraftTitle(paseo, { projectId: "p", rootPath: "/project", model: "codex/test", material: "Проверка терминала" }), "Тестовый терминал");
+  assert(areaArchived && generatorArchived);
+});
+
+test("draft first-line naming needs neither a model nor a workspace", async () => {
+  const { suggestDraftTitle } = await import("./session-titles.server.ts");
+  assert.equal(await suggestDraftTitle({}, { projectId: "p", rootPath: "/project", model: "first_line", material: "Проверка нового терминала\nПодробности" }), "Проверка нового терминала");
+});
+
+test("failed draft generation still archives its temporary area", async () => {
+  const { suggestDraftTitle } = await import("./session-titles.server.ts");
+  let archived = false;
+  const paseo = { providers: { waitForReady: async () => { throw Error("provider unavailable"); } }, workspaces: {
+    list: async () => ({ entries: [] }),
+    create: async () => ({ id: "temporary", archive: async () => { archived = true; return { error: null }; } }),
+  } };
+  await assert.rejects(suggestDraftTitle(paseo, { projectId: "p", rootPath: "/project", model: "codex/test", material: "Терминал" }), /provider unavailable/);
+  assert(archived);
+});
+
+test("draft generation reuses its area and rejects an invalid model answer", async () => {
+  const { suggestDraftTitle } = await import("./session-titles.server.ts");
+  const paseo = { providers: { waitForReady: async () => ({ entries: [] }) }, workspaces: {
+    ref: id => {
+      assert.equal(id, "existing");
+      return { agents: { create: async () => ({ run: async () => ({ status: "idle", lastMessage: "Название\nЛишнее объяснение" }), archive: async () => {} }) } };
+    },
+  } };
+  await assert.rejects(suggestDraftTitle(paseo, { projectId: "p", rootPath: "/project", workspaceId: "existing", model: "codex/test", material: "Терминал" }), /неподходящее название/);
+});
