@@ -2029,7 +2029,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           ? current : options[0]?.value ?? current);
         if (!options.length && !snapshot.entries.some(entry => entry.status === "loading")) setNewAgentModelsError("Нет доступных моделей для нового агента");
       };
-      const known = peekProviders(group.rootPath);
+      const known = peekProviders(paseo, group.rootPath);
       if (known) applySnapshot(known);
       void providersSnapshot(paseo, group.rootPath, { onUpdate: snapshot => {
         if (request === agentModelsRequest.current) applySnapshot(snapshot);
@@ -2084,7 +2084,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       await jumpToAgent(agentId, workspaceId);
       void reloadAll();
     } catch (error) {
-      clearProviders();
+      clearProviders(paseo);
       toast.error(error instanceof Error ? error.message : "Не удалось создать агента");
     } finally {
       setCreatingAreaIds((prev) => {
@@ -2275,7 +2275,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     let cancelled = false;
     setTitleModelsError(null);
     const projectRoot = (editingChat ?? agentMenuWorkspace)?.projectRootPath;
-    const known = peekProviders(projectRoot);
+    const known = peekProviders(paseo, projectRoot);
     if (known) setTitleProviders(known.entries);
     void providersSnapshot(paseo, projectRoot).then(snapshot => {
       if (!cancelled) setTitleProviders(snapshot.entries);

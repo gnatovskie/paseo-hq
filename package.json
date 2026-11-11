@@ -43,6 +43,7 @@
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.4.0",
+    "@getpaseo/protocol": "0.15.3",
     "yaml": "^2.9.1"
   },
   "devDependencies": {
