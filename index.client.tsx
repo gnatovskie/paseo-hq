@@ -58,6 +58,7 @@ import {
 } from "./shared/contracts";
 import { projectAgentConfig } from "./shared/project-agent-config";
 import { compareProjectOrder } from "./shared/project-order";
+import { groupAreaAgents } from "./shared/area-agents";
 import { GENERATOR_TITLE, titleModelOptions } from "./shared/title-models";
 import { useActiveSession } from "./client/active-session.client";
 import { TitleModelPicker } from "./client/title-model-picker.client";
@@ -1708,18 +1709,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     return { agentBucketByWorkspace: bucketMap, agentTurnFinishMap: finishMap, agentPromptMap: promptMap, latestAgentByWorkspace: agentMap };
   }, [agents]);
 
-  const agentsByWorkspace = useMemo(() => {
-    const map = new Map<string, AgentEntry[]>();
-    for (const entry of agents) {
-      if (entry.agent.archivedAt || entry.agent.internal) continue;
-      const wsId = entry.agent.workspaceId;
-      if (!wsId) continue;
-      const list = map.get(wsId) || [];
-      list.push(entry);
-      map.set(wsId, list);
-    }
-    return map;
-  }, [agents]);
+  const agentsByWorkspace = useMemo(() => groupAreaAgents(agents), [agents]);
 
   const allGroups = useMemo<ProjectGroup[]>(() => {
     const byProject = new Map<string, ProjectGroup>();
