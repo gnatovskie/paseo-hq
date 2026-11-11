@@ -822,15 +822,7 @@ function ProjectHeaderPressable({
           ) : null}
         </View>
         <Text numberOfLines={1} style={{ color: c.foregroundMuted, fontSize: 11 }}>
-          {group.chats.length === 0
-            ? "нет активных областей"
-            : `${formatRussianCount(group.chats.length, "область", "области", "областей")}${
-                group.hasRunning
-                  ? " · в работе"
-                  : group.lastRunningAt
-                    ? ` · ${relativeTime(group.lastRunningAt)}`
-                    : ""
-              }`}
+          {`${formatRussianCount(group.chats.length, "область", "области", "областей")} · 0 пулов`}
         </Text>
       </View>
     </View>
@@ -1522,6 +1514,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       setSyncingPlugin(false);
     }
   };
+  const [projectSections, setProjectSections] = useState<Record<string, "areas" | "pools">>({});
   const [expandedProjectIds, setExpandedProjectIds] = useState<Record<string, boolean>>({});
   const [expandedAreaIds, setExpandedAreaIds] = useState<Record<string, boolean>>({});
   const [creatingAreaIds, setCreatingAreaIds] = useState<Record<string, boolean>>({});
@@ -2985,6 +2978,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           {visibleGroups.map((group, idx) => {
             const isOpen = isProjectOpen(group.id, idx === 0);
             const busy = creatingId === group.id;
+            const section = projectSections[group.id] ?? "areas";
             const showAll = Boolean(expandedAllChats[group.id]);
             const displayedChats = showAll ? group.chats : group.chats.slice(0, 8);
             const moreCount = group.chats.length - displayedChats.length;
@@ -3041,7 +3035,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                     <Icon name="SlidersHorizontal" size={15} color={c.foregroundMuted} />
                   </Pressable>
 
-                  <Pressable
+                  {section === "areas" ? <Pressable
                     accessibilityRole="button"
                     accessibilityLabel={`Новая область в проекте ${group.name}`}
                     disabled={busy}
@@ -3057,11 +3051,16 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                     })}
                   >
                     <Icon name="Plus" size={18} color="#FFFFFF" />
-                  </Pressable>
+                  </Pressable> : null}
                 </View>
 
+                {isOpen ? <View style={{ flexDirection: "row", gap: 4, paddingHorizontal: 10, paddingBottom: 8 }}>
+                  {([{ key: "areas", label: "Области" }, { key: "pools", label: "Пулы" }] as const).map((tab) => <Pressable key={tab.key} accessibilityRole="tab" accessibilityState={{ selected: section === tab.key }} onPress={() => setProjectSections((prev) => ({ ...prev, [group.id]: tab.key }))} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 7, backgroundColor: section === tab.key ? c.surface2 : "transparent" }}><Text style={{ color: section === tab.key ? c.foreground : c.foregroundMuted, fontSize: 12, fontWeight: section === tab.key ? "600" : "400" }}>{tab.label}</Text></Pressable>)}
+                </View> : null}
+                {isOpen && section === "pools" ? <View style={{ borderTopWidth: 1, borderTopColor: c.border, padding: 16, gap: 5 }}><Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>Пул генераций</Text><Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Сервис готовится. Здесь появятся пулы генераций проекта.</Text></View> : null}
+
                 {/* Строки областей внутри раскрытого проекта */}
-                {isOpen && group.chats.length > 0 ? (
+                {isOpen && section === "areas" && group.chats.length > 0 ? (
                   <View
                     style={{
                       borderTopWidth: 1,
