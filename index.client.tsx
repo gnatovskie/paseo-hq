@@ -25,7 +25,6 @@ import {
 import {
   copyText,
   Icon,
-  SettingsSection,
   SettingsSelect,
   SettingsSwitch,
   TextInput,
@@ -2281,6 +2280,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const handleSaveHeaderTitle = async () => {
     if (savingPanelSettings) return;
     const nextTitle = draftHeaderTitle.trim() || "Штаб";
+    if (nextTitle === serverState.headerTitle) return;
     setSavingPanelSettings(true);
     setServerState((prev) => ({ ...prev, headerTitle: nextTitle }));
     try {
@@ -4654,153 +4654,60 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
         </HqModal.Content>
       </HqModal>
 
-      {/* Модальное окно настроек панели проектов */}
-      <HqModal theme={theme}
-        title="Настройки панели"
-        open={panelSettingsOpen}
-        onOpenChange={(open) => {
-          if (!open) setPanelSettingsOpen(false);
-        }}
-      >
+      <HqModal theme={theme} title="Настройки панели" open={panelSettingsOpen}
+        onOpenChange={(open) => { if (!open) setPanelSettingsOpen(false); }}
+        actions={[{ label: syncingPlugin ? "Обновление Штаба" : "Обновить Штаб", icon: "RefreshCw", disabled: syncingPlugin, onPress: () => void handleSyncPlugin() }]}>
         <HqModal.Content>
           <View style={{ gap: 16 }}>
-            <SettingsSection title="Автогенерация названий">
-              <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Единая модель для всех проектов, областей и агентов Штаба.</Text>
-              <SettingsSelect label="Модель генерации названий" value={serverState.titleModel}
-                options={titleModelOptions(titleProviders, serverState.titleModel)}
-                onValueChange={(titleModel) => {
-                  void updatePanelSettings({ titleModel, projectIds: projects.map(project => project.projectId) })
-                    .then(setServerState).catch(error => toast.error(error instanceof Error ? error.message : "Не удалось сохранить модель"));
-                }} />
-              {titleModelsError ? <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>{titleModelsError}</Text> : null}
-            </SettingsSection>
-            <SettingsSection title="Название вкладки">
-              <View
-                style={{
-                  padding: 12,
-                  borderRadius: 12,
-                  backgroundColor: c.surface2,
-                  borderWidth: 1,
-                  borderColor: c.border,
-                  gap: 10,
-                }}
-              >
-                <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>
-                  Отображаемый заголовок в боковой панели (по умолчанию «Штаб»)
-                </Text>
-                <TextInput
-                  value={draftHeaderTitle}
-                  onChangeText={setDraftHeaderTitle}
-                  placeholder="Штаб"
-                  placeholderTextColor={c.foregroundMuted}
-                  onSubmitEditing={() => void handleSaveHeaderTitle()}
-                  style={{
-                    paddingHorizontal: 12,
-                    paddingVertical: 10,
-                    borderRadius: 9,
-                    backgroundColor: c.surface1,
-                    borderWidth: 1,
-                    borderColor: c.border,
-                    color: c.foreground,
-                    fontSize: 14,
-                  }}
-                />
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={savingPanelSettings || !draftHeaderTitle.trim()}
-                  onPress={() => void handleSaveHeaderTitle()}
-                  style={({ pressed }) => ({
-                    paddingVertical: 11,
-                    borderRadius: 9,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    backgroundColor: c.accent,
-                    opacity: savingPanelSettings || !draftHeaderTitle.trim() ? 0.5 : pressed ? 0.85 : 1,
-                  })}
-                >
-                  <Text style={{ color: "#FFFFFF", fontSize: 14, fontWeight: "600" }}>
-                    {savingPanelSettings ? "Сохранение..." : "Сохранить название"}
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <View style={{ flex: 1, minWidth: 0, height: 44, flexDirection: "row", alignItems: "center", paddingHorizontal: 12,
+                borderRadius: 9, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface2 }}>
+                <TextInput accessibilityLabel="Название панели" value={draftHeaderTitle} onChangeText={setDraftHeaderTitle}
+                  placeholder="Штаб" placeholderTextColor={c.foregroundMuted}
+                  onBlur={() => void handleSaveHeaderTitle()} onSubmitEditing={() => void handleSaveHeaderTitle()}
+                  style={{ flex: 1, minWidth: 0, padding: 0, outlineWidth: 0, color: c.foreground, fontSize: 15 }} />
+              </View>
+              <ChatActionButton theme={theme} label="Принять название панели" icon="Check" disabled={savingPanelSettings}
+                onPress={() => void handleSaveHeaderTitle()} />
+            </View>
+            <View style={{ padding: 12, gap: 12, borderRadius: 12, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface2 }}>
+              <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>Автогенерация названий</Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                <Icon name="Sparkles" size={16} color={c.foregroundMuted} />
+                <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+                  <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>Модель генерации названий</Text>
+                  <Text style={{ color: c.foreground, fontSize: 13 }}>
+                    {titleModelOptions(titleProviders, serverState.titleModel).find(option => option.value === serverState.titleModel)?.label}
                   </Text>
-                </Pressable>
+                </View>
+                <TitleModelPicker theme={theme} label="Выбрать модель названий" menuLabel="Модель генерации названий" icon="ChevronDown"
+                  value={serverState.titleModel} options={titleModelOptions(titleProviders, serverState.titleModel)}
+                  onValueChange={(titleModel) => {
+                    void updatePanelSettings({ titleModel, projectIds: projects.map(project => project.projectId) })
+                      .then(setServerState).catch(error => toast.error(error instanceof Error ? error.message : "Не удалось сохранить модель"));
+                  }} />
               </View>
-            </SettingsSection>
-
-            <SettingsSection title="Мониторинг сервера">
-              <View
-                style={{
-                  padding: 12,
-                  borderRadius: 12,
-                  backgroundColor: c.surface2,
-                  borderWidth: 1,
-                  borderColor: c.border,
-                  gap: 10,
-                }}
-              >
-                <SettingsSwitch
-                  label="Состояние сервера (CPU, ОЗУ, сеть, диск)"
-                  hint="Отображает компактную строку метрик над проектами и подробную шторку с топом процессов по ОЗУ. При выключении фоновый опрос полностью останавливается (0 таймеров, 0 CPU)."
-                  value={serverState.showHostMetrics}
-                  onValueChange={(val) => void handleToggleHostMetrics(val)}
-                  disabled={savingPanelSettings}
-                />
-              </View>
-            </SettingsSection>
-
-            <SettingsSection title="Обновление плагина">
-              <View
-                style={{
-                  padding: 12,
-                  borderRadius: 12,
-                  backgroundColor: c.surface2,
-                  borderWidth: 1,
-                  borderColor: c.border,
-                  gap: 10,
-                }}
-              >
-                <Text style={{ color: c.foregroundMuted, fontSize: 12, lineHeight: 17 }}>
-                  Синхронизация Штаба с последними обновлениями и изменениями в репозитории (GitHub).
-                </Text>
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={syncingPlugin}
-                  onPress={() => void handleSyncPlugin()}
-                  style={({ pressed }) => ({
-                    paddingVertical: 11,
-                    borderRadius: 9,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    backgroundColor: c.accent,
-                    opacity: syncingPlugin ? 0.5 : pressed ? 0.85 : 1,
-                  })}
-                >
-                  <Text style={{ color: "#FFFFFF", fontSize: 14, fontWeight: "600" }}>
-                    {syncingPlugin ? "Синхронизация..." : "Синхронизировать с репозиторием"}
-                  </Text>
-                </Pressable>
-                {syncResult ? (
-                  <View
-                    style={{
-                      padding: 10,
-                      borderRadius: 8,
-                      backgroundColor: c.surface1,
-                      borderWidth: 1,
-                      borderColor: syncResult.success ? c.statusSuccess : c.statusDanger,
-                    }}
-                  >
-                    <Text
-                      style={{
-                        color: syncResult.success ? c.statusSuccess : c.statusDanger,
-                        fontSize: 12,
-                        fontWeight: "500",
-                        lineHeight: 16,
-                      }}
-                    >
-                      {syncResult.message}
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
-            </SettingsSection>
+              <Text style={{ color: c.foregroundMuted, fontSize: 12, lineHeight: 17 }}>Для всех проектов, областей и агентов.</Text>
+              {titleModelsError ? <Text style={{ color: c.statusDanger, fontSize: 12 }}>{titleModelsError}</Text> : null}
+            </View>
+            <View style={{ padding: 12, gap: 10, borderRadius: 12, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface2 }}>
+              <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>Мониторинг сервера</Text>
+              <Pressable accessibilityRole="switch" accessibilityLabel="Показывать состояние сервера"
+                aria-checked={serverState.showHostMetrics}
+                accessibilityState={{ checked: serverState.showHostMetrics, disabled: savingPanelSettings }}
+                disabled={savingPanelSettings} onPress={() => void handleToggleHostMetrics(!serverState.showHostMetrics)}
+                style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", gap: 10, minHeight: 36, opacity: pressed ? 0.7 : 1 })}>
+                <Icon name="Activity" size={16} color={c.foregroundMuted} />
+                <Text style={{ flex: 1, color: c.foreground, fontSize: 13 }}>Показывать состояние сервера</Text>
+                <View style={{ width: 36, height: 22, borderRadius: 11, padding: 3, backgroundColor: serverState.showHostMetrics ? c.accent : c.border, alignItems: serverState.showHostMetrics ? "flex-end" : "flex-start" }}>
+                  <View style={{ width: 16, height: 16, borderRadius: 8, backgroundColor: c.foreground }} />
+                </View>
+              </Pressable>
+              <Text style={{ color: c.foregroundMuted, fontSize: 12, lineHeight: 17 }}>Процессор, память, сеть и диск над списком проектов.</Text>
+            </View>
+            {syncResult ? <View style={{ padding: 12, borderRadius: 9, borderWidth: 1, borderColor: c.border }}>
+              <Text style={{ color: syncResult.success ? c.statusSuccess : c.statusDanger, fontSize: 12, lineHeight: 17 }}>{syncResult.message}</Text>
+            </View> : null}
           </View>
         </HqModal.Content>
       </HqModal>

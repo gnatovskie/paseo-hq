@@ -143,11 +143,38 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
         const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
         const capture = (name) => output && page.screenshot({ path: join(output, `${name}-${width}.png`) });
 
+          const until = async (check, message) => {
+            for (let attempt = 0; attempt < 40; attempt++) {
+              if (await check()) return;
+              await new Promise(resolve => setTimeout(resolve, 150));
+            }
+            assert.fail(message);
+          };
+
         try {
           await enterSidebar();
           await button("Настройки штаба").click();
           await page.getByText("Автогенерация названий", { exact: true }).waitFor();
           await page.getByText("Модель генерации названий", { exact: true }).waitFor();
+          const panelName = page.getByRole("textbox", { name: "Название панели", exact: true });
+          await panelName.fill("Тестовый штаб");
+          await button("Принять название панели").click();
+          await button("Выбрать модель названий").click();
+          await page.getByRole("textbox", { name: "Поиск модели по всем провайдерам", exact: true }).waitFor();
+          await button("Закрыть список моделей").click();
+          await button("Выбрать модель названий").click();
+          await page.getByRole("menuitem", { name: "По первой строке промпта (без ИИ)", exact: true }).click();
+          await button("Выбрать модель названий").click();
+          await page.getByRole("textbox", { name: "Поиск модели по всем провайдерам", exact: true }).fill("test");
+          await button("Закрыть список моделей").click();
+          assert(await panelName.isEditable(), "panel remains interactive after reopening model picker");
+          await capture("panel-settings");
+          const monitoring = page.getByRole("switch", { name: "Показывать состояние сервера", exact: true });
+          const previousMonitoring = await monitoring.getAttribute("aria-checked");
+          await monitoring.click();
+          await until(async () => await monitoring.getAttribute("aria-checked") !== previousMonitoring, "monitoring toggled");
+          await until(async () => !(await monitoring.isDisabled()), "monitoring saved");
+          await monitoring.click();
           await button("Закрыть").last().click();
           await openArea();
           const closeTop = async () => (await button("Закрыть").last().boundingBox()).y;
@@ -227,13 +254,6 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await projectName.fill("Renamed project");
           await button("Принять название").click();
           await button("Принять название").waitFor({ state: "hidden" });
-          const until = async (check, message) => {
-            for (let attempt = 0; attempt < 40; attempt++) {
-              if (await check()) return;
-              await new Promise(resolve => setTimeout(resolve, 150));
-            }
-            assert.fail(message);
-          };
           await button("Закрепить проект").click();
           await button("Открепить проект").waitFor();
           await until(async () => (await stored()).some(meta => meta.pinned === true), "pin saved at once");
