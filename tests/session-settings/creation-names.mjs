@@ -155,9 +155,9 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
         try {
           await enterSidebar();
           await sidebar.getByRole("tab", { name: "Пулы" }).click();
-          await sidebar.getByText("Сервис готовится. Здесь появятся пулы генераций проекта.").waitFor();
+          await page.getByText("Сервис готовится. Здесь появятся пулы генераций проекта.").waitFor();
           assert.equal(await button("Новая область в проекте source").count(), 0);
-          await sidebar.getByRole("tab", { name: "Области" }).click();
+          await page.getByRole("tab", { name: "Области", selected: false }).first().click();
           await openArea();
           await button("Закрыть").last().click();
           const quick = button(`Новая сессия в области ${title}`);
