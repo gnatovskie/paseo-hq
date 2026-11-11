@@ -22,3 +22,11 @@ export async function localGitBranches(cwd: string): Promise<string[]> {
   );
   return stdout.trim().split("\n").filter(Boolean);
 }
+
+/** Различает основной checkout и связанные worktree, включая папки внутри них. */
+export async function gitCheckoutKind(cwd: string): Promise<"worktree" | "project"> {
+  const { stdout } = await runGit("git", ["rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"], { cwd, timeout: 3000 });
+  const [gitDir, commonDir] = stdout.trim().split("\n");
+  if (!gitDir || !commonDir) throw new Error("Не удалось определить тип папки Git");
+  return gitDir === commonDir ? "project" : "worktree";
+}

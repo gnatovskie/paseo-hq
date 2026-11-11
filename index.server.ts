@@ -48,7 +48,7 @@ import {
   type ProjectMeta,
   type SidebarState,
 } from "./shared/contracts";
-import { currentGitBranch, localGitBranches } from "./server/area-git.server";
+import { currentGitBranch, gitCheckoutKind, localGitBranches } from "./server/area-git.server";
 import { createWorktree, removeWorktree, worktreeOptions, worktreeStatus } from "./server/area-worktree.server";
 import { GENERATOR_TITLE } from "./shared/title-models";
 import { ArtifactsService } from "./server/artifacts-service.server";
@@ -827,10 +827,16 @@ export default function contribute(server: PluginServerContext) {
       (area) => wanted.has(area.id) && area.projectKind === "git" && area.workspaceDirectory,
     );
     const found = await Promise.all(areas.map(async (area) => {
-      const branch = await currentGitBranch(area.workspaceDirectory!).catch(() => null);
-      return branch ? ([area.id, branch] as const) : null;
+      const [branch, kind] = await Promise.all([
+        currentGitBranch(area.workspaceDirectory!).catch(() => null),
+        gitCheckoutKind(area.workspaceDirectory!).catch(() => null),
+      ]);
+      return { id: area.id, branch, kind };
     }));
-    return { branches: Object.fromEntries(found.filter((entry) => entry !== null)) };
+    return {
+      branches: Object.fromEntries(found.filter((item) => item.branch).map((item) => [item.id, item.branch!])),
+      kinds: Object.fromEntries(found.filter((item) => item.kind).map((item) => [item.id, item.kind!])),
+    };
   });
 
   server.handle(areaWorktreeOptionsRpc, async ({ projectId }, { paseo }) => {

@@ -1304,7 +1304,7 @@ function ItemMenuActions({ actions, theme, disabled }: {
   );
 }
 
-function AreaBranchBadge({ branch, path, theme }: { branch: string; path: string; theme: PluginTheme }) {
+function AreaBranchBadge({ branch, path, kind, theme }: { branch: string; path: string; kind?: "project" | "worktree"; theme: PluginTheme }) {
   const c = theme.colors;
   const toast = useToast();
   const anchor = useRef<View>(null);
@@ -1342,7 +1342,10 @@ function AreaBranchBadge({ branch, path, theme }: { branch: string; path: string
       <View style={{ flex: 1 }}>
         <Pressable accessibilityLabel="Закрыть информацию о ветке" onPress={() => setPosition(null)} style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }} />
         {position ? <View style={{ position: "absolute", left: position.x, top: position.y, width: popupWidth, padding: 14, gap: 14, borderRadius: 12, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface1, shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 14, shadowOffset: { width: 0, height: 5 }, elevation: 8 }}>
-          <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>Информация о ветке</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+            <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>Информация о ветке</Text>
+            {kind ? <Text style={{ color: c.foregroundMuted, fontSize: 10, paddingHorizontal: 7, paddingVertical: 4, borderRadius: 6, backgroundColor: c.surface2 }}>{kind === "worktree" ? "Worktree" : "Папка проекта"}</Text> : null}
+          </View>
           {[{ label: "Ветка", value: branch, icon: "GitBranch" }, { label: "Папка области", value: path, icon: "Folder" }].map((item) => <View key={item.label} style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
             <Icon name={item.icon} size={15} color={c.foregroundMuted} />
             <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={{ color: c.foregroundMuted, fontSize: 11 }}>{item.label}</Text><Text selectable style={{ color: c.foreground, fontSize: 12 }} numberOfLines={2}>{item.value}</Text></View>
@@ -1365,6 +1368,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const readAreaBranches = useRpc(areaBranchesRpc);
   const readWorktreeOptions = useRpc(areaWorktreeOptionsRpc);
   const [areaBranches, setAreaBranches] = useState<Record<string, string>>({});
+  const [areaCheckoutKinds, setAreaCheckoutKinds] = useState<Record<string, "project" | "worktree">>({});
   const createAreaWorktree = useRpc(areaWorktreeCreateRpc);
   const readAreaWorktree = useRpc(areaWorktreeInfoRpc);
   const removeAreaWorktree = useRpc(areaWorktreeRemoveRpc);
@@ -1558,7 +1562,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       const st = await readSidebar({ projectIds: ids });
       setServerState(st);
       void readAreaBranches({ workspaceIds: nextWorkspaces.map((w) => w.id) })
-        .then(({ branches }) => setAreaBranches(branches), () => {});
+        .then(({ branches, kinds }) => { setAreaBranches(branches); setAreaCheckoutKinds(kinds); }, () => {});
     } catch {
       // Сохраняем прошлый снимок при временной сетевой ошибке.
     }
@@ -3047,7 +3051,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                                   <AreaSessionBadges sessions={sessions} terminalCount={areaTerminals.length}
                                     theme={theme} platform={layout.platform} />
                                 ) : areaBranches[chat.id] ?? serverState.areaWorktrees[chat.id]?.branch ? (
-                                  <AreaBranchBadge branch={(areaBranches[chat.id] ?? serverState.areaWorktrees[chat.id]?.branch)!} path={chat.workspaceDirectory} theme={theme} />
+                                  <AreaBranchBadge branch={(areaBranches[chat.id] ?? serverState.areaWorktrees[chat.id]?.branch)!} path={chat.workspaceDirectory} kind={areaCheckoutKinds[chat.id]} theme={theme} />
                                 ) : null}
                               </View>
                               {isPinned ? <Icon name="Pin" size={12} color={c.accent} /> : null}

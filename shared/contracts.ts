@@ -197,7 +197,7 @@ export const areaPreferencesSchema = z.object({
 export const areaBranchesRpc = defineRpc({
   name: "sidebar.area-branches",
   input: z.object({ workspaceIds: z.array(z.string()).max(500) }),
-  output: z.object({ branches: z.record(z.string(), z.string()) }),
+  output: z.object({ branches: z.record(z.string(), z.string()), kinds: z.record(z.string(), z.enum(["project", "worktree"])).default({}) }),
 });
 
 export const areaWorktreeOptionsRpc = defineRpc({

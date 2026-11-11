@@ -285,6 +285,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await capture("area-branch-badge");
           await page.getByLabel(`Ветка области ${wtBranch}`).click();
           await page.getByText("Информация о ветке", { exact: true }).waitFor();
+          await page.getByText("Worktree", { exact: true }).waitFor();
           await page.getByText(wtPath, { exact: true }).waitFor();
           await button("Скопировать название ветки").click();
           assert.equal(await page.evaluate(() => navigator.clipboard.readText()), wtBranch);
