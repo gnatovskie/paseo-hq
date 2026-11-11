@@ -233,6 +233,12 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await editAtEnd(agentName);
           await capture("session-name-agent");
           await selectCodex();
+          await page.getByLabel("Провайдер codex", { exact: true }).waitFor();
+          await page.waitForFunction(() => {
+            const logo = document.querySelector('[aria-label="Провайдер codex"]');
+            const img = logo?.matches("img") ? logo : logo?.querySelector("img");
+            return img instanceof HTMLImageElement && img.complete && img.naturalWidth > 0;
+          });
           await assertSettings(expectedSettings);
           await changeSettings();
           await button("Создать агента с выбранной моделью").click();

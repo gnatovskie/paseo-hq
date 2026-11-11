@@ -62,6 +62,7 @@ import { compareProjectOrder } from "./shared/project-order";
 import { groupAreaAgents } from "./shared/area-agents";
 import { GENERATOR_TITLE, titleModelOptions } from "./shared/title-models";
 import { useActiveSession } from "./client/active-session.client";
+import { ProviderLogo } from "./client/provider-logo.client";
 import { TitleModelPicker } from "./client/title-model-picker.client";
 import { TooltipPressable } from "./client/tooltip.client";
 import { HostMetricsBar } from "./client/host-widget";
@@ -1320,8 +1321,9 @@ function NewSessionWindow({ theme, title, open, onClose, narrow, kind, onKindCha
           <View style={{ gap: 6 }}>
             <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Модель нового агента</Text>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <View style={{ ...field, flex: 1, minWidth: 0, height: 44, justifyContent: "center", paddingHorizontal: 12 }}>
-                <Text style={{ color: c.foreground, fontSize: 15 }} numberOfLines={1}>
+              <View style={{ ...field, flex: 1, minWidth: 0, height: 44, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 12 }}>
+                {model ? <ProviderLogo model={model} color={c.foreground} /> : null}
+                <Text style={{ flex: 1, minWidth: 0, color: c.foreground, fontSize: 15 }} numberOfLines={1}>
                   {model ?? modelsError ?? "Загружаю модели..."}
                 </Text>
               </View>
