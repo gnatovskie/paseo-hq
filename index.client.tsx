@@ -3215,15 +3215,11 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                                 )}
                               </View>
                               {isPinned ? <Icon name="Pin" size={12} color={c.accent} /> : null}
-                            </Pressable>
-                            <Pressable accessibilityRole="button"
-                              accessibilityLabel={`${expanded ? "Свернуть" : "Развернуть"} область ${title}`}
-                              aria-expanded={expanded}
-                              onPress={() => setExpandedAreaIds(prev => ({ ...prev, [chat.id]: !prev[chat.id] }))}
-                              style={({ pressed }) => ({ width: layout.compact ? 26 : 22, height: btnSize, borderRadius: 8,
-                                transform: [{ translateY: expanded ? -4 : 0 }],
-                                alignItems: "center", justifyContent: "center", backgroundColor: pressed ? c.surface2 : undefined })}>
-                              <Icon name={expanded ? "ChevronDown" : "ChevronRight"} size={14} color={c.foregroundMuted} />
+                              <View accessibilityLabel="Шеврон области" style={{ width: layout.compact ? 26 : 22, height: btnSize,
+                                marginRight: -7, transform: [{ translateY: expanded ? -4 : 0 }],
+                                alignItems: "center", justifyContent: "center" }}>
+                                <Icon name={expanded ? "ChevronDown" : "ChevronRight"} size={14} color={c.foregroundMuted} />
+                              </View>
                             </Pressable>
                             <Pressable
                               accessibilityRole="button"

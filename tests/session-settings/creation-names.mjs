@@ -183,6 +183,13 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await openArea();
           await button("Закрыть").last().click();
           const quick = button(`Новая сессия в области ${title}`);
+          const chevron = areaToggle.getByLabel("Шеврон области", { exact: true });
+          await chevron.waitFor();
+          const expandedBeforeChevron = await areaToggle.getAttribute("aria-expanded");
+          await chevron.click();
+          assert.notEqual(await areaToggle.getAttribute("aria-expanded"), expandedBeforeChevron, "chevron is part of the header toggle");
+          await chevron.click();
+          assert.equal(await areaToggle.getAttribute("aria-expanded"), expandedBeforeChevron);
           if (await areaToggle.getAttribute("aria-expanded") === "true") await areaToggle.click();
           assert.equal(await quick.count(), 0);
           const statusBox = await areaToggle.getByLabel(/^Неактивных сессий:/).boundingBox();

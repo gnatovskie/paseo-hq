@@ -154,9 +154,9 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
         try {
           await enterSidebar();
           const initiallyExpanded = await areaToggle.getAttribute("aria-expanded") === "true";
-          await button(`${initiallyExpanded ? "Свернуть" : "Развернуть"} область ${title}`).click();
+          await areaToggle.getByLabel("Шеврон области", { exact: true }).click();
           assert.equal(await areaToggle.getAttribute("aria-expanded"), String(!initiallyExpanded));
-          await button(`${initiallyExpanded ? "Развернуть" : "Свернуть"} область ${title}`).click();
+          await areaToggle.getByLabel("Шеврон области", { exact: true }).click();
           assert.equal(await areaToggle.getAttribute("aria-expanded"), String(initiallyExpanded));
           await button("Настройки штаба").click();
           await page.getByText("Автогенерация названий", { exact: true }).waitFor();
@@ -256,13 +256,13 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await page.getByText("Модель нового агента", { exact: true }).waitFor({ state: "hidden" });
           await button("Закрыть").last().click();
           await page.getByText("Сессии", { exact: true }).waitFor({ state: "hidden" });
-          if (await button(`Развернуть область ${title}`).count()) await button(`Развернуть область ${title}`).click();
+          if (await areaToggle.getAttribute("aria-expanded") !== "true") await areaToggle.click();
           await sidebarSession.waitFor();
           await page.getByLabel(/^Ветка области .+/).first().waitFor();
           await capture("area-expanded-sessions");
-          await button(`Свернуть область ${title}`).click();
+          await areaToggle.click();
           await sidebarSession.waitFor({ state: "hidden" });
-          await button(`Развернуть область ${title}`).click();
+          await areaToggle.click();
 
           const stored = async () => Object.values(JSON.parse(await readFile(stateFile, "utf8")).projects);
           await button("Настройки проекта source").click();
@@ -404,7 +404,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
             }
             await button("Закрыть").last().click();
             await page.getByTestId(`workspace-tab-agent_${secondChat.id}`).click();
-            if (await button(`Развернуть область ${title}`).count()) await button(`Развернуть область ${title}`).click();
+            if (await areaToggle.getAttribute("aria-expanded") !== "true") await areaToggle.click();
             await until(async () => await sidebar.getByRole("button", { name: "Открыть агента Second fixture chat", exact: true }).getAttribute("aria-selected") === "true", "sidebar follows the active agent tab");
             assert.notEqual(await sidebarSession.getAttribute("aria-selected"), "true");
             await openArea();
@@ -413,7 +413,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
             await Promise.all([page.waitForEvent("load"), areaButton("Открыть терминал Fixture terminal").click()]);
             await page.getByTestId(`workspace-tab-terminal_${fixtureTerminal.id}`).waitFor();
             await areaToggle.waitFor();
-            if (await button(`Развернуть область ${title}`).count()) await button(`Развернуть область ${title}`).click();
+            if (await areaToggle.getAttribute("aria-expanded") !== "true") await areaToggle.click();
             await until(async () => await sidebarTerminal.getAttribute("aria-selected") === "true", "sidebar follows the active terminal tab");
             assert.notEqual(await sidebarSession.getAttribute("aria-selected"), "true");
             await openArea();
