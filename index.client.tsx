@@ -5,6 +5,7 @@ import {
   Easing,
   Image,
   Linking,
+  Modal as NativeModal,
   Pressable,
   ScrollView,
   Text,
@@ -22,7 +23,6 @@ import {
 import {
   copyText,
   Icon,
-  Modal,
   SettingsSection,
   SettingsSelect,
   SettingsSwitch,
@@ -962,24 +962,84 @@ function orderAreaSessions(
   return [...pinnedItems, ...items.filter(item => !pinned[item.id])];
 }
 
-// Окно хоста Paseo: его шапка, крестик, затемнение, прокрутка и наложение окон поверх друг друга.
-// Ряд действий идет первой строкой под шапкой.
+type SheetAction = { label: string; icon: string; onPress: () => void; danger?: boolean; disabled?: boolean; color?: string };
+
+// Все окна Штаба рисуем сами и на одном слое: окно хоста и окно react-native мешают друг другу при наложении
+// (фокус и порядок слоев). Шапка: название и крупный крестик в одной строке, ряд действий под ней.
+function HqModal({ title, open, onOpenChange, theme, actions, actionsDisabled = false, children }: {
+  title: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  theme: PluginTheme;
+  actions?: SheetAction[];
+  actionsDisabled?: boolean;
+  children: React.ReactNode;
+}) {
+  const c = theme.colors;
+  const close = () => onOpenChange(false);
+  return (
+    <NativeModal transparent visible={open} animationType="fade" onRequestClose={close}>
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 16 }}>
+        <Pressable
+          accessibilityLabel="Закрыть окно"
+          onPress={close}
+          style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: "rgba(0,0,0,0.55)" }}
+        />
+        <View style={{
+          width: "100%", maxWidth: 520, maxHeight: "90%", borderRadius: 16,
+          borderWidth: 1, borderColor: c.border, backgroundColor: c.surface1, overflow: "hidden",
+        }}>
+          <View style={{ paddingLeft: 16, paddingRight: 8, paddingTop: 8, paddingBottom: 8, gap: 8 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, color: c.foreground, fontSize: 18, fontWeight: "600" }}>
+                {title}
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Закрыть"
+                onPress={close}
+                style={({ pressed }) => ({
+                  width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center",
+                  backgroundColor: pressed ? c.surface2 : undefined,
+                })}
+              >
+                <Icon name="X" size={28} color={c.foreground} />
+              </Pressable>
+            </View>
+            {actions?.length ? (
+              <View style={{ paddingRight: 8 }}>
+                <ItemMenuActions theme={theme} disabled={actionsDisabled} actions={actions} />
+              </View>
+            ) : null}
+          </View>
+          <View style={{ height: 1, backgroundColor: c.border }} />
+          <ScrollView keyboardShouldPersistTaps="handled" style={{ flexShrink: 1 }} contentContainerStyle={{ padding: 16, gap: 16 }}>
+            {children}
+          </ScrollView>
+        </View>
+      </View>
+    </NativeModal>
+  );
+}
+
+HqModal.Content = function HqModalContent({ children }: { children: React.ReactNode }) {
+  return <>{children}</>;
+};
+
 function ActionSheet({ title, open, onClose, theme, actions, disabled, children }: {
   title: string;
   open: boolean;
   onClose: () => void;
   theme: PluginTheme;
-  actions: { label: string; icon: string; onPress: () => void; danger?: boolean; disabled?: boolean; color?: string }[];
+  actions: SheetAction[];
   disabled: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <Modal title={title} open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
-      <Modal.Content>
-        <ItemMenuActions theme={theme} disabled={disabled} actions={actions} />
-        {children}
-      </Modal.Content>
-    </Modal>
+    <HqModal title={title} open={open} onOpenChange={(next) => { if (!next) onClose(); }}
+      theme={theme} actions={actions} actionsDisabled={disabled}>
+      {children}
+    </HqModal>
   );
 }
 
@@ -2678,14 +2738,14 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       ) : null}
 
       {/* Модальное окно добавления проекта */}
-      <Modal
+      <HqModal theme={theme}
         title="Добавить проект"
         open={addModalOpen}
         onOpenChange={(open) => {
           if (!open) setAddModalOpen(false);
         }}
       >
-        <Modal.Content>
+        <HqModal.Content>
           <View style={{ gap: 16 }}>
             <View
               style={{
@@ -3062,11 +3122,11 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
               </View>
             ) : null}
           </View>
-        </Modal.Content>
-      </Modal>
+        </HqModal.Content>
+      </HqModal>
 
       {/* Модальное окно настроек проекта */}
-      <Modal
+      <HqModal theme={theme}
         title={editingGroup ? `Проект: ${editingGroup.name}` : "Настройки проекта"}
         open={Boolean(editingGroup)}
         onOpenChange={(open) => {
@@ -3076,7 +3136,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           }
         }}
       >
-        <Modal.Content>
+        <HqModal.Content>
           {editingGroup ? (
             <View style={{ gap: 18 }}>
               <SettingsSection title="Аватарка проекта (без ограничений размера и пропорций)">
@@ -3361,13 +3421,13 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
               </Pressable>
             </View>
           ) : null}
-        </Modal.Content>
-      </Modal>
+        </HqModal.Content>
+      </HqModal>
 
-      <Modal title="Новая область" open={Boolean(newArea)} onOpenChange={(open) => {
+      <HqModal theme={theme} title="Новая область" open={Boolean(newArea)} onOpenChange={(open) => {
         if (!open && !creatingId) setNewArea(null);
       }}>
-        <Modal.Content>
+        <HqModal.Content>
           {newArea ? (
             <View style={{ gap: 14 }}>
               <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Название области</Text>
@@ -3415,8 +3475,8 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
               </Pressable>
             </View>
           ) : null}
-        </Modal.Content>
-      </Modal>
+        </HqModal.Content>
+      </HqModal>
 
       <ActionSheet
         title="Функционал области"
@@ -3678,10 +3738,10 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           ) : null}
       </ActionSheet>
 
-      <Modal title="Новый агент" open={Boolean(newAgentWorkspaceId)} onOpenChange={(open) => {
+      <HqModal theme={theme} title="Новый агент" open={Boolean(newAgentWorkspaceId)} onOpenChange={(open) => {
         if (!open && !Object.values(creatingAreaIds).some(Boolean)) setNewAgentWorkspaceId(null);
       }}>
-        <Modal.Content>
+        <HqModal.Content>
           <View style={{ gap: 14 }}>
             <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Модель нового агента</Text>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
@@ -3701,17 +3761,17 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
               <Text style={{ color: c.accentForeground, fontSize: 14, fontWeight: "600" }}>Создать агента</Text>
             </Pressable>
           </View>
-        </Modal.Content>
-      </Modal>
+        </HqModal.Content>
+      </HqModal>
 
-      <Modal
+      <HqModal theme={theme}
         title="Настройки области"
         open={Boolean(editingChat && areaSettingsPanel === "branch")}
         onOpenChange={(open) => {
           if (!open) setAreaSettingsPanel(null);
         }}
       >
-        <Modal.Content>
+        <HqModal.Content>
           {editingChat?.projectKind === "git" ? (
             <View style={{ padding: 12, borderRadius: 12, backgroundColor: c.surface2, borderWidth: 1, borderColor: c.border }}>
               {areaSettings ? (
@@ -3736,8 +3796,8 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
               )}
             </View>
           ) : null}
-        </Modal.Content>
-      </Modal>
+        </HqModal.Content>
+      </HqModal>
 
       <ActionSheet
         title={confirmClosingSession
@@ -3913,12 +3973,12 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           ) : null}
       </ActionSheet>
 
-      <Modal
+      <HqModal theme={theme}
         title="Перенос области в проект"
         open={Boolean(editingChat && chatTransferOpen)}
         onOpenChange={setChatTransferOpen}
       >
-        <Modal.Content>
+        <HqModal.Content>
           {editingChat && chatTransferOpen ? (
             <View
               style={{
@@ -4002,18 +4062,18 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
               )}
             </View>
           ) : null}
-        </Modal.Content>
-      </Modal>
+        </HqModal.Content>
+      </HqModal>
 
       {/* Модальное окно настроек панели проектов */}
-      <Modal
+      <HqModal theme={theme}
         title="Настройки панели"
         open={panelSettingsOpen}
         onOpenChange={(open) => {
           if (!open) setPanelSettingsOpen(false);
         }}
       >
-        <Modal.Content>
+        <HqModal.Content>
           <View style={{ gap: 16 }}>
             <SettingsSection title="Название вкладки">
               <View
@@ -4143,8 +4203,8 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
               </View>
             </SettingsSection>
           </View>
-        </Modal.Content>
-      </Modal>
+        </HqModal.Content>
+      </HqModal>
     </View>
   );
 }

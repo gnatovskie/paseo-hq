@@ -136,7 +136,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
         const settingsHeading = page.getByText("Настройки области", { exact: true });
         const iconPicker = page.getByText("Иконка области", { exact: true });
         const closeSettings = async () => {
-          await button("Close").last().click();
+          await button("Закрыть").last().click();
           await settingsHeading.waitFor({ state: "hidden" });
         };
         const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
@@ -150,13 +150,13 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           assert.equal(await newAreaName.inputValue(), "Новая область");
           await button("Открыть в новой области: Агент").waitFor();
           assert.equal((await client.workspaces.list({})).entries.length, 1, "opening the form creates nothing");
-          await button("Close").last().click();
+          await button("Закрыть").last().click();
           await newAreaName.waitFor({ state: "hidden" });
 
           const modelsMenu = page.getByRole("menu", { name: "Модели для названий областей", exact: true });
           await button("Настройки проекта source").click();
           assert.equal(await page.getByText("Модель для названий областей", { exact: true }).count(), 0);
-          await button("Close").last().click();
+          await button("Закрыть").last().click();
           await page.getByText("Настройки проекта", { exact: true }).waitFor({ state: "hidden" });
 
           const areaTitle = areaToggle.getByText(title, { exact: true });
@@ -323,7 +323,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           assert.equal(await background(areaIcon), "rgb(139, 92, 246)");
           assert.equal(await background(areaToggle.getByText("🧠", { exact: true }).locator("..")), "rgb(139, 92, 246)");
           assert.equal(JSON.parse(await readFile(stateFile, "utf8")).areaPreferences[workspace.id].iconBg, "#8B5CF6");
-          await button("Close").last().click();
+          await button("Закрыть").last().click();
           await areaContents.waitFor({ state: "hidden" });
           await openArea();
           await areaIcon.getByText("🧠", { exact: true }).waitFor();
@@ -395,11 +395,11 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await history.click();
           assert.equal(await history.getAttribute("aria-checked"), "false");
           await capture("session-transfer");
-          await button("Close").last().click();
+          await button("Закрыть").last().click();
           await archive.waitFor({ state: "hidden" });
           await page.getByText("Перенос области в проект", { exact: true }).waitFor({ state: "hidden" });
           assert.equal(await draft.inputValue(), "Unsaved title");
-          await button("Close").last().click();
+          await button("Закрыть").last().click();
           await areaContents.waitFor({ state: "hidden" });
           await openArea();
           await draft.waitFor({ state: "hidden" });
@@ -428,7 +428,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
             const reloadResult = page.getByText(/Агент перезагружен|thread\/items\/list is not supported yet/);
             await reloadResult.waitFor();
             if (await reloadChat.isVisible()) {
-              await button("Close").last().click();
+              await button("Закрыть").last().click();
               await reloadChat.waitFor({ state: "hidden" });
             }
           }
@@ -497,7 +497,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
             await assertInHistory(created.agent.id, workspace.id, created.agent.title);
             const closedAgent = button(`Открыть закрытого агента ${closedTitle}`);
             await closedAgent.waitFor();
-            await areaDialog.getByRole("button", { name: "Close", exact: true }).click();
+            await areaDialog.getByRole("button", { name: "Закрыть", exact: true }).click();
             await areaContents.waitFor({ state: "hidden" });
             await openArea();
             await closedAgent.scrollIntoViewIfNeeded();
@@ -528,7 +528,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
             await finishTerminal.waitFor({ state: "hidden" });
             await fixtureMenu.waitFor({ state: "hidden" });
             assert.deepEqual((await workspaceHandle.terminals.list()).entries.map((terminal) => terminal.id), [newTerminal.id]);
-            await areaDialog.getByRole("button", { name: "Close", exact: true }).click();
+            await areaDialog.getByRole("button", { name: "Закрыть", exact: true }).click();
             await areaContents.waitFor({ state: "hidden" });
 
             if (await areaToggle.getAttribute("aria-expanded") !== "true") await areaToggle.click();
