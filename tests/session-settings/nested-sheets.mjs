@@ -168,6 +168,20 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           const agentName = page.getByRole("textbox", { name: "Название агента", exact: true });
           await agentName.waitFor();
           await capture("nested-agent-menu");
+          await Promise.all([
+            daemonSocket.waitForEvent("framesent", { predicate: ({ payload }) => {
+              const message = JSON.parse(String(payload)).message;
+              return message?.type === "fetch_agent_timeline_request" && message.agentId === chat.id;
+            } }),
+            button("Открыть чат").click(),
+          ]);
+          await page.getByText("Start chatting with this agent...", { exact: true }).filter({ visible: true }).first().waitFor();
+          await agentName.waitFor({ state: "hidden" });
+          assert.equal(await page.getByText("Сессии", { exact: true }).count(), 0, "opening chat closes the parent area sheet too");
+          await enterSidebar();
+          await openArea();
+          await button("Меню агента Fixture chat").click();
+          await agentName.waitFor();
           await button("Закрыть").last().click();
           await agentName.waitFor({ state: "hidden" });
           assert.equal(await page.getByText("Сессии", { exact: true }).count(), 1, "area sheet stays open under the closed session sheet");

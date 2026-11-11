@@ -4443,6 +4443,24 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                 agentLink={`paseo:///h/${host.id || "local"}/agent/${agentMenuChat.id}`}
                 path={agentMenuChat.cwd || agentMenuWorkspace?.workspaceDirectory || "Папка недоступна"}
                 branch={agentMenuChat.workspaceId ? areaBranches[agentMenuChat.workspaceId] : undefined} /> : null}
+              {!confirmClosingSession ? (
+                <Pressable accessibilityRole="button" accessibilityLabel="Открыть чат"
+                  disabled={chatMutationPending}
+                  onPress={async () => {
+                    const agentId = agentMenuChat.id;
+                    await handleRenameAgent();
+                    setAgentMenuId(null);
+                    setEditingChatId(null);
+                    jumpToAgent(agentId);
+                  }}
+                  style={({ pressed }) => ({ marginTop: 4, minHeight: 42, paddingHorizontal: 14, borderRadius: 9,
+                    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+                    backgroundColor: c.accent, opacity: chatMutationPending ? 0.5 : pressed ? 0.8 : 1 })}>
+                  <Icon name="MessageSquare" size={16} color={c.accentForeground} />
+                  <Text style={{ color: c.accentForeground, fontSize: 13, fontWeight: "600" }}>Открыть чат</Text>
+                  <Icon name="ArrowUpRight" size={15} color={c.accentForeground} />
+                </Pressable>
+              ) : null}
             </View>
           )}
       </ActionSheet>
