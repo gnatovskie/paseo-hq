@@ -8,7 +8,7 @@ export function agentCreationOptions(
 ) {
   // Until the catalog arrives, the inherited model keeps its known settings.
   // Model changes are only offered once the catalog can validate compatibility.
-  if (!entries.length && selection) return {
+  if (selection && !entries.some(entry => selection.startsWith(`${entry.provider}/`))) return {
     modes: [], thinkingOptions: [], modeId: preferred.modeId, thinkingOptionId: preferred.thinkingOptionId,
   };
   const provider = entries.find(entry => selection?.startsWith(`${entry.provider}/`));

@@ -34,3 +34,7 @@ test('pending catalog preserves inherited settings for immediate creation', () =
   assert.equal(result.modeId, 'full');
   assert.equal(result.thinkingOptionId, 'low');
 });
+test('partial catalog preserves selected provider settings until it arrives',()=>{
+ const result=agentCreationOptions([entries[1]],'codex/a',{modeId:'full',thinkingOptionId:'high'});
+ assert.equal(result.modeId,'full');assert.equal(result.thinkingOptionId,'high');
+});

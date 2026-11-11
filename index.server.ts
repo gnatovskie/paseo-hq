@@ -96,7 +96,6 @@ import { readServices } from "./server/services.server";
 import contributeGenuiServer from "./server/genui/contribute";
 import { createDeepSeekHarnessProvider } from "./server/deepseek/provider";
 import { createDeepSeekUsageSource } from "./server/deepseek/usage";
-import { providersSnapshot } from "./shared/provider-cache";
 
 const execFileAsync = promisify(execFile);
 const paseoHome = process.env.PASEO_HOME || join(homedir(), ".paseo");
@@ -785,10 +784,8 @@ export default function contribute(server: PluginServerContext) {
 
   server.handle(areaSessionCreateRpc, async ({ workspaceId, model, title, modeId, thinkingOptionId }, { paseo }) => {
     const area = await requireArea(paseo, workspaceId);
-    const snapshot = await providersSnapshot(paseo, area.projectRootPath);
-    const selected = snapshot.entries.some(entry => entry.enabled && entry.status === "ready"
-      && (entry.models ?? []).some(option => option.isSelectable !== false && `${entry.provider}/${option.id}` === model));
-    if (!selected) throw new Error("Выбранная модель недоступна в этой области");
+    // Paseo validates the selected provider and options during creation.
+    // Waiting for every other provider here delays an otherwise ready agent.
     const agent = await paseo.workspaces.ref(area).agents.create({ config: { provider: model, modeId, thinkingOptionId }, title: title || undefined });
     return { agentId: agent.id };
   });

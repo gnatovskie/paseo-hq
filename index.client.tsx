@@ -95,6 +95,7 @@ import {
 import { z } from "zod";
 import { Markdown } from "@getpaseo/plugin/client/ui";
 import { defaultWorktreePath } from "./shared/worktree";
+import { applyAgentUpdate } from "./shared/sidebar-agent-updates";
 import { clearProviders, peekProviders, providersSnapshot } from "./shared/provider-cache";
 
 
@@ -1719,7 +1720,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     void reloadAll();
     const unsubWs = paseo.workspaces.subscribe(() => void reloadAll());
     const unsubPrj = paseo.projects.subscribe(() => void reloadAll());
-    const unsubAg = paseo.agents.subscribe(() => void reloadAll());
+    const unsubAg = paseo.agents.subscribe(update => setAgents(entries => applyAgentUpdate(entries, update)));
     const timer = setInterval(() => void reloadAll(), 5000);
     return () => {
       unsubWs();
@@ -2016,13 +2017,15 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
         const available = snapshot.entries.filter(entry => entry.enabled && entry.status === "ready");
         const options = titleModelOptions(available, "first_line").filter(option => option.provider);
         setNewAgentModels(available);
-        setNewAgentModel((current) => current && options.some(option => option.value === current)
+        setNewAgentModel((current) => current && (options.some(option => option.value === current) || snapshot.entries.some(entry => entry.status === "loading"))
           ? current : options[0]?.value ?? current);
-        if (!options.length) setNewAgentModelsError("Нет доступных моделей для нового агента");
+        if (!options.length && !snapshot.entries.some(entry => entry.status === "loading")) setNewAgentModelsError("Нет доступных моделей для нового агента");
       };
       const known = peekProviders(group.rootPath);
       if (known) applySnapshot(known);
-      void providersSnapshot(paseo, group.rootPath).then((snapshot) => {
+      void providersSnapshot(paseo, group.rootPath, { onUpdate: snapshot => {
+        if (request === agentModelsRequest.current) applySnapshot(snapshot);
+      } }).then((snapshot) => {
         if (request === agentModelsRequest.current && snapshot !== known) applySnapshot(snapshot);
       }).catch((error) => {
         if (request === agentModelsRequest.current) setNewAgentModelsError(
