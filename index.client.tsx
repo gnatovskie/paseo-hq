@@ -1202,7 +1202,7 @@ function NewSessionName({ theme, kind, naming, disabled }: {
 
 // Одна форма для новой области и новой сессии.
 function NewSessionWindow({ theme, title, open, onClose, narrow, kind, onKindChange, kindLocked, name, onNameChange, nameEditable,
-  target, extra, naming, model, modelsError, modelOptions, onModelChange, folder, busy, submitLabel, submitAgentLabel, onSubmit }: {
+  target, extra, naming, settings, model, modelsError, modelOptions, onModelChange, folder, busy, submitLabel, submitAgentLabel, onSubmit }: {
   theme: PluginTheme;
   title: string;
   open: boolean;
@@ -1220,6 +1220,7 @@ function NewSessionWindow({ theme, title, open, onClose, narrow, kind, onKindCha
   extra?: React.ReactNode;
   naming: SessionNaming;
   target?: { value: string | null; options: { value: string; label: string; branch?: string }[]; onChange: (value: string | null) => void; locked?: boolean };
+  settings?: React.ReactNode;
   model: string | null;
   modelsError: string | null;
   modelOptions: ReturnType<typeof titleModelOptions>;
@@ -1302,6 +1303,7 @@ function NewSessionWindow({ theme, title, open, onClose, narrow, kind, onKindCha
             </View>
           </View>
         )}
+        {kind === "agent" ? settings : null}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={kind === "agent" ? submitAgentLabel ?? submitLabel : submitLabel}
@@ -1508,6 +1510,8 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const [creatingTerminalId, setCreatingTerminalId] = useState<string | null>(null);
   const [newAgentWorkspaceId, setNewAgentWorkspaceId] = useState<string | null>(null);
   const [newAgentModels, setNewAgentModels] = useState<PaseoProviderSnapshotResult["entries"]>([]);
+  const [modeId, setModeId] = useState<string | undefined>();
+  const [thinkingOptionId, setThinkingOptionId] = useState<string | undefined>();
   const [newAgentModel, setNewAgentModel] = useState<string | null>(null);
   const [newSessionTitle, setNewSessionTitle] = useState("");
   const [newSessionKind, setNewSessionKind] = useState<"agent" | "terminal">("agent");
@@ -1935,6 +1939,8 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       const preferred = await projectAgentConfig(paseo, group, agents);
       if (request !== agentModelsRequest.current) return;
       setNewAgentModel(preferred.provider);
+      setModeId(preferred.modeId);
+      setThinkingOptionId(preferred.thinkingOptionId);
       // Полный список нужен только для выбора из него. Кэш показывает прошлый список сразу и не дергает
       // провайдеров, пока он свежий (корень проекта как ключ, а не папка каждой области).
       const applySnapshot = (snapshot: NonNullable<ReturnType<typeof peekProviders>>) => {
@@ -1983,7 +1989,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     if (creatingAreaIds[workspaceId]) return;
     setCreatingAreaIds((prev) => ({ ...prev, [workspaceId]: true }));
     try {
-      const { agentId } = await createAreaSession({ workspaceId, model: newAgentModel, title: newSessionTitle.trim() });
+      const { agentId } = await createAreaSession({ workspaceId, model: newAgentModel, modeId, thinkingOptionId, title: newSessionTitle.trim() });
       setExpandedAreaIds((prev) => ({ ...prev, [workspaceId]: true }));
       setEditingChatId((current) => current === workspaceId ? null : current);
       setNewAgentWorkspaceId(null);
@@ -2045,6 +2051,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           branch: newAreaBranch,
           newBranch: newAreaPlace === "new",
           baseBranch: newAreaPlace === "new" ? newAreaBaseBranch : undefined,
+          modeId, thinkingOptionId,
           agentModel: newArea.firstTab === "session" ? newAgentModel ?? undefined : undefined,
           agentTitle: newSessionTitle.trim(),
         });
@@ -2054,7 +2061,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       if (!workspaceId) {
         if (newArea.firstTab === "session" && !newAgentModel) throw new Error("Выберите модель агента");
         const agent = newArea.firstTab === "session"
-          ? { config: { provider: newAgentModel! }, title: newSessionTitle.trim() || undefined, cwd: group.rootPath }
+          ? { config: { provider: newAgentModel!, modeId, thinkingOptionId }, title: newSessionTitle.trim() || undefined, cwd: group.rootPath }
           : undefined;
         const created = await paseo.workspaces.create({
           title: newArea.name.trim() || "Новая область",
@@ -4043,6 +4050,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           modelsError={newAgentModelsError}
           modelOptions={titleModelOptions(newAgentModels, "first_line").filter(option => option.provider)}
           onModelChange={setNewAgentModel}
+          settings={<View style={{ gap: 8 }}>{[["Permissions", modeId, setModeId], ["Уровень рассуждения", thinkingOptionId, setThinkingOptionId]].map(([label, value, setter]) => <View key={String(label)}><Text style={{ color: theme.colors.foregroundMuted }}>{String(label)}</Text><TextInput accessibilityLabel={String(label)} value={typeof value === "string" ? value : ""} onChangeText={text => { if (typeof setter === "function") setter(text || undefined); }} style={{ color: theme.colors.foreground }} /></View>)}</View>}
           folder={newAreaTarget ? newAreaTarget.workspaceDirectory : newAreaFolder}
           busy={Boolean(creatingId) || Object.values(creatingAreaIds).some(Boolean) || Boolean(creatingTerminalId)}
           submitLabel={newAreaTarget
@@ -4338,6 +4346,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           modelsError={newAgentModelsError}
           modelOptions={titleModelOptions(newAgentModels, "first_line").filter(option => option.provider)}
           onModelChange={setNewAgentModel}
+          settings={<View style={{ gap: 8 }}>{[["Permissions", modeId, setModeId], ["Уровень рассуждения", thinkingOptionId, setThinkingOptionId]].map(([label, value, setter]) => <View key={String(label)}><Text style={{ color: theme.colors.foregroundMuted }}>{String(label)}</Text><TextInput accessibilityLabel={String(label)} value={typeof value === "string" ? value : ""} onChangeText={text => { if (typeof setter === "function") setter(text || undefined); }} style={{ color: theme.colors.foreground }} /></View>)}</View>}
           folder={newSessionWorkspace?.workspaceDirectory ?? "Папка области недоступна"}
           busy={Object.values(creatingAreaIds).some(Boolean) || Boolean(creatingTerminalId)}
           submitLabel={newSessionKind === "agent" ? "Создать агента" : "Создать терминал"}
