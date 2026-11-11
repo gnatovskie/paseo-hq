@@ -150,6 +150,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await page.getByRole("button", { name: /^Закрытые/ }).click();
           await page.getByRole("button", { name: "Терминалы", exact: true }).click();
           assert.equal(await closeTop(), topBefore, "area window keeps its height whatever the list length");
+          await capture("area-window");
           await page.getByRole("button", { name: /^Закрытые/ }).click();
           await page.getByText(/Нет закрытых сессий|Открыть закрытого/).first().waitFor();
           assert.equal(await button("Меню агента Fixture chat").count(), 0, "closed filter hides open sessions");
@@ -169,8 +170,10 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           assert.equal(await button("Новый терминал").count(), 0, "terminal moved into the new session window");
           await button("Новая сессия").click();
           await page.getByText("Модель нового агента", { exact: true }).waitFor();
+          await capture("new-session-agent");
           await button("Терминал").click();
           await button("Создать терминал").waitFor();
+          await capture("new-session-terminal");
           await page.getByLabel(/^Папка терминала: \/.+/).waitFor();
           assert.equal(await button("Создать агента с выбранной моделью").count(), 0);
           await button("Агент").click();

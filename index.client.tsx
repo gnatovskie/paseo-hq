@@ -719,7 +719,7 @@ function openUsageLimits(serverId?: string) {
   }
 }
 
-function ChatActionButton({ label, icon, color, disabled, onPress, onPressIn, theme, quiet = false }: {
+function ChatActionButton({ label, icon, color, disabled, onPress, onPressIn, theme, quiet = false, selected = false, background }: {
   label: string;
   icon: string;
   color?: string;
@@ -729,6 +729,10 @@ function ChatActionButton({ label, icon, color, disabled, onPress, onPressIn, th
   onPressIn?: () => void;
   theme: PluginTheme;
   quiet?: boolean;
+  /** Выбранный вариант в ряду переключателей. */
+  selected?: boolean;
+  /** Свой фон кнопки вместо стандартного. */
+  background?: string;
 }) {
   const c = theme.colors;
   return (
@@ -744,11 +748,11 @@ function ChatActionButton({ label, icon, color, disabled, onPress, onPressIn, th
         height: quiet ? 36 : 44,
         flexShrink: quiet ? 0 : 1,
         borderRadius: 9,
-        borderWidth: quiet ? 0 : 1,
-        borderColor: c.border,
+        borderWidth: quiet ? 0 : selected ? 2 : 1,
+        borderColor: selected ? c.accent : c.border,
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: pressed ? c.surface1 : quiet ? undefined : c.surface2,
+        backgroundColor: pressed ? c.surface1 : quiet ? undefined : background ?? c.surface2,
         opacity: disabled ? 0.5 : 1,
       })}
     >
@@ -964,7 +968,7 @@ function orderAreaSessions(
   return [...pinnedItems, ...items.filter(item => !pinned[item.id])];
 }
 
-type SheetAction = { label: string; icon: string; onPress: () => void; danger?: boolean; disabled?: boolean; color?: string };
+type SheetAction = { label: string; icon: string; onPress: () => void; danger?: boolean; disabled?: boolean; color?: string; selected?: boolean };
 
 // Все окна Штаба рисуем сами. Они лежат в одном слое HqModalLayer (одна модалка react-native на все окна),
 // а окно - обычный оверлей внутри него: так одно окно открывается поверх другого без борьбы за фокус и слои.
@@ -1090,19 +1094,20 @@ function ActionSheet({ title, open, onClose, theme, actions, disabled, fixedHeig
 }
 
 function ItemMenuActions({ actions, theme, disabled }: {
-  actions: { label: string; icon: string; onPress: () => void; danger?: boolean; disabled?: boolean; color?: string }[];
+  actions: SheetAction[];
   theme: PluginTheme;
   disabled: boolean;
 }) {
   return (
     <View style={{ flexDirection: "row", gap: 8, justifyContent: "flex-start" }}>
-      {actions.map(({ label, icon, onPress, danger, disabled: actionDisabled, color }) => (
+      {actions.map(({ label, icon, onPress, danger, disabled: actionDisabled, color, selected }) => (
         <ChatActionButton
           key={label}
           label={label}
           icon={icon}
           color={danger ? theme.colors.statusDanger : color}
           disabled={disabled || actionDisabled}
+          selected={selected}
           onPress={onPress}
           theme={theme}
         />
@@ -3708,6 +3713,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                   <ChatActionButton
                     label="Новая сессия"
                     icon="Plus"
+                    background={c.surface1}
                     disabled={chatMutationPending || Boolean(creatingAreaIds[editingChat.id]) || Boolean(creatingTerminalId)}
                     onPress={() => openNewAreaAgent(editingChat.id)}
                     theme={theme}
@@ -3851,66 +3857,62 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
 
       <HqModal theme={theme} title="Новая сессия" open={Boolean(newAgentWorkspaceId)} onOpenChange={(open) => {
         if (!open && !Object.values(creatingAreaIds).some(Boolean) && !creatingTerminalId) setNewAgentWorkspaceId(null);
-      }}>
+      }}
+        actions={[
+          { label: "Агент", icon: "Bot", selected: newSessionKind === "agent", onPress: () => setNewSessionKind("agent") },
+          { label: "Терминал", icon: "Terminal", selected: newSessionKind === "terminal", onPress: () => setNewSessionKind("terminal") },
+        ]}
+      >
         <HqModal.Content>
-          <View style={{ gap: 14 }}>
-            <View style={{ flexDirection: "row", gap: 6 }}>
-              {([["agent", "Агент"], ["terminal", "Терминал"]] as const).map(([kind, label]) => {
-                const selected = newSessionKind === kind;
-                return (
-                  <Pressable
-                    key={kind}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected }}
-                    onPress={() => setNewSessionKind(kind)}
-                    style={({ pressed }) => ({
-                      minHeight: 34, paddingHorizontal: 14, borderRadius: 17,
-                      borderWidth: 1, borderColor: selected ? c.accent : c.border,
-                      justifyContent: "center", backgroundColor: selected ? c.accent : c.surface1,
-                      opacity: pressed ? 0.75 : 1,
-                    })}
-                  >
-                    <Text style={{ color: selected ? c.accentForeground : c.foreground, fontSize: 13 }}>{label}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+          <View style={{ gap: 16 }}>
             {newSessionKind === "agent" ? (
               <>
-                <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Модель нового агента</Text>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                  <Text style={{ flex: 1, color: c.foreground, fontSize: 13 }} numberOfLines={1}>
-                    {newAgentModel ?? newAgentModelsError ?? "Загружаю модели..."}
-                  </Text>
-                  <TitleModelPicker theme={theme} options={titleModelOptions(newAgentModels, "first_line").filter(option => option.provider)}
-                    value={newAgentModel ?? ""} disabled={!newAgentModel || Object.values(creatingAreaIds).some(Boolean)}
-                    label="Выбрать модель нового агента" icon="ChevronDown" menuLabel="Модели нового агента"
-                    onValueChange={setNewAgentModel} />
+                <View style={{ gap: 6 }}>
+                  <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Модель нового агента</Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <View style={{
+                      flex: 1, minWidth: 0, height: 44, justifyContent: "center", paddingHorizontal: 12,
+                      borderRadius: 9, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface2,
+                    }}>
+                      <Text style={{ color: c.foreground, fontSize: 15 }} numberOfLines={1}>
+                        {newAgentModel ?? newAgentModelsError ?? "Загружаю модели..."}
+                      </Text>
+                    </View>
+                    <TitleModelPicker theme={theme} options={titleModelOptions(newAgentModels, "first_line").filter(option => option.provider)}
+                      value={newAgentModel ?? ""} disabled={!newAgentModel || Object.values(creatingAreaIds).some(Boolean)}
+                      label="Выбрать модель нового агента" icon="ChevronDown" menuLabel="Модели нового агента"
+                      onValueChange={setNewAgentModel} />
+                  </View>
                 </View>
                 <Pressable accessibilityRole="button" accessibilityLabel="Создать агента с выбранной моделью"
                   disabled={!newAgentModel || Object.values(creatingAreaIds).some(Boolean)}
                   onPress={() => { if (newAgentWorkspaceId) void handleCreateAreaSession(newAgentWorkspaceId); }}
-                  style={({ pressed }) => ({ padding: 11, alignItems: "center", borderRadius: 8,
+                  style={({ pressed }) => ({ padding: 12, alignItems: "center", borderRadius: 9,
                     backgroundColor: c.accent, opacity: !newAgentModel || pressed ? 0.6 : 1 })}>
                   <Text style={{ color: c.accentForeground, fontSize: 14, fontWeight: "600" }}>Создать агента</Text>
                 </Pressable>
               </>
             ) : (
               <>
-                <View style={{ gap: 4 }}>
+                <View style={{ gap: 6 }}>
                   <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Папка терминала</Text>
-                  <Text
-                    accessibilityLabel={`Папка терминала: ${newSessionWorkspace?.workspaceDirectory ?? ""}`}
-                    selectable
-                    style={{ color: c.foreground, fontSize: 12, fontFamily: "monospace" }}
-                  >
-                    {newSessionWorkspace?.workspaceDirectory ?? "Папка области недоступна"}
-                  </Text>
+                  <View style={{
+                    minHeight: 44, justifyContent: "center", paddingHorizontal: 12, paddingVertical: 8,
+                    borderRadius: 9, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface2,
+                  }}>
+                    <Text
+                      accessibilityLabel={`Папка терминала: ${newSessionWorkspace?.workspaceDirectory ?? ""}`}
+                      selectable
+                      style={{ color: c.foreground, fontSize: 12, fontFamily: "monospace" }}
+                    >
+                      {newSessionWorkspace?.workspaceDirectory ?? "Папка области недоступна"}
+                    </Text>
+                  </View>
                 </View>
                 <Pressable accessibilityRole="button" accessibilityLabel="Создать терминал"
                   disabled={Boolean(creatingTerminalId)}
                   onPress={() => { if (newAgentWorkspaceId) void handleCreateAreaTerminal(newAgentWorkspaceId); }}
-                  style={({ pressed }) => ({ padding: 11, alignItems: "center", borderRadius: 8,
+                  style={({ pressed }) => ({ padding: 12, alignItems: "center", borderRadius: 9,
                     backgroundColor: c.accent, opacity: creatingTerminalId || pressed ? 0.6 : 1 })}>
                   <Text style={{ color: c.accentForeground, fontSize: 14, fontWeight: "600" }}>
                     {creatingTerminalId ? "Создаю…" : "Создать терминал"}
