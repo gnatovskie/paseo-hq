@@ -1098,7 +1098,7 @@ function ActionSheet({ title, open, onClose, theme, actions, disabled, fixedHeig
 
 // Общее окно создания: «Новая область» (с названием) и «Новая сессия» (без названия) отличаются только полем названия.
 function NewSessionWindow({ theme, title, open, onClose, narrow, kind, onKindChange, kindLocked, name, onNameChange, nameEditable,
-  model, modelsError, modelOptions, onModelChange, folder, busy, submitLabel, submitAgentLabel, onSubmit }: {
+  target, model, modelsError, modelOptions, onModelChange, folder, busy, submitLabel, submitAgentLabel, onSubmit }: {
   theme: PluginTheme;
   title: string;
   open: boolean;
@@ -1111,6 +1111,8 @@ function NewSessionWindow({ theme, title, open, onClose, narrow, kind, onKindCha
   name?: string;
   onNameChange?: (name: string) => void;
   nameEditable?: boolean;
+  /** Куда создавать: новая область или одна из имеющихся (value = id области, null = новая). */
+  target?: { value: string | null; options: { value: string; label: string }[]; onChange: (value: string | null) => void; locked?: boolean };
   model: string | null;
   modelsError: string | null;
   modelOptions: ReturnType<typeof titleModelOptions>;
@@ -1133,6 +1135,37 @@ function NewSessionWindow({ theme, title, open, onClose, narrow, kind, onKindCha
       ]}
     >
       <View style={{ gap: 16 }}>
+        {target ? (
+          <View style={{ gap: 6 }}>
+            <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Область</Text>
+            <View style={{ ...field, padding: 4, gap: 2 }}>
+              {[{ value: null, label: "Новая область" }, ...target.options].map((option) => {
+                const selected = target.value === option.value;
+                return (
+                  <Pressable
+                    key={option.value ?? "new"}
+                    accessibilityRole="button"
+                    accessibilityLabel={option.value === null ? "Новая область" : `Область: ${option.label}`}
+                    accessibilityState={{ selected }}
+                    disabled={busy || target.locked}
+                    onPress={() => target.onChange(option.value)}
+                    style={({ pressed }) => ({
+                      minHeight: 40, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 10,
+                      borderRadius: 7, backgroundColor: selected ? c.surface1 : pressed ? c.surface1 : undefined,
+                      opacity: busy || target.locked ? 0.6 : 1,
+                    })}
+                  >
+                    <Icon name={option.value === null ? "Plus" : "Folder"} size={15} color={selected ? c.accent : c.foregroundMuted} />
+                    <Text numberOfLines={1} style={{ flex: 1, color: c.foreground, fontSize: 14, fontWeight: selected ? "600" : "400" }}>
+                      {option.label}
+                    </Text>
+                    {selected ? <Icon name="Check" size={16} color={c.accent} /> : null}
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        ) : null}
         {name !== undefined ? (
           <View style={{ gap: 6 }}>
             <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Название области</Text>
@@ -1292,6 +1325,8 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     name: string;
     firstTab: "session" | "terminal";
     workspaceId?: string;
+    /** Уже имеющаяся область проекта, куда добавить сессию вместо создания новой. */
+    targetWorkspaceId?: string;
   } | null>(null);
 
   // Модалка добавления нового проекта
@@ -1633,6 +1668,9 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   )?.agent;
   const newSessionWorkspace = workspaces.find(workspace => workspace.id === newAgentWorkspaceId);
   const newAreaGroup = newArea ? allGroups.find((item) => item.id === newArea.projectId) : undefined;
+  const newAreaTarget = newArea?.targetWorkspaceId
+    ? newAreaGroup?.chats.find((chat) => chat.id === newArea.targetWorkspaceId)
+    : undefined;
   const newAreaFolder = !newAreaGroup ? ""
     : newAreaGroup.meta.newSessionMode === "worktree"
       ? `${newAreaGroup.rootPath} (отдельный worktree создастся вместе с областью)`
@@ -1717,6 +1755,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       setExpandedAreaIds((prev) => ({ ...prev, [workspaceId]: true }));
       setEditingChatId((current) => current === workspaceId ? null : current);
       setNewAgentWorkspaceId(null);
+      setNewArea(null);
       jumpToAgent(agentId);
       void reloadAll();
     } catch (error) {
@@ -1746,6 +1785,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       setExpandedAreaIds((prev) => ({ ...prev, [workspaceId]: true }));
       setEditingChatId((current) => current === workspaceId ? null : current);
       setNewAgentWorkspaceId(null);
+      setNewArea(null);
       openAreaTerminal(snapshot);
       void reloadAll();
     } catch (error) {
@@ -3650,17 +3690,30 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           kind={newArea.firstTab === "session" ? "agent" : "terminal"}
           onKindChange={(kind) => setNewArea({ ...newArea, firstTab: kind === "agent" ? "session" : "terminal" })}
           kindLocked={Boolean(newArea.workspaceId)}
-          name={newArea.name}
+          target={{
+            value: newArea.targetWorkspaceId ?? null,
+            options: (newAreaGroup?.chats ?? []).map((chat) => ({ value: chat.id, label: chatTitle(chat, latestAgentByWorkspace[chat.id]) })),
+            onChange: (value) => setNewArea({ ...newArea, targetWorkspaceId: value ?? undefined }),
+            locked: Boolean(newArea.workspaceId),
+          }}
+          name={newAreaTarget ? undefined : newArea.name}
           onNameChange={(name) => setNewArea({ ...newArea, name })}
           nameEditable={!newArea.workspaceId}
           model={newAgentModel}
           modelsError={newAgentModelsError}
           modelOptions={titleModelOptions(newAgentModels, "first_line").filter(option => option.provider)}
           onModelChange={setNewAgentModel}
-          folder={newAreaFolder}
-          busy={Boolean(creatingId)}
-          submitLabel={newArea.workspaceId ? "Создать терминал" : "Создать область"}
-          onSubmit={() => void createNewArea()}
+          folder={newAreaTarget ? newAreaTarget.workspaceDirectory : newAreaFolder}
+          busy={Boolean(creatingId) || Object.values(creatingAreaIds).some(Boolean) || Boolean(creatingTerminalId)}
+          submitLabel={newAreaTarget
+            ? newArea.firstTab === "session" ? "Создать агента" : "Создать терминал"
+            : newArea.workspaceId ? "Создать терминал" : "Создать область"}
+          submitAgentLabel={newAreaTarget ? "Создать агента с выбранной моделью" : undefined}
+          onSubmit={() => {
+            if (!newAreaTarget) void createNewArea();
+            else if (newArea.firstTab === "session") void handleCreateAreaSession(newAreaTarget.id);
+            else void handleCreateAreaTerminal(newAreaTarget.id);
+          }}
         />
       ) : null}
 
