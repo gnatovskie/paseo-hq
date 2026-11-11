@@ -888,13 +888,14 @@ function openTerminalTab(hostId: string, terminal: PaseoTerminal, platform: Plug
   return Linking.openURL(`paseo://${target}`);
 }
 
-function TerminalRow({ terminal, onOpen, onMenu, disabled, theme, nested = false }: {
+function TerminalRow({ terminal, onOpen, onMenu, disabled, theme, nested = false, pinned = false }: {
   terminal: PaseoTerminal;
   onOpen: () => void;
   onMenu: () => void;
   disabled?: boolean;
   theme: PluginTheme;
   nested?: boolean;
+  pinned?: boolean;
 }) {
   const c = theme.colors;
   return (
@@ -925,6 +926,7 @@ function TerminalRow({ terminal, onOpen, onMenu, disabled, theme, nested = false
           </Text>
         </View>
       </Pressable>
+      {pinned ? <Icon name="Pin" size={12} color={c.accent} /> : null}
       <ChatActionButton
         label={`Меню терминала ${terminal.name}`}
         icon="MoreHorizontal"
@@ -935,6 +937,24 @@ function TerminalRow({ terminal, onOpen, onMenu, disabled, theme, nested = false
       />
     </View>
   );
+}
+
+type AreaSession =
+  | { kind: "agent"; id: string; entry: AgentEntry }
+  | { kind: "terminal"; id: string; terminal: PaseoTerminal };
+
+// Закрепленные идут первыми в порядке закрепления и не зависят от активности, остальные - агенты, затем терминалы.
+function orderAreaSessions(
+  agents: AgentEntry[],
+  terminals: PaseoTerminal[],
+  pinned: Record<string, number>,
+): AreaSession[] {
+  const items: AreaSession[] = [
+    ...agents.map((entry): AreaSession => ({ kind: "agent", id: entry.agent.id, entry })),
+    ...terminals.map((terminal): AreaSession => ({ kind: "terminal", id: terminal.id, terminal })),
+  ];
+  const pinnedItems = items.filter(item => pinned[item.id]).sort((a, b) => pinned[a.id]! - pinned[b.id]!);
+  return [...pinnedItems, ...items.filter(item => !pinned[item.id])];
 }
 
 function ItemMenuActions({ actions, theme, disabled }: {
@@ -1331,6 +1351,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const editingChatTerminals = terminals.filter((terminal) => terminal.workspaceId === editingChatId);
   const visibleAreaAgents = areaSessionFilter === "terminals" ? [] : editingChatEntries;
   const visibleAreaTerminals = areaSessionFilter === "agents" ? [] : editingChatTerminals;
+  const visibleAreaSessions = orderAreaSessions(visibleAreaAgents, visibleAreaTerminals, serverState.pinnedSessions);
   const queryClient = useQueryClient();
   const closedAgents = useQuery({
     queryKey: ["hq-closed-agents", host.id, editingChat?.id],
@@ -1979,9 +2000,9 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     }
   };
 
-  const handleTogglePinChat = async () => {
-    if (!editingChat || chatMutationPending) return;
-    const chatId = editingChat.id;
+  // Закрепление областей, агентов и терминалов хранится в одной карте pinnedSessions по id.
+  const togglePin = async (chatId: string, messages: { pinned: string; unpinned: string }, afterSave: () => void) => {
+    if (chatMutationPending) return;
     const nextPinned = !serverState.pinnedSessions[chatId];
     setSavingChat(true);
     // Мгновенный локальный отклик закрепления в виджете
@@ -2001,8 +2022,8 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
         projectIds: allGroups.map((g) => g.id),
       });
       setServerState(updated);
-      setEditingChatId(null);
-      toast.show(nextPinned ? "Область закреплена наверху" : "Область откреплена", { variant: "info" });
+      afterSave();
+      toast.show(nextPinned ? messages.pinned : messages.unpinned, { variant: "info" });
     } catch (err) {
       await reloadAll();
       toast.error(err instanceof Error ? err.message : "Не удалось изменить закрепление");
@@ -2010,6 +2031,24 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       setSavingChat(false);
     }
   };
+
+  const handleTogglePinChat = () => {
+    if (!editingChat) return Promise.resolve();
+    return togglePin(editingChat.id, { pinned: "Область закреплена наверху", unpinned: "Область откреплена" },
+      () => setEditingChatId(null));
+  };
+
+  const handleTogglePinAgent = (agentId: string) => togglePin(
+    agentId,
+    { pinned: "Агент закреплен наверху", unpinned: "Агент откреплен" },
+    () => setAgentMenuId(null),
+  );
+
+  const handleTogglePinTerminal = (terminalId: string) => togglePin(
+    terminalId,
+    { pinned: "Терминал закреплен наверху", unpinned: "Терминал откреплен" },
+    () => setTerminalMenuId(null),
+  );
 
   const handleArchiveChat = async (chat: PaseoWorkspace) => {
     if (chatMutationPending) return;
@@ -2471,36 +2510,37 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                               marginLeft: 20 - SESSION_STATUS_SIZE / 2,
                               marginBottom: 4, paddingRight: 3, gap: 2,
                             }}>
-                              {sessions.map(({ agent }) => (
-                                <View key={agent.id} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                              {orderAreaSessions(sessions, areaTerminals, serverState.pinnedSessions).map((session) => session.kind === "terminal" ? (
+                                <TerminalRow key={session.id} terminal={session.terminal} theme={theme}
+                                  nested
+                                  pinned={Boolean(serverState.pinnedSessions[session.id])}
+                                  disabled={chatMutationPending}
+                                  onMenu={() => openTerminalMenu(session.id)}
+                                  onOpen={() => openAreaTerminal(session.terminal)} />
+                              ) : (
+                                <View key={session.id} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
                                   <Pressable
                                     accessibilityRole="button"
-                                    accessibilityLabel={`Открыть агента ${agentTitle(agent)}`}
-                                    onPress={() => jumpToAgent(agent.id)}
+                                    accessibilityLabel={`Открыть агента ${agentTitle(session.entry.agent)}`}
+                                    onPress={() => jumpToAgent(session.id)}
                                     style={({ pressed }) => ({
                                       flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center",
                                       paddingRight: 10, paddingVertical: 5, minHeight: 44, borderRadius: 8,
                                       backgroundColor: pressed ? c.surface2 : undefined,
                                     })}
                                   >
-                                    <AgentSummary agent={agent} theme={theme} platform={layout.platform} gap={NESTED_ITEM_GAP} />
+                                    <AgentSummary agent={session.entry.agent} theme={theme} platform={layout.platform} gap={NESTED_ITEM_GAP} />
                                   </Pressable>
+                                  {serverState.pinnedSessions[session.id] ? <Icon name="Pin" size={12} color={c.accent} /> : null}
                                   <ChatActionButton
-                                    label={`Меню агента ${agentTitle(agent)}`}
+                                    label={`Меню агента ${agentTitle(session.entry.agent)}`}
                                     icon="MoreHorizontal"
                                     quiet
                                     disabled={chatMutationPending}
-                                    onPress={() => openAgentMenu(agent.id)}
+                                    onPress={() => openAgentMenu(session.id)}
                                     theme={theme}
                                   />
                                 </View>
-                              ))}
-                              {areaTerminals.map((terminal) => (
-                                <TerminalRow key={terminal.id} terminal={terminal} theme={theme}
-                                  nested
-                                  disabled={chatMutationPending}
-                                  onMenu={() => openTerminalMenu(terminal.id)}
-                                  onOpen={() => openAreaTerminal(terminal)} />
                               ))}
                               {terminalListFailed || (!sessions.length && !areaTerminals.length) ? (
                                 <Text style={{ padding: 8, color: c.foregroundMuted, fontSize: 12 }}>
@@ -3447,8 +3487,20 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                     );
                   })}
                 </View>
-                {visibleAreaAgents.map((entry) => {
-                  const ag = entry.agent;
+                {visibleAreaSessions.map((session) => {
+                  if (session.kind === "terminal") {
+                    return (
+                      <TerminalRow key={session.id} terminal={session.terminal} theme={theme}
+                        pinned={Boolean(serverState.pinnedSessions[session.id])}
+                        disabled={chatMutationPending}
+                        onMenu={() => openTerminalMenu(session.id)}
+                        onOpen={() => {
+                          setEditingChatId(null);
+                          openAreaTerminal(session.terminal);
+                        }} />
+                    );
+                  }
+                  const ag = session.entry.agent;
                   const agTitle = agentTitle(ag);
                   const isCurrent = editingChatAgent?.id === ag.id;
                   return (
@@ -3492,6 +3544,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                         />
                         <Icon name="ChevronRight" size={14} color={c.foregroundMuted} />
                       </Pressable>
+                      {serverState.pinnedSessions[ag.id] ? <Icon name="Pin" size={12} color={c.accent} /> : null}
                       <ChatActionButton
                         label={`Меню агента ${agTitle}`}
                         icon="MoreHorizontal"
@@ -3503,15 +3556,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                     </View>
                   );
                 })}
-                {visibleAreaTerminals.map((terminal) => (
-                  <TerminalRow key={terminal.id} terminal={terminal} theme={theme}
-                    disabled={chatMutationPending}
-                    onMenu={() => openTerminalMenu(terminal.id)}
-                    onOpen={() => {
-                      setEditingChatId(null);
-                      openAreaTerminal(terminal);
-                    }} />
-                ))}
                 {terminalListFailed && areaSessionFilter !== "agents" ? (
                   <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Не удалось загрузить терминалы</Text>
                 ) : !visibleAreaAgents.length && !visibleAreaTerminals.length ? (
@@ -3674,6 +3718,11 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                 { label: "Отмена", icon: "ArrowLeft", onPress: () => setConfirmClosingSession(false) },
                 { label: "Остановить и закрыть", icon: "Archive", danger: true, onPress: () => void handleAgentMenuAction("close") },
               ] : [
+                {
+                  label: serverState.pinnedSessions[agentMenuChat.id] ? "Открепить агента" : "Закрепить агента",
+                  icon: serverState.pinnedSessions[agentMenuChat.id] ? "PinOff" : "Pin",
+                  onPress: () => void handleTogglePinAgent(agentMenuChat.id),
+                },
                 { label: "Скопировать ссылку на агента", icon: "Link2", onPress: () => void handleCopyAgentLink(agentMenuChat.id) },
                 { label: "Перезагрузить агента", icon: "RefreshCw", onPress: () => void handleAgentMenuAction("reload") },
                 {
@@ -3710,6 +3759,11 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                 { label: "Отмена", icon: "ArrowLeft", onPress: () => setConfirmClosingTerminal(false) },
                 { label: "Завершить терминал", icon: "X", danger: true, onPress: () => void handleCloseTerminal(terminalMenuItem) },
               ] : [
+                {
+                  label: serverState.pinnedSessions[terminalMenuItem.id] ? "Открепить терминал" : "Закрепить терминал",
+                  icon: serverState.pinnedSessions[terminalMenuItem.id] ? "PinOff" : "Pin",
+                  onPress: () => void handleTogglePinTerminal(terminalMenuItem.id),
+                },
                 { label: "Скопировать путь терминала", icon: "Copy", onPress: () => void handleCopyTerminalPath(terminalMenuItem) },
                 { label: "Закрыть терминал", icon: "X", danger: true, onPress: () => setConfirmClosingTerminal(true) },
               ]} />
