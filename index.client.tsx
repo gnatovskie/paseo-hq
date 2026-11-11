@@ -1529,6 +1529,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const agentMenuChat = agents.find(({ agent }) =>
     agent.id === agentMenuId && agent.workspaceId && !agent.archivedAt && !agent.internal,
   )?.agent;
+  const newSessionWorkspace = workspaces.find(workspace => workspace.id === newAgentWorkspaceId);
   const hqWindowOpen = addModalOpen || Boolean(editingGroup) || Boolean(newArea) || Boolean(editingChat)
     || Boolean(newAgentWorkspaceId) || Boolean(agentMenuChat) || Boolean(terminalMenuItem) || panelSettingsOpen;
 
@@ -3896,9 +3897,16 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
               </>
             ) : (
               <>
-                <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>
-                  Терминал откроется в рабочей папке области.
-                </Text>
+                <View style={{ gap: 4 }}>
+                  <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Папка терминала</Text>
+                  <Text
+                    accessibilityLabel={`Папка терминала: ${newSessionWorkspace?.workspaceDirectory ?? ""}`}
+                    selectable
+                    style={{ color: c.foreground, fontSize: 12, fontFamily: "monospace" }}
+                  >
+                    {newSessionWorkspace?.workspaceDirectory ?? "Папка области недоступна"}
+                  </Text>
+                </View>
                 <Pressable accessibilityRole="button" accessibilityLabel="Создать терминал"
                   disabled={Boolean(creatingTerminalId)}
                   onPress={() => { if (newAgentWorkspaceId) void handleCreateAreaTerminal(newAgentWorkspaceId); }}

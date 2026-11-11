@@ -171,6 +171,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await page.getByText("Модель нового агента", { exact: true }).waitFor();
           await button("Терминал").click();
           await button("Создать терминал").waitFor();
+          await page.getByLabel(/^Папка терминала: \/.+/).waitFor();
           assert.equal(await button("Создать агента с выбранной моделью").count(), 0);
           await button("Агент").click();
           await button("Создать агента с выбранной моделью").waitFor();
