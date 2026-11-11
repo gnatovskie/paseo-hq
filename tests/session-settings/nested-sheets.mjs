@@ -186,6 +186,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await areaToggle.click();
           await sidebarSession.waitFor();
           await page.getByLabel(/^Ветка области .+/).first().waitFor();
+          await capture("area-expanded-sessions");
           await areaToggle.click();
           await sidebarSession.waitFor({ state: "hidden" });
           await areaToggle.click();

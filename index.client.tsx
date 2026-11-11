@@ -413,7 +413,9 @@ function pickWebImageAsDataUri(): Promise<string | null> {
 }
 
 const SESSION_STATUS_SIZE = 14;
-const NESTED_ITEM_GAP = 12;
+const NESTED_ITEM_GAP = 10;
+// Отступ индикатора от края вдавленной рамки равен зазору между индикатором и текстом: 1 (граница) + 4 (поля рамки) + 5.
+const NESTED_ITEM_INSET = 5;
 
 const SESSION_STATUS_LABEL: Record<UiSessionBucket, string> = {
   running: "в работе",
@@ -925,7 +927,7 @@ function TerminalRow({ terminal, label, onOpen, onMenu, disabled, theme, nested 
         style={({ pressed }) => ({
           flex: 1, minWidth: 0, flexDirection: "row", alignItems: "flex-start", minHeight: 44,
           gap: nested ? NESTED_ITEM_GAP : 7,
-          paddingLeft: nested ? 0 : 10, paddingRight: 10, paddingVertical: 5, borderRadius: 8,
+          paddingLeft: nested ? NESTED_ITEM_INSET : 10, paddingRight: 10, paddingVertical: 5, borderRadius: 8,
           backgroundColor: pressed ? c.surface2 : undefined,
         })}
       >
@@ -3044,7 +3046,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                                     onPress={() => jumpToAgent(session.id)}
                                     style={({ pressed }) => ({
                                       flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center",
-                                      paddingRight: 10, paddingVertical: 5, minHeight: 44, borderRadius: 8,
+                                      paddingLeft: NESTED_ITEM_INSET, paddingRight: 10, paddingVertical: 5, minHeight: 44, borderRadius: 8,
                                       backgroundColor: pressed ? c.surface2 : undefined,
                                     })}
                                   >
