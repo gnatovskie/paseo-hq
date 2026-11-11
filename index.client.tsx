@@ -396,6 +396,9 @@ function pickWebImageAsDataUri(): Promise<string | null> {
   });
 }
 
+const SESSION_STATUS_SIZE = 14;
+const NESTED_ITEM_GAP = 12;
+
 const SESSION_STATUS_LABEL: Record<UiSessionBucket, string> = {
   running: "в работе",
   attention: "требует внимания",
@@ -670,13 +673,14 @@ function openUsageLimits(serverId?: string) {
   }
 }
 
-function ChatActionButton({ label, icon, color, disabled, onPress, theme }: {
+function ChatActionButton({ label, icon, color, disabled, onPress, theme, quiet = false }: {
   label: string;
   icon: string;
   color?: string;
   disabled?: boolean;
   onPress: () => void;
   theme: PluginTheme;
+  quiet?: boolean;
 }) {
   const c = theme.colors;
   return (
@@ -687,14 +691,14 @@ function ChatActionButton({ label, icon, color, disabled, onPress, theme }: {
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => ({
-        width: 44,
-        height: 44,
+        width: quiet ? 34 : 44,
+        height: quiet ? 36 : 44,
         borderRadius: 9,
-        borderWidth: 1,
+        borderWidth: quiet ? 0 : 1,
         borderColor: c.border,
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: pressed ? c.surface1 : c.surface2,
+        backgroundColor: pressed ? c.surface1 : quiet ? undefined : c.surface2,
         opacity: disabled ? 0.5 : 1,
       })}
     >
@@ -787,42 +791,45 @@ function sessionTitle(agent: AgentEntry["agent"]): string {
   return agent.title?.trim() || "Сессия без названия";
 }
 
-function SessionSummary({ agent, branch, theme, platform }: {
+function SessionSummary({ agent, branch, theme, platform, gap = 4 }: {
   agent: AgentEntry["agent"];
   branch?: string;
   theme: PluginTheme;
   platform: PluginSidebarItemProps["layout"]["platform"];
+  gap?: number;
 }) {
   const c = theme.colors;
   const family = resolveModelFamilyBadge(agent);
   const bucket = deriveAgentBucket(agent);
   return (
-    <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-      <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 13, lineHeight: 18, fontWeight: "500" }}>
-        {sessionTitle(agent)}
-      </Text>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, minHeight: 16 }}>
-        <View accessible accessibilityLabel={`Статус сессии: ${SESSION_STATUS_LABEL[bucket]}`}>
-          <SessionStatusIndicator bucket={bucket} theme={theme} platform={platform} size={14} />
+    <View style={{ flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap }}>
+      <View accessible accessibilityLabel={`Статус сессии: ${SESSION_STATUS_LABEL[bucket]}`}>
+        <SessionStatusIndicator bucket={bucket} theme={theme} platform={platform} size={SESSION_STATUS_SIZE} />
+      </View>
+      <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+        <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 13, lineHeight: 18, fontWeight: "500" }}>
+          {sessionTitle(agent)}
+        </Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, minHeight: 16 }}>
+          {family ? (
+            <View style={{ paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4, backgroundColor: family.bg }}>
+              <Text numberOfLines={1} style={{ fontSize: 10, fontWeight: "600", color: family.text }}>
+                {family.label}
+              </Text>
+            </View>
+          ) : null}
+          {branch ? (
+            <View
+              accessible
+              accessibilityLabel={`Ветка при запуске: ${branch}`}
+              style={{ flexShrink: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 3,
+                borderRadius: 4, backgroundColor: c.surface2, paddingHorizontal: 4, paddingVertical: 1 }}
+            >
+              <Icon name="GitBranch" size={11} color={c.foregroundMuted} />
+              <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 10, color: c.foregroundMuted }}>{branch}</Text>
+            </View>
+          ) : null}
         </View>
-        {family ? (
-          <View style={{ paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4, backgroundColor: family.bg }}>
-            <Text numberOfLines={1} style={{ fontSize: 10, fontWeight: "600", color: family.text }}>
-              {family.label}
-            </Text>
-          </View>
-        ) : null}
-        {branch ? (
-          <View
-            accessible
-            accessibilityLabel={`Ветка при запуске: ${branch}`}
-            style={{ flexShrink: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 3,
-              borderRadius: 4, backgroundColor: c.surface2, paddingHorizontal: 4, paddingVertical: 1 }}
-          >
-            <Icon name="GitBranch" size={11} color={c.foregroundMuted} />
-            <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 10, color: c.foregroundMuted }}>{branch}</Text>
-          </View>
-        ) : null}
       </View>
     </View>
   );
@@ -837,38 +844,85 @@ function openTerminalTab(hostId: string, terminal: PaseoTerminal, platform: Plug
   return Linking.openURL(`paseo://${target}`);
 }
 
-function TerminalRow({ terminal, onOpen, theme }: {
+function TerminalRow({ terminal, onOpen, onMenu, disabled, theme, nested = false }: {
   terminal: PaseoTerminal;
   onOpen: () => void;
+  onMenu: () => void;
+  disabled?: boolean;
   theme: PluginTheme;
+  nested?: boolean;
 }) {
   const c = theme.colors;
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`Открыть терминал ${terminal.name}`}
-      onPress={onOpen}
-      style={({ pressed }) => ({
-        flexDirection: "row", alignItems: "flex-start", minHeight: 44, gap: 7,
-        paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
-        backgroundColor: pressed ? c.surface2 : undefined,
-      })}
-    >
-      <View style={{ paddingTop: 2 }}>
-        <Icon name="Terminal" size={14} color={c.foregroundMuted} />
-      </View>
-      <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-        <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 13, lineHeight: 18 }}>{terminal.name}</Text>
-        <Text
-          numberOfLines={1}
-          ellipsizeMode="middle"
-          accessibilityLabel={`Корень терминала: ${terminal.cwd}`}
-          style={{ color: c.foregroundMuted, fontSize: 10, fontFamily: "monospace" }}
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Открыть терминал ${terminal.name}`}
+        onPress={onOpen}
+        style={({ pressed }) => ({
+          flex: 1, minWidth: 0, flexDirection: "row", alignItems: "flex-start", minHeight: 44,
+          gap: nested ? NESTED_ITEM_GAP : 7,
+          paddingLeft: nested ? 0 : 10, paddingRight: 10, paddingVertical: 5, borderRadius: 8,
+          backgroundColor: pressed ? c.surface2 : undefined,
+        })}
+      >
+        <View style={{ paddingTop: 2 }}>
+          <Icon name="Terminal" size={SESSION_STATUS_SIZE} color={c.foregroundMuted} />
+        </View>
+        <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+          <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 13, lineHeight: 18 }}>{terminal.name}</Text>
+          <Text
+            numberOfLines={1}
+            ellipsizeMode="middle"
+            accessibilityLabel={`Корень терминала: ${terminal.cwd}`}
+            style={{ color: c.foregroundMuted, fontSize: 10, fontFamily: "monospace" }}
+          >
+            {terminal.cwd}
+          </Text>
+        </View>
+      </Pressable>
+      <ChatActionButton
+        label={`Меню терминала ${terminal.name}`}
+        icon="MoreHorizontal"
+        quiet
+        disabled={disabled}
+        onPress={onMenu}
+        theme={theme}
+      />
+    </View>
+  );
+}
+
+function ItemMenuActions({ actions, theme, disabled }: {
+  actions: { label: string; icon: string; onPress: () => void; danger?: boolean }[];
+  theme: PluginTheme;
+  disabled: boolean;
+}) {
+  const c = theme.colors;
+  return (
+    <View style={{ gap: 8 }}>
+      {actions.map(({ label, icon, onPress, danger }) => (
+        <Pressable
+          key={label}
+          accessibilityRole="button"
+          disabled={disabled}
+          onPress={onPress}
+          style={({ pressed }) => ({
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 10,
+            minHeight: 44,
+            paddingHorizontal: 12,
+            borderRadius: 9,
+            backgroundColor: pressed ? c.surface1 : c.surface2,
+            opacity: disabled ? 0.5 : 1,
+          })}
         >
-          {terminal.cwd}
-        </Text>
-      </View>
-    </Pressable>
+          <Icon name={icon} size={16} color={danger ? c.statusDanger : c.foreground} />
+          <Text style={{ color: danger ? c.statusDanger : c.foreground, fontSize: 14 }}>{label}</Text>
+        </Pressable>
+      ))}
+    </View>
   );
 }
 
@@ -981,6 +1035,9 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const [suggestingTitle, setSuggestingTitle] = useState(false);
   const [agentMenuId, setAgentMenuId] = useState<string | null>(null);
   const [draftAgentTitle, setDraftAgentTitle] = useState<string | null>(null);
+  const [confirmClosingSession, setConfirmClosingSession] = useState(false);
+  const [terminalMenuId, setTerminalMenuId] = useState<string | null>(null);
+  const [confirmClosingTerminal, setConfirmClosingTerminal] = useState(false);
   const [chatTransferOpen, setChatTransferOpen] = useState(false);
   const [transferTargetProjectId, setTransferTargetProjectId] = useState<string>("");
   const [transferArchiveOriginal, setTransferArchiveOriginal] = useState<boolean>(true);
@@ -1223,10 +1280,13 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const editingChatAgent = editingChat ? latestAgentByWorkspace[editingChat.id] : undefined;
   const editingChatEntries = (editingChat ? agentsByWorkspace.get(editingChat.id) : undefined) ?? [];
   const editingChatTerminals = terminals.filter((terminal) => terminal.workspaceId === editingChatId);
+  const terminalMenuItem = terminals.find((terminal) => terminal.id === terminalMenuId);
   const titleSourceAgent = editingChatEntries[0]?.agent;
   const titleModel = editingChat ? serverState.projects[editingChat.projectId]?.sessionTitleModel : null;
   const canSuggestTitle = Boolean(titleModel && titleSourceAgent) && !suggestingTitle && !chatMutationPending;
-  const agentMenuChat = editingChatEntries.find(({ agent }) => agent.id === agentMenuId)?.agent;
+  const agentMenuChat = agents.find(({ agent }) =>
+    agent.id === agentMenuId && agent.workspaceId && !agent.archivedAt && !agent.internal,
+  )?.agent;
 
   const currentProjectGroup = useMemo(
     () => (editingChat ? allGroups.find((g) => g.id === editingChat.projectId) ?? null : null),
@@ -1666,22 +1726,79 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     }
   };
 
-  const handleAgentMenuAction = async (action: "rename" | "reload") => {
-    if (!editingChat || !agentMenuChat || chatMutationPending) return;
+  const openAgentMenu = (agentId: string) => {
+    setDraftAgentTitle(null);
+    setConfirmClosingSession(false);
+    setAgentMenuId(agentId);
+  };
+
+  const handleCopyAgentLink = async (agentId: string) => {
+    try {
+      await copyText(`paseo:///h/${host.id || "local"}/agent/${agentId}`);
+      setAgentMenuId((current) => current === agentId ? null : current);
+      toast.show("Ссылка на сессию скопирована", { variant: "info" });
+    } catch {
+      toast.error("Не удалось скопировать ссылку");
+    }
+  };
+
+  const handleAgentMenuAction = async (action: "rename" | "reload" | "close") => {
+    const workspaceId = agentMenuChat?.workspaceId;
+    if (!workspaceId || !agentMenuChat || chatMutationPending) return;
     const title = draftAgentTitle?.trim();
     if (action === "rename" && !title) return;
+    const agentId = agentMenuChat.id;
+    const result = {
+      rename: "Сессия переименована",
+      reload: "Сессия перезагружена",
+      close: "Сессия закрыта",
+    };
     setSavingChat(true);
     try {
       if (action === "rename" && title) {
-        await renameAgent({ workspaceId: editingChat.id, agentId: agentMenuChat.id, title });
-      } else {
-        await paseo.agents.ref(agentMenuChat.id).reload();
+        await renameAgent({ workspaceId, agentId, title });
+      } else if (action === "reload") {
+        await paseo.agents.ref(agentId).reload();
+      } else if (action === "close") {
+        await paseo.agents.ref(agentId).archive();
       }
       await reloadAll();
       setAgentMenuId(null);
-      toast.show(action === "rename" ? "Сессия переименована" : "Сессия перезагружена", { variant: "success" });
+      toast.show(result[action], { variant: "success" });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Не удалось обновить сессию");
+      const fallback = action === "close" ? "Не удалось закрыть сессию" : "Не удалось обновить сессию";
+      toast.error(err instanceof Error ? err.message : fallback);
+    } finally {
+      setSavingChat(false);
+    }
+  };
+
+  const openTerminalMenu = (terminalId: string) => {
+    setConfirmClosingTerminal(false);
+    setTerminalMenuId(terminalId);
+  };
+
+  const handleCopyTerminalPath = async (terminal: PaseoTerminal) => {
+    try {
+      await copyText(terminal.cwd);
+      setTerminalMenuId((current) => current === terminal.id ? null : current);
+      toast.show("Путь скопирован", { variant: "info" });
+    } catch {
+      toast.error("Не удалось скопировать путь");
+    }
+  };
+
+  const handleCloseTerminal = async (terminal: PaseoTerminal) => {
+    if (chatMutationPending) return;
+    setSavingChat(true);
+    try {
+      await paseo.terminals.ref(terminal).kill();
+      setTerminals((current) => current.filter((item) => item.id !== terminal.id));
+      setTerminalMenuId(null);
+      toast.show("Терминал закрыт", { variant: "success" });
+      void reloadAll();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Не удалось закрыть терминал");
     } finally {
       setSavingChat(false);
     }
@@ -2186,25 +2303,39 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                             </Pressable>
                           </View>
                           {expanded ? (
-                            <View style={{ marginLeft: areaIcon ? 30 : 20, marginBottom: 4, paddingLeft: areaIcon ? 13 : 9, paddingRight: 3,
-                              borderLeftWidth: 1, borderLeftColor: c.border, gap: 2 }}>
+                            <View style={{
+                              marginLeft: (areaIcon ? 30 : 20) - SESSION_STATUS_SIZE / 2,
+                              marginBottom: 4, paddingRight: 3, gap: 2,
+                            }}>
                               {sessions.map(({ agent }) => (
-                                <Pressable
-                                  key={agent.id}
-                                  accessibilityRole="button"
-                                  accessibilityLabel={`Открыть сессию ${sessionTitle(agent)}`}
-                                  onPress={() => jumpToAgent(agent.id)}
-                                  style={({ pressed }) => ({
-                                    flexDirection: "row", alignItems: "center", paddingHorizontal: 10,
-                                    paddingVertical: 5, minHeight: 44, borderRadius: 8,
-                                    backgroundColor: pressed ? c.surface2 : undefined,
-                                  })}
-                                >
-                                  <SessionSummary agent={agent} theme={theme} platform={layout.platform} />
-                                </Pressable>
+                                <View key={agent.id} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                                  <Pressable
+                                    accessibilityRole="button"
+                                    accessibilityLabel={`Открыть сессию ${sessionTitle(agent)}`}
+                                    onPress={() => jumpToAgent(agent.id)}
+                                    style={({ pressed }) => ({
+                                      flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center",
+                                      paddingRight: 10, paddingVertical: 5, minHeight: 44, borderRadius: 8,
+                                      backgroundColor: pressed ? c.surface2 : undefined,
+                                    })}
+                                  >
+                                    <SessionSummary agent={agent} theme={theme} platform={layout.platform} gap={NESTED_ITEM_GAP} />
+                                  </Pressable>
+                                  <ChatActionButton
+                                    label={`Меню сессии ${sessionTitle(agent)}`}
+                                    icon="MoreHorizontal"
+                                    quiet
+                                    disabled={chatMutationPending}
+                                    onPress={() => openAgentMenu(agent.id)}
+                                    theme={theme}
+                                  />
+                                </View>
                               ))}
                               {areaTerminals.map((terminal) => (
                                 <TerminalRow key={terminal.id} terminal={terminal} theme={theme}
+                                  nested
+                                  disabled={chatMutationPending}
+                                  onMenu={() => openTerminalMenu(terminal.id)}
                                   onOpen={() => openAreaTerminal(terminal)} />
                               ))}
                               {terminalListFailed || (!sessions.length && !areaTerminals.length) ? (
@@ -3017,19 +3148,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                   theme={theme}
                 />
                 <ChatActionButton
-                  label="Скопировать ссылку на сессию"
-                  icon="Link2"
-                  disabled={!editingChatAgent}
-                  onPress={() => {
-                    if (!editingChatAgent) return;
-                    const link = `paseo:///h/${host.id || "local"}/agent/${editingChatAgent.id}`;
-                    void copyText(link)
-                      .then(() => toast.show("Ссылка на сессию скопирована", { variant: "info" }))
-                      .catch(() => toast.error("Не удалось скопировать ссылку"));
-                  }}
-                  theme={theme}
-                />
-                <ChatActionButton
                   label="Скопировать путь к папке проекта"
                   icon="Folders"
                   onPress={() => {
@@ -3179,7 +3297,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                 {editingChatEntries.map((entry) => {
                   const ag = entry.agent;
                   const agTitle = sessionTitle(ag);
-                  const link = `paseo:///h/${host.id || "local"}/agent/${ag.id}`;
                   const isCurrent = editingChatAgent?.id === ag.id;
                   return (
                     <View
@@ -3222,34 +3339,12 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                         />
                         <Icon name="ChevronRight" size={14} color={c.foregroundMuted} />
                       </Pressable>
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel={`Скопировать ссылку на сессию ${agTitle}`}
-                        onPress={() => {
-                          void copyText(link)
-                            .then(() => toast.show("Ссылка на сессию скопирована", { variant: "info" }))
-                            .catch(() => toast.error("Не удалось скопировать ссылку"));
-                        }}
-                        style={({ pressed }) => ({
-                          paddingHorizontal: 8,
-                          paddingVertical: 5,
-                          borderRadius: 6,
-                          backgroundColor: c.surface2,
-                          borderWidth: 1,
-                          borderColor: c.border,
-                          opacity: pressed ? 0.7 : 1,
-                        })}
-                      >
-                        <Text style={{ color: c.foreground, fontSize: 11, fontWeight: "500" }}>Ссылка</Text>
-                      </Pressable>
                       <ChatActionButton
                         label={`Меню сессии ${agTitle}`}
                         icon="MoreHorizontal"
                         disabled={chatMutationPending}
-                        onPress={() => {
-                          setDraftAgentTitle(null);
-                          setAgentMenuId(ag.id);
-                        }}
+                        quiet
+                        onPress={() => openAgentMenu(ag.id)}
                         theme={theme}
                       />
                     </View>
@@ -3257,6 +3352,8 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                 })}
                 {editingChatTerminals.map((terminal) => (
                   <TerminalRow key={terminal.id} terminal={terminal} theme={theme}
+                    disabled={chatMutationPending}
+                    onMenu={() => openTerminalMenu(terminal.id)}
                     onOpen={() => {
                       setEditingChatId(null);
                       openAreaTerminal(terminal);
@@ -3269,7 +3366,9 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       </Modal>
 
       <Modal
-        title={draftAgentTitle === null ? "Действия с сессией" : "Переименовать сессию"}
+        title={confirmClosingSession
+          ? "Закрыть работающую сессию"
+          : draftAgentTitle === null ? "Действия с сессией" : "Переименовать сессию"}
         open={Boolean(agentMenuChat)}
         onOpenChange={(open) => {
           if (!open) setAgentMenuId(null);
@@ -3278,30 +3377,28 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
         <Modal.Content>
           {agentMenuChat && (draftAgentTitle === null ? (
             <View style={{ gap: 8 }}>
-              {[
+              {confirmClosingSession ? (
+                <Text style={{ color: c.foreground, fontSize: 14 }}>
+                  Текущая работа остановится. Сохраненные сообщения будут доступны в истории Paseo.
+                </Text>
+              ) : null}
+              <ItemMenuActions theme={theme} disabled={chatMutationPending} actions={confirmClosingSession ? [
+                { label: "Отмена", icon: "ArrowLeft", onPress: () => setConfirmClosingSession(false) },
+                { label: "Остановить и закрыть", icon: "Archive", danger: true, onPress: () => void handleAgentMenuAction("close") },
+              ] : [
+                { label: "Скопировать ссылку на сессию", icon: "Link2", onPress: () => void handleCopyAgentLink(agentMenuChat.id) },
                 { label: "Переименовать сессию", icon: "Pencil", onPress: () => setDraftAgentTitle(agentMenuChat.title ?? "") },
                 { label: "Перезагрузить сессию", icon: "RefreshCw", onPress: () => void handleAgentMenuAction("reload") },
-              ].map(({ label, icon, onPress }) => (
-                <Pressable
-                  key={label}
-                  accessibilityRole="button"
-                  disabled={chatMutationPending}
-                  onPress={onPress}
-                  style={({ pressed }) => ({
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 10,
-                    minHeight: 44,
-                    paddingHorizontal: 12,
-                    borderRadius: 9,
-                    backgroundColor: pressed ? c.surface1 : c.surface2,
-                    opacity: chatMutationPending ? 0.5 : 1,
-                  })}
-                >
-                  <Icon name={icon} size={16} color={c.foreground} />
-                  <Text style={{ color: c.foreground, fontSize: 14 }}>{label}</Text>
-                </Pressable>
-              ))}
+                {
+                  label: "Закрыть сессию",
+                  icon: "Archive",
+                  danger: true,
+                  onPress: () => {
+                    if (agentMenuChat.status === "running") setConfirmClosingSession(true);
+                    else void handleAgentMenuAction("close");
+                  },
+                },
+              ]} />
             </View>
           ) : (
             <View style={{ gap: 10 }}>
@@ -3341,6 +3438,33 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
               </Pressable>
             </View>
           ))}
+        </Modal.Content>
+      </Modal>
+
+      <Modal
+        title={confirmClosingTerminal ? "Закрыть терминал" : "Настройки терминала"}
+        open={Boolean(terminalMenuItem)}
+        onOpenChange={(open) => {
+          if (!open && !chatMutationPending) setTerminalMenuId(null);
+        }}
+      >
+        <Modal.Content>
+          {terminalMenuItem ? (
+            <View style={{ gap: 10 }}>
+              {confirmClosingTerminal ? (
+                <Text style={{ color: c.foreground, fontSize: 14 }}>
+                  Терминал и запущенные в нем процессы завершатся.
+                </Text>
+              ) : null}
+              <ItemMenuActions theme={theme} disabled={chatMutationPending} actions={confirmClosingTerminal ? [
+                { label: "Отмена", icon: "ArrowLeft", onPress: () => setConfirmClosingTerminal(false) },
+                { label: "Завершить терминал", icon: "X", danger: true, onPress: () => void handleCloseTerminal(terminalMenuItem) },
+              ] : [
+                { label: "Скопировать путь терминала", icon: "Copy", onPress: () => void handleCopyTerminalPath(terminalMenuItem) },
+                { label: "Закрыть терминал", icon: "X", danger: true, onPress: () => setConfirmClosingTerminal(true) },
+              ]} />
+            </View>
+          ) : null}
         </Modal.Content>
       </Modal>
 

@@ -5,7 +5,8 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
-import { createPaseoClient } from "@getpaseo/client";
+import { createPaseoApi } from "@getpaseo/client";
+import { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { chromium } from "playwright-core";
 
 const root = resolve(import.meta.dirname, "../..");
@@ -33,6 +34,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
   const env = { ...process.env, PASEO_HOME: home, PASEO_HQ_STATE_FILE: stateFile };
   const paseo = (...args) => execFileSync("paseo", [...args, "--home", home], { env, encoding: "utf8" });
   let client;
+  let daemon;
   let browser;
   let started = false;
 
@@ -53,8 +55,22 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
     paseo("project", "create", target);
     paseo("workspace", "create", "--path", source, "--isolation", "worktree", "--title", title);
 
-    client = createPaseoClient({ url: `ws://${endpoint}/ws`, reconnect: { enabled: false } });
-    await client.connect();
+    daemon = new DaemonClient({
+      url: `ws://${endpoint}/ws`,
+      clientId: "hq-session-settings-smoke",
+      clientType: "cli",
+      appVersion: "0.15.2",
+      reconnect: { enabled: false },
+    });
+    await daemon.connect();
+    client = createPaseoApi(daemon);
+    const assertInHistory = async (agentId, workspaceId, expectedTitle) => {
+      const { entries } = await daemon.fetchAgentHistory({});
+      const stored = entries.find(({ agent }) => agent.id === agentId)?.agent;
+      assert(stored?.archivedAt, "the archived session is in History");
+      assert.equal(stored.workspaceId, workspaceId);
+      if (expectedTitle !== undefined) assert.equal(stored.title, expectedTitle);
+    };
     const { entries: [workspace] } = await client.workspaces.list({});
     assert.notEqual(workspace.workspaceDirectory, source, "fixture must use a separate worktree");
     const workspaceHandle = client.workspaces.ref(workspace.id);
@@ -68,7 +84,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
     const { projects } = await client.projects.list({});
     const targetProject = projects.find((project) => project.projectRootPath === target);
     assert(targetProject);
-    await workspaceHandle.terminals.create({
+    const fixtureTerminal = await workspaceHandle.terminals.create({
       name: "Fixture terminal",
       command: "sh",
       args: ["-c", "printf 'HQ terminal fixture\n'; exec sleep 300"],
@@ -133,21 +149,25 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await sidebarTerminal.waitFor();
           await sidebarTerminal.getByText(workspace.workspaceDirectory, { exact: true }).waitFor();
           assert.equal(await sidebar.getByText(/^\d+ сесси[ийя]$/).count(), 0);
-          const [areaTitleBox, sessionTitleBox, statusBox, modelBox, settingsBox, plusBox] = await Promise.all([
+          const [areaTitleBox, areaBox, sessionTitleBox, statusBox, modelBox, settingsBox, plusBox] = await Promise.all([
             areaTitle.boundingBox(),
+            areaToggle.boundingBox(),
             sidebarSession.getByText("Fixture chat", { exact: true }).boundingBox(),
             sidebarSession.getByLabel(/^Статус сессии: /).boundingBox(),
             sidebarSession.getByText("Codex", { exact: true }).locator("..").boundingBox(),
             areaSettings.boundingBox(),
             button(`Новая сессия в области ${title}`).boundingBox(),
           ]);
-          assert(areaTitleBox && sessionTitleBox && statusBox && modelBox && settingsBox && plusBox);
+          assert(areaTitleBox && areaBox && sessionTitleBox && statusBox && modelBox && settingsBox && plusBox);
           assert(sessionTitleBox.x > areaTitleBox.x, "nested session is indented");
           assert(plusBox.x > settingsBox.x, "the area plus sits to the right of settings");
           assert.equal(statusBox.width, 14);
-          assert.equal(statusBox.x, sessionTitleBox.x);
-          assert(statusBox.y >= sessionTitleBox.y + sessionTitleBox.height);
-          assert(modelBox.x >= statusBox.x + statusBox.width + 4);
+          assert.equal(statusBox.x + statusBox.width / 2, areaBox.x + 20, "the status occupies the former tree line");
+          assert.equal(statusBox.x + statusBox.width + 12, sessionTitleBox.x);
+          assert.equal(modelBox.x, sessionTitleBox.x);
+          const statusCenterY = statusBox.y + statusBox.height / 2;
+          assert(statusCenterY > sessionTitleBox.y + sessionTitleBox.height / 2);
+          assert(statusCenterY < modelBox.y + modelBox.height / 2);
           if (output) await sidebar.screenshot({ path: join(output, `hq-nested-sidebar-${width}.png`) });
 
           if (width === 1280) {
@@ -157,6 +177,20 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
             await enterSidebar();
             await areaToggle.click();
           }
+          const copySessionLink = button("Скопировать ссылку на сессию");
+          const sessionActions = [
+            copySessionLink, button("Переименовать сессию"), button("Перезагрузить сессию"), button("Закрыть сессию"),
+          ];
+          const expectSessionActions = () => Promise.all(sessionActions.map((action) => action.waitFor()));
+          await sidebar.getByRole("button", { name: "Меню сессии Fixture chat", exact: true }).click();
+          await expectSessionActions();
+          await capture("sidebar-session-menu");
+          await copySessionLink.click();
+          await copySessionLink.waitFor({ state: "hidden" });
+          const link = await clipboard();
+          assert.match(link, /^paseo:\/\/\/h\/[^/]+\/agent\//);
+          assert.equal(link.split("/").at(-1), chat.id);
+          assert(await sidebarSession.isVisible(), "copy leaves the sidebar area expanded");
           await Promise.all([
             daemonSocket.waitForEvent("framesent", {
               predicate: ({ payload }) => {
@@ -174,7 +208,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await openSettings();
           await draft.waitFor();
           assert.equal(await archive.count(), 0, "transfer options should open only after pressing the icon");
-          const actions = ["Закрепить область", "Скопировать ссылку на сессию", "Скопировать путь к папке проекта",
+          const actions = ["Закрепить область", "Скопировать путь к папке проекта",
             "Перенести в проект", "Архивировать область"].map(button);
           await actions[0].click({ trial: true });
           const boxes = await Promise.all(actions.map(async (action) => {
@@ -214,12 +248,8 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           assert.equal(JSON.parse(String(generationFrame.payload)).message.input.agentId, firstChat.id);
           await generate.click({ trial: true });
 
+          assert.equal(await copySessionLink.count(), 0, "copy belongs in the session menu");
           await actions[1].click();
-          await page.getByText("Ссылка на сессию скопирована", { exact: true }).waitFor();
-          const link = await clipboard();
-          assert.match(link, /^paseo:\/\/\/h\/[^/]+\/agent\//);
-          assert([chat.id, secondChat.id].includes(link.split("/").at(-1)));
-          await actions[2].click();
           await page.getByText("Путь скопирован", { exact: true }).waitFor();
           assert.equal(await clipboard(), source);
 
@@ -239,7 +269,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           const selectedChat = link.endsWith(`/${chat.id}`) ? secondChat : chat;
           let selectedTitle = selectedChat.id === chat.id ? "Fixture chat" : "Second fixture chat";
           await button(`Меню сессии ${selectedTitle}`).click();
-          await button("Перезагрузить сессию").waitFor();
+          await expectSessionActions();
           if (width === 1280) {
             await button("Переименовать сессию").click();
             selectedTitle = "Renamed fixture chat";
@@ -265,7 +295,9 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           }
           const openChat = button(`Открыть сессию ${selectedTitle}`);
           assert.equal(await openChat.count(), 1, "each listed session should be openable");
-          await button(`Скопировать ссылку на сессию ${selectedTitle}`).click();
+          await button(`Меню сессии ${selectedTitle}`).click();
+          await expectSessionActions();
+          await copySessionLink.click();
           await page.waitForFunction(
             async (expected) => await navigator.clipboard.readText() === expected,
             link.replace(/[^/]+$/, selectedChat.id),
@@ -315,11 +347,50 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
             assert.equal(created.agent.cwd, workspace.workspaceDirectory);
             await openSettings();
             await button("Ветка по умолчанию: hq-next").waitFor();
-            await button("Новый терминал").click();
+            const closedTitle = created.agent.title || "Сессия без названия";
+            const areaDialog = page.getByRole("dialog").filter({ has: draft });
+            await areaDialog.getByRole("button", { name: `Меню сессии ${closedTitle}`, exact: true }).click();
+            await button("Закрыть сессию").click();
+            await page.getByText("Сессия закрыта", { exact: true }).waitFor();
+            await areaDialog.getByRole("button", { name: `Открыть сессию ${closedTitle}`, exact: true }).waitFor({ state: "hidden" });
+            await assertInHistory(created.agent.id, workspace.id, created.agent.title);
+            await Promise.all([page.waitForEvent("load"), button("Новый терминал").click()]);
             await page.locator(".xterm").first().waitFor({ state: "visible" });
-            assert.equal((await workspaceHandle.terminals.list()).entries.length, 2);
-            await client.agents.ref(created.agent.id).archive();
+            const { entries: activeTerminals } = await workspaceHandle.terminals.list();
+            assert.equal(activeTerminals.length, 2);
+            const newTerminal = activeTerminals.find((terminal) => terminal.id !== fixtureTerminal.id);
+            assert(newTerminal);
+
             await enterSidebar();
+            await openSettings();
+            const fixtureMenu = areaDialog.getByRole("button", { name: "Меню терминала Fixture terminal", exact: true });
+            await fixtureMenu.click();
+            const copyTerminalPath = button("Скопировать путь терминала");
+            await copyTerminalPath.click();
+            await copyTerminalPath.waitFor({ state: "hidden" });
+            assert.equal(await clipboard(), workspace.workspaceDirectory);
+            await fixtureMenu.click();
+            await button("Закрыть терминал").click();
+            const finishTerminal = button("Завершить терминал");
+            await finishTerminal.click();
+            await finishTerminal.waitFor({ state: "hidden" });
+            await fixtureMenu.waitFor({ state: "hidden" });
+            assert.deepEqual((await workspaceHandle.terminals.list()).entries.map((terminal) => terminal.id), [newTerminal.id]);
+            await areaDialog.getByRole("button", { name: "Close", exact: true }).click();
+            await draft.waitFor({ state: "hidden" });
+
+            if (await areaToggle.getAttribute("aria-expanded") !== "true") await areaToggle.click();
+            const newTerminalMenu = sidebar.getByRole("button", { name: `Меню терминала ${newTerminal.name}`, exact: true });
+            await newTerminalMenu.click();
+            await button("Закрыть терминал").click();
+            await button("Отмена").click();
+            assert.equal((await workspaceHandle.terminals.list()).entries.length, 1);
+            await button("Закрыть терминал").click();
+            await finishTerminal.click();
+            await finishTerminal.waitFor({ state: "hidden" });
+            await newTerminalMenu.waitFor({ state: "hidden" });
+            assert.equal((await workspaceHandle.terminals.list()).entries.length, 0);
+            await areaToggle.click();
             await openSettings();
             await actions[0].click();
             await draft.waitFor({ state: "hidden" });
@@ -333,6 +404,8 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
             const moved = entries.find((entry) => entry.projectId === targetProject.projectId && entry.title === title);
             assert.equal(moved?.workspaceDirectory, target);
             assert(!entries.some((entry) => entry.id === workspace.id));
+            await assertInHistory(chat.id, workspace.id, "Fixture chat");
+            await assertInHistory(created.agent.id, workspace.id, created.agent.title);
             await page.waitForURL((url) => url.pathname.endsWith(`/workspace/${moved.id}`));
             await openSettings();
             await page.getByText("Сессии и терминалы", { exact: true }).waitFor();
@@ -343,7 +416,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
                 predicate: ({ payload }) => String(payload).includes('"archive_workspace_response"'),
                 timeout: 30_000,
               }),
-              actions[4].click(),
+              actions[3].click(),
             ]);
             const result = JSON.parse(String(archiveFrame.payload)).message.payload;
             assert.equal(result.workspaceId, moved.id);
@@ -358,7 +431,17 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
             await newAreaName.waitFor({ state: "hidden" });
             const sessionArea = (await client.workspaces.list({})).entries.find((entry) => entry.title === "Project modal session fixture");
             assert(sessionArea);
-            assert((await client.agents.list({})).entries.some(({ agent }) => agent.workspaceId === sessionArea.id));
+            const firstSession = (await client.agents.list({})).entries.find(({ agent }) => agent.workspaceId === sessionArea.id)?.agent;
+            assert(firstSession);
+            const sidebarNewArea = button("Новая область в проекте target").locator("../..");
+            const newAreaToggle = button("Сессии области Project modal session fixture");
+            if (await newAreaToggle.getAttribute("aria-expanded") !== "true") await newAreaToggle.click();
+            const firstSessionTitle = firstSession.title || "Сессия без названия";
+            await sidebarNewArea.getByRole("button", { name: `Меню сессии ${firstSessionTitle}`, exact: true }).click();
+            await button("Закрыть сессию").click();
+            await page.getByText("Сессия закрыта", { exact: true }).waitFor();
+            await sidebarNewArea.getByRole("button", { name: `Открыть сессию ${firstSessionTitle}`, exact: true }).waitFor({ state: "hidden" });
+            await assertInHistory(firstSession.id, sessionArea.id, firstSession.title);
             await button("Новая область в проекте target").click();
             await newAreaName.fill("Project modal terminal fixture");
             await choose("Открыть в новой области: Сессия", "Терминал");
@@ -381,7 +464,8 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
     }
   } finally {
     await browser?.close();
-    await client?.close();
+    await client?.dispose();
+    await daemon?.close();
     if (started) paseo("daemon", "stop");
     await rm(home, { recursive: true, force: true });
   }
