@@ -1476,7 +1476,7 @@ function AreaBranchBadge({ branch, path, kind, theme }: { branch: string; path: 
           y: y + h + 8 + 180 <= height ? y + h + 8 : Math.max(12, y - 188),
         }));
       }}
-      style={{ alignSelf: "flex-start", minHeight: 20, maxWidth: "100%", flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 6, borderRadius: 6, backgroundColor: c.surface2 }}>
+      style={{ alignSelf: "flex-start", minHeight: 28, maxWidth: "100%", flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 6, borderRadius: 6, backgroundColor: c.surface2 }}>
       <Icon name="GitBranch" size={11} color={c.foregroundMuted} />
       <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 11, color: c.foregroundMuted }}>{branch}</Text>
     </Pressable>
@@ -3201,7 +3201,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                                       disabled={chatMutationPending} hitSlop={4}
                                       onPress={(event) => { event.stopPropagation(); openNewAreaAgent(chat.id); }}
                                       style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4,
-                                        minHeight: 20, paddingHorizontal: 6, borderRadius: 6, backgroundColor: c.accent,
+                                        minHeight: 28, paddingHorizontal: 6, borderRadius: 6, backgroundColor: c.accent,
                                         opacity: chatMutationPending || pressed ? 0.65 : 1 })}>
                                       <Icon name="Plus" size={11} color={c.accentForeground} />
                                       <Icon name="Bot" size={12} color={c.accentForeground} />
@@ -3221,6 +3221,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                               aria-expanded={expanded}
                               onPress={() => setExpandedAreaIds(prev => ({ ...prev, [chat.id]: !prev[chat.id] }))}
                               style={({ pressed }) => ({ width: layout.compact ? 26 : 22, height: btnSize, borderRadius: 8,
+                                transform: [{ translateY: expanded ? -4 : 0 }],
                                 alignItems: "center", justifyContent: "center", backgroundColor: pressed ? c.surface2 : undefined })}>
                               <Icon name={expanded ? "ChevronDown" : "ChevronRight"} size={14} color={c.foregroundMuted} />
                             </Pressable>
@@ -3230,6 +3231,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                               onPress={() => openAreaActions(chat)}
                               style={({ pressed }) => ({
                                 width: btnSize, height: btnSize, borderRadius: 8,
+                                transform: [{ translateY: expanded ? -4 : 0 }],
                                 alignItems: "center", justifyContent: "center",
                                 backgroundColor: pressed ? c.surface2 : undefined,
                               })}
