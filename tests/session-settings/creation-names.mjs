@@ -92,7 +92,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
     });
 
     browser = await chromium.launch({ executablePath: process.env.PASEO_CHROMIUM_EXECUTABLE });
-    for (const width of [390, 1280]) {
+    for (const width of (process.env.PASEO_TEST_WIDTHS ?? "390,1280").split(",").map(Number)) {
       await t.test(`${width}px`, async () => {
         const page = await browser.newPage({
           viewport: { width, height: 844 },
@@ -155,8 +155,26 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
         try {
           await enterSidebar();
           await openArea();
+          await button("Закрыть").last().click();
+          const quick = button(`Новая сессия в области ${title}`);
+          if (await areaToggle.getAttribute("aria-expanded") === "true") await areaToggle.click();
+          assert.equal(await quick.count(), 0);
+          const statusBox = await areaToggle.getByLabel(/^Неактивных сессий:/).boundingBox();
+          await areaToggle.click();
+          await quick.waitFor();
+          const [quickBox, branchBox] = await Promise.all([quick.boundingBox(), page.getByLabel("Ветка области hq-next", { exact: true }).boundingBox()]);
+          assert(quickBox.x + quickBox.width <= branchBox.x, "quick creation precedes the Git badge");
+          assert.equal(quickBox.height, branchBox.height, "action and branch badges share a height");
+          assert.equal(quickBox.height, statusBox.height, "expanded action matches collapsed status badges");
+          assert(quickBox.width <= 42, "paired icons stay compact");
+          await capture("area-quick-session");
+          await quick.click();
+          await page.getByRole("textbox", { name: "Название нового агента", exact: true }).waitFor();
+          assert.equal(await areaToggle.getAttribute("aria-expanded"), "true", "quick action does not collapse the area");
+          await button("Закрыть").last().click();
+          await openArea();
           const info = () => page.getByRole("dialog").last();
-          await button("Меню агента Fixture chat").click();
+          await page.getByRole("dialog").last().getByRole("button", { name: "Меню агента Fixture chat", exact: true }).click();
           const snapshot = (await client.agents.list()).entries.find(({ agent }) => agent.id === chat.id).agent;
           await info().getByLabel(`Провайдер агента: ${snapshot.provider.split("/")[0]}`, { exact: true }).waitFor();
           await info().getByLabel(`Модель агента: ${snapshot.model || snapshot.provider.split("/").slice(1).join("/") || "Не указана"}`, { exact: true }).waitFor();
@@ -164,7 +182,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await info().getByLabel(`Рабочая папка сессии: ${workspace.workspaceDirectory}`, { exact: true }).waitFor();
           await capture("agent-session-information");
           await button("Закрыть").last().click();
-          await button("Меню терминала Fixture terminal").click();
+          await page.getByRole("dialog").last().getByRole("button", { name: "Меню терминала Fixture terminal", exact: true }).click();
           await info().getByLabel("Текущая ветка: hq-next", { exact: true }).waitFor();
           await info().getByLabel(`Рабочая папка сессии: ${workspace.workspaceDirectory}`, { exact: true }).waitFor();
           assert.equal(await info().getByText("Провайдер", { exact: true }).count(), 0);
@@ -226,6 +244,15 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           const terminalArea = (await client.workspaces.list()).entries.find(item => item.title === `Область терминала ${width}`);
           assert(terminalArea);
           assert((await client.workspaces.ref(terminalArea.id).terminals.list()).entries.some(item => item.name === `Первый терминал ${width}`));
+          await enterSidebar();
+          const plainToggle = button(`Сессии области Область терминала ${width}`);
+          if (await plainToggle.getAttribute("aria-expanded") !== "true") await plainToggle.click();
+          assert.equal(await plainToggle.getByLabel(/^Ветка области /).count(), 0);
+          await capture("area-without-git");
+          await button(`Новая сессия в области Область терминала ${width}`).click();
+          await button("Терминал").click();
+          await page.getByLabel(`Папка терминала: ${terminalArea.workspaceDirectory}`, { exact: true }).waitFor();
+          await button("Закрыть").last().click();
           assert.deepEqual(errors, []);
         } catch (error) {
           console.error(await page.locator("body").innerText());

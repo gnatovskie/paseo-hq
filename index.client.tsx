@@ -3103,9 +3103,24 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                                 {!expanded ? (
                                   <AreaSessionBadges sessions={sessions} terminalCount={areaTerminals.length}
                                     theme={theme} platform={layout.platform} />
-                                ) : areaBranches[chat.id] ?? serverState.areaWorktrees[chat.id]?.branch ? (
-                                  <AreaBranchBadge branch={(areaBranches[chat.id] ?? serverState.areaWorktrees[chat.id]?.branch)!} path={chat.workspaceDirectory} kind={areaCheckoutKinds[chat.id]} theme={theme} />
-                                ) : null}
+                                ) : (
+                                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                                    <Pressable accessibilityRole="button" accessibilityLabel={`Новая сессия в области ${title}`}
+                                      disabled={chatMutationPending} hitSlop={4}
+                                      onPress={(event) => { event.stopPropagation(); openNewAreaAgent(chat.id); }}
+                                      style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4,
+                                        minHeight: 20, paddingHorizontal: 6, borderRadius: 6, backgroundColor: c.accent,
+                                        opacity: chatMutationPending || pressed ? 0.65 : 1 })}>
+                                      <Icon name="Plus" size={11} color={c.accentForeground} />
+                                      <Icon name="Bot" size={12} color={c.accentForeground} />
+                                    </Pressable>
+                                    {areaBranches[chat.id] ?? serverState.areaWorktrees[chat.id]?.branch ? (
+                                      <View style={{ flexShrink: 1, minWidth: 0 }}>
+                                        <AreaBranchBadge branch={(areaBranches[chat.id] ?? serverState.areaWorktrees[chat.id]?.branch)!} path={chat.workspaceDirectory} kind={areaCheckoutKinds[chat.id]} theme={theme} />
+                                      </View>
+                                    ) : null}
+                                  </View>
+                                )}
                               </View>
                               {isPinned ? <Icon name="Pin" size={12} color={c.accent} /> : null}
                             </Pressable>
