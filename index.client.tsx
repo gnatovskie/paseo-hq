@@ -1026,8 +1026,9 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const [confirmRemoveProject, setConfirmRemoveProject] = useState(false);
   const [savingProject, setSavingProject] = useState(false);
 
-  // Модалка настроек области
+  // Панель области и ее настройки
   const [editingChatId, setEditingChatId] = useState<string | null>(null);
+  const [areaSettingsOpen, setAreaSettingsOpen] = useState(false);
   const [draftChatTitle, setDraftChatTitle] = useState("");
   const [savingChat, setSavingChat] = useState(false);
   const [areaSettings, setAreaSettings] = useState<z.infer<typeof areaSettingsRpc.output> | null>(null);
@@ -1631,11 +1632,12 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     }
   };
 
-  const openChatSettings = (chat: PaseoWorkspace) => {
+  const openAreaActions = (chat: PaseoWorkspace) => {
     if (chatMutationPending) return;
     setAreaSettings(null);
     setAreaSettingsError(null);
     setEditingChatId(chat.id);
+    setAreaSettingsOpen(false);
     setAgentMenuId(null);
     setChatTransferOpen(false);
     const agent = latestAgentByWorkspace[chat.id];
@@ -1698,9 +1700,10 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     setSavingChat(true);
     try {
       const nextTitle = draftChatTitle.trim() || null;
-      await paseo.workspaces.ref(editingChat.id).setTitle(nextTitle);
+      const { title } = await paseo.workspaces.ref(editingChat.id).setTitle(nextTitle);
+      setDraftChatTitle(chatTitle({ ...editingChat, title }, editingChatAgent));
       await reloadAll();
-      setEditingChatId(null);
+      setAreaSettingsOpen(false);
       toast.show("Название области обновлено", { variant: "success" });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Не удалось переименовать область");
@@ -2278,15 +2281,15 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                             </Pressable>
                             <Pressable
                               accessibilityRole="button"
-                              accessibilityLabel={`Настройки области ${title}`}
-                              onPress={() => openChatSettings(chat)}
+                              accessibilityLabel={`Действия области ${title}`}
+                              onPress={() => openAreaActions(chat)}
                               style={({ pressed }) => ({
                                 width: btnSize, height: btnSize, borderRadius: 8,
                                 alignItems: "center", justifyContent: "center",
                                 backgroundColor: pressed ? c.surface2 : undefined,
                               })}
                             >
-                              <Icon name="MoreHorizontal" size={16} color={c.foregroundMuted} />
+                              <Icon name="LayoutGrid" size={16} color={c.foreground} />
                             </Pressable>
                           </View>
                           {expanded ? (
@@ -3114,9 +3117,8 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
         </Modal.Content>
       </Modal>
 
-      {/* Модальное окно настроек области */}
       <Modal
-        title="Настройки области"
+        title={editingChat ? chatTitle(editingChat, editingChatAgent) : "Область"}
         open={Boolean(editingChat)}
         onOpenChange={(open) => {
           if (!open) setEditingChatId(null);
@@ -3160,6 +3162,13 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                   theme={theme}
                 />
                 <ChatActionButton
+                  label="Настройки области"
+                  icon="Settings"
+                  disabled={chatMutationPending}
+                  onPress={() => setAreaSettingsOpen(true)}
+                  theme={theme}
+                />
+                <ChatActionButton
                   label="Перенести в проект"
                   icon="ArrowRightLeft"
                   disabled={chatMutationPending}
@@ -3176,6 +3185,96 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                 />
               </View>
 
+              <View
+                style={{
+                  borderRadius: 12,
+                  backgroundColor: c.surface2,
+                  borderWidth: 1,
+                  borderColor: c.border,
+                  padding: 12,
+                  gap: 10,
+                }}
+              >
+                <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>Сессии и терминалы</Text>
+                {editingChatEntries.map((entry) => {
+                  const ag = entry.agent;
+                  const agTitle = sessionTitle(ag);
+                  const isCurrent = editingChatAgent?.id === ag.id;
+                  return (
+                    <View
+                      key={ag.id}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 8,
+                        paddingRight: 10,
+                        borderRadius: 8,
+                        backgroundColor: c.surface1,
+                        borderWidth: 1,
+                        borderColor: isCurrent ? c.accent : c.border,
+                      }}
+                    >
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Открыть сессию ${agTitle}`}
+                        onPress={() => {
+                          setEditingChatId(null);
+                          jumpToAgent(ag.id);
+                        }}
+                        style={({ pressed }) => ({
+                          flex: 1,
+                          minWidth: 0,
+                          minHeight: 44,
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 6,
+                          paddingHorizontal: 10,
+                          paddingVertical: 8,
+                          opacity: pressed ? 0.7 : 1,
+                        })}
+                      >
+                        <SessionSummary
+                          agent={ag}
+                          branch={areaSettings?.launchBranches[ag.id]}
+                          theme={theme}
+                          platform={layout.platform}
+                        />
+                        <Icon name="ChevronRight" size={14} color={c.foregroundMuted} />
+                      </Pressable>
+                      <ChatActionButton
+                        label={`Меню сессии ${agTitle}`}
+                        icon="MoreHorizontal"
+                        disabled={chatMutationPending}
+                        quiet
+                        onPress={() => openAgentMenu(ag.id)}
+                        theme={theme}
+                      />
+                    </View>
+                  );
+                })}
+                {editingChatTerminals.map((terminal) => (
+                  <TerminalRow key={terminal.id} terminal={terminal} theme={theme}
+                    disabled={chatMutationPending}
+                    onMenu={() => openTerminalMenu(terminal.id)}
+                    onOpen={() => {
+                      setEditingChatId(null);
+                      openAreaTerminal(terminal);
+                    }} />
+                ))}
+              </View>
+            </View>
+          ) : null}
+        </Modal.Content>
+      </Modal>
+
+      <Modal
+        title="Настройки области"
+        open={Boolean(editingChat && areaSettingsOpen)}
+        onOpenChange={setAreaSettingsOpen}
+      >
+        <Modal.Content>
+          {editingChat && areaSettingsOpen ? (
+            <View style={{ gap: 16 }}>
               <View
                 style={{
                   padding: 12,
@@ -3274,84 +3373,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                     {areaSettingsError ?? "Загружаю настройки области…"}
                   </Text>
                 )}
-              </View>
-
-              <View
-                style={{
-                  borderRadius: 12,
-                  backgroundColor: c.surface2,
-                  borderWidth: 1,
-                  borderColor: c.border,
-                  padding: 12,
-                  gap: 10,
-                }}
-              >
-                <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>Сессии и терминалы</Text>
-                {editingChatEntries.map((entry) => {
-                  const ag = entry.agent;
-                  const agTitle = sessionTitle(ag);
-                  const isCurrent = editingChatAgent?.id === ag.id;
-                  return (
-                    <View
-                      key={ag.id}
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: 8,
-                        paddingRight: 10,
-                        borderRadius: 8,
-                        backgroundColor: c.surface1,
-                        borderWidth: 1,
-                        borderColor: isCurrent ? c.accent : c.border,
-                      }}
-                    >
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel={`Открыть сессию ${agTitle}`}
-                        onPress={() => {
-                          setEditingChatId(null);
-                          jumpToAgent(ag.id);
-                        }}
-                        style={({ pressed }) => ({
-                          flex: 1,
-                          minWidth: 0,
-                          minHeight: 44,
-                          flexDirection: "row",
-                          alignItems: "center",
-                          gap: 6,
-                          paddingHorizontal: 10,
-                          paddingVertical: 8,
-                          opacity: pressed ? 0.7 : 1,
-                        })}
-                      >
-                        <SessionSummary
-                          agent={ag}
-                          branch={areaSettings?.launchBranches[ag.id]}
-                          theme={theme}
-                          platform={layout.platform}
-                        />
-                        <Icon name="ChevronRight" size={14} color={c.foregroundMuted} />
-                      </Pressable>
-                      <ChatActionButton
-                        label={`Меню сессии ${agTitle}`}
-                        icon="MoreHorizontal"
-                        disabled={chatMutationPending}
-                        quiet
-                        onPress={() => openAgentMenu(ag.id)}
-                        theme={theme}
-                      />
-                    </View>
-                  );
-                })}
-                {editingChatTerminals.map((terminal) => (
-                  <TerminalRow key={terminal.id} terminal={terminal} theme={theme}
-                    disabled={chatMutationPending}
-                    onMenu={() => openTerminalMenu(terminal.id)}
-                    onOpen={() => {
-                      setEditingChatId(null);
-                      openAreaTerminal(terminal);
-                    }} />
-                ))}
               </View>
             </View>
           ) : null}

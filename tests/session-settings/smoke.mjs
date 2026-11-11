@@ -106,8 +106,10 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           if (new URL(socket.url()).pathname === "/ws") daemonSocket = socket;
         });
         const button = (name) => page.getByRole("button", { name, exact: true });
-        const areaSettings = button(`Настройки области ${title}`);
-        const openSettings = () => areaSettings.click();
+        const areaActions = button(`Действия области ${title}`);
+        const openArea = () => areaActions.click();
+        const settings = button("Настройки области");
+        const openSettings = () => settings.click();
         const areaToggle = button(`Сессии области ${title}`);
         const sidebar = button("Новая область в проекте source").locator("../..");
         const sidebarSession = sidebar.getByRole("button", { name: "Открыть сессию Fixture chat", exact: true });
@@ -126,6 +128,11 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
         const archive = page.getByRole("switch", { name: "Архивировать исходную область", exact: true });
         const history = page.getByRole("switch", { name: "Перенести историю последней сессии", exact: true });
         const draft = page.getByPlaceholder("Новая область", { exact: true });
+        const areaContents = page.getByText("Сессии и терминалы", { exact: true });
+        const closeSettings = async () => {
+          await button("Close").last().click();
+          await draft.waitFor({ state: "hidden" });
+        };
         const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
         const capture = (name) => output && page.screenshot({ path: join(output, `${name}-${width}.png`) });
 
@@ -148,6 +155,11 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await sidebarSession.waitFor();
           await sidebarTerminal.waitFor();
           await sidebarTerminal.getByText(workspace.workspaceDirectory, { exact: true }).waitFor();
+          const areaGlyph = await areaActions.locator("svg").innerHTML();
+          for (const menu of ["Меню сессии Fixture chat", "Меню терминала Fixture terminal"]) {
+            const menuGlyph = await sidebar.getByRole("button", { name: menu, exact: true }).locator("svg").innerHTML();
+            assert.notEqual(areaGlyph, menuGlyph, "area actions use a different icon from row menus");
+          }
           assert.equal(await sidebar.getByText(/^\d+ сесси[ийя]$/).count(), 0);
           assert.equal(await button(`Новая сессия в области ${title}`).count(), 0, "creation belongs in area settings");
           const [areaTitleBox, areaBox, sessionTitleBox, statusBox, modelBox, settingsBox] = await Promise.all([
@@ -156,7 +168,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
             sidebarSession.getByText("Fixture chat", { exact: true }).boundingBox(),
             sidebarSession.getByLabel(/^Статус сессии: /).boundingBox(),
             sidebarSession.getByText("Codex", { exact: true }).locator("..").boundingBox(),
-            areaSettings.boundingBox(),
+            areaActions.boundingBox(),
           ]);
           assert(areaTitleBox && areaBox && sessionTitleBox && statusBox && modelBox && settingsBox);
           assert(sessionTitleBox.x > areaTitleBox.x, "nested session is indented");
@@ -204,15 +216,17 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           if (await areaToggle.getAttribute("aria-expanded") === "true") await areaToggle.click();
           await sidebarSession.waitFor({ state: "hidden" });
           await sidebarTerminal.waitFor({ state: "hidden" });
-          await openSettings();
-          await draft.waitFor();
+          await openArea();
+          await areaContents.waitFor();
+          assert.equal(await draft.count(), 0, "area actions should open without the settings form");
+          assert.equal(await page.getByText("Иконка области", { exact: true }).count(), 0);
           assert.equal(await archive.count(), 0, "transfer options should open only after pressing the icon");
           const actions = ["Закрепить область", "Скопировать путь к папке проекта",
             "Перенести в проект", "Архивировать область"].map(button);
           const createSession = button("Новая сессия");
           const createTerminal = button("Новый терминал");
           await actions[0].click({ trial: true });
-          const boxes = await Promise.all([createSession, createTerminal, ...actions].map(async (action) => {
+          const boxes = await Promise.all([createSession, createTerminal, ...actions.slice(0, 2), settings, ...actions.slice(2)].map(async (action) => {
             assert.equal((await action.textContent()).trim(), "");
             assert.equal(await action.locator("svg").count(), 1);
             return action.boundingBox();
@@ -220,25 +234,30 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           assert(boxes.every((box, index) => box && box.y === boxes[0].y && (!index || box.x > boxes[index - 1].x)));
           const lastAction = boxes.at(-1);
           assert(lastAction.x + lastAction.width <= width);
-          assert(boxes[0].y + boxes[0].height < (await draft.boundingBox()).y);
-          await page.getByText("Сессии и терминалы", { exact: true }).waitFor();
+          assert(boxes[0].y + boxes[0].height < (await areaContents.boundingBox()).y);
           const chatRows = page.getByRole("button", { name: /^Открыть сессию / });
           assert.equal(await chatRows.count(), 2);
-          await button("Ветка по умолчанию: Текущая ветка · hq-next").waitFor();
           await button("Открыть сессию Fixture chat").getByLabel(`Ветка при запуске: ${firstBranch}`).waitFor();
           await button("Открыть сессию Second fixture chat").getByLabel("Ветка при запуске: hq-next").waitFor();
           await button("Открыть терминал Fixture terminal").waitFor();
           assert.equal(await page.getByRole("button", { name: /^(ID|Скопировать ID.*)$/ }).count(), 0);
           assert.equal(await page.getByText(/^ID: [a-f\d]{8}/).count(), 0);
-          await capture("session-settings");
+          await capture("area-actions");
+          const firstChatLabel = await chatRows.first().getAttribute("aria-label");
+          const firstChat = firstChatLabel === "Открыть сессию Fixture chat" ? chat : secondChat;
 
+          await openSettings();
+          await draft.waitFor();
+          assert.equal(await draft.inputValue(), title);
+          await button("Иконка области: Без иконки").waitFor();
+          await button("Ветка по умолчанию: Текущая ветка · hq-next").waitFor();
           const generate = button("Сгенерировать название");
+          await generate.click({ trial: true });
+          await capture("area-details");
           const fieldBox = await draft.boundingBox();
           const generateBox = await generate.boundingBox();
           assert(generateBox.x >= fieldBox.x + fieldBox.width);
           assert(Math.abs(generateBox.y + generateBox.height / 2 - fieldBox.y - fieldBox.height / 2) < 2);
-          const firstChatLabel = await chatRows.first().getAttribute("aria-label");
-          const firstChat = firstChatLabel === "Открыть сессию Fixture chat" ? chat : secondChat;
           assert(daemonSocket);
           const [generationFrame] = await Promise.all([
             daemonSocket.waitForEvent("framesent", {
@@ -248,13 +267,14 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           ]);
           assert.equal(JSON.parse(String(generationFrame.payload)).message.input.agentId, firstChat.id);
           await generate.click({ trial: true });
+          await draft.fill("Unsaved title");
+          await closeSettings();
 
           assert.equal(await copySessionLink.count(), 0, "copy belongs in the session menu");
           await actions[1].click();
           await page.getByText("Путь скопирован", { exact: true }).waitFor();
           assert.equal(await clipboard(), source);
 
-          await draft.fill("Unsaved title");
           await transfer.click();
           await page.getByText("Перенос области в проект", { exact: true }).waitFor();
           await button("Целевой проект: target").waitFor();
@@ -265,7 +285,9 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await capture("session-transfer");
           await button("Close").last().click();
           await archive.waitFor({ state: "hidden" });
+          await openSettings();
           assert.equal(await draft.inputValue(), "Unsaved title");
+          await closeSettings();
 
           const selectedChat = link.endsWith(`/${chat.id}`) ? secondChat : chat;
           let selectedTitle = selectedChat.id === chat.id ? "Fixture chat" : "Second fixture chat";
@@ -303,7 +325,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
             async (expected) => await navigator.clipboard.readText() === expected,
             link.replace(/[^/]+$/, selectedChat.id),
           );
-          assert(await draft.isVisible(), "copying a session link should keep area settings open");
+          assert(await areaContents.isVisible(), "copying a session link should keep area actions open");
           assert(daemonSocket);
           await Promise.all([
             daemonSocket.waitForEvent("framesent", {
@@ -314,39 +336,53 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
             }),
             openChat.click(),
           ]);
-          await draft.waitFor({ state: "hidden" });
+          await areaContents.waitFor({ state: "hidden" });
           await page.getByText("Start chatting with this agent...", { exact: true }).filter({ visible: true }).first().waitFor();
 
           if (width === 1280) {
+            await openArea();
+            await openSettings();
+            await draft.fill("  Renamed area fixture  ");
+            await button("Сохранить название").click();
+            await draft.waitFor({ state: "hidden" });
+            assert(await areaContents.isVisible(), "saving closes settings and returns to the area");
+            assert.equal((await workspaceHandle.refresh()).title, "Renamed area fixture");
+            await openSettings();
+            assert.equal(await draft.inputValue(), "Renamed area fixture");
+            await draft.fill(title);
+            await button("Сохранить название").click();
+            await draft.waitFor({ state: "hidden" });
             await openSettings();
             await choose("Иконка области: Без иконки", "📦");
             await button("Иконка области: 📦").waitFor();
-            await button("Close").last().click();
+            await closeSettings();
             await areaToggle.getByText("📦", { exact: true }).waitFor();
             await openSettings();
             await choose("Иконка области: 📦", "Без иконки");
             await button("Иконка области: Без иконки").waitFor();
-            await button("Close").last().click();
+            await closeSettings();
             await areaToggle.getByText("📦", { exact: true }).waitFor({ state: "hidden" });
             await openSettings();
             await choose("Ветка по умолчанию: Текущая ветка · hq-next", firstBranch);
             await button(`Ветка по умолчанию: ${firstBranch}`).waitFor();
+            await closeSettings();
             await createSession.click();
             await page.getByText(`Переключите область на ветку «${firstBranch}», чтобы создать сессию`).waitFor();
             assert.equal(git("branch", "--show-current"), "hq-next");
             assert.equal((await client.agents.list({})).entries.filter(({ agent }) => agent.workspaceId === workspace.id).length, 2);
+            await openSettings();
             await choose(`Ветка по умолчанию: ${firstBranch}`, "hq-next");
             await button("Ветка по умолчанию: hq-next").waitFor();
+            await closeSettings();
             await createSession.click();
-            await draft.waitFor({ state: "hidden" });
+            await areaContents.waitFor({ state: "hidden" });
             const created = (await client.agents.list({})).entries
               .find(({ agent }) => agent.workspaceId === workspace.id && agent.id !== chat.id && agent.id !== secondChat.id);
             assert(created, "the settings plus creates a session in the same area");
             assert.equal(created.agent.cwd, workspace.workspaceDirectory);
-            await openSettings();
-            await button("Ветка по умолчанию: hq-next").waitFor();
+            await openArea();
             const closedTitle = created.agent.title || "Сессия без названия";
-            const areaDialog = page.getByRole("dialog").filter({ has: draft });
+            const areaDialog = page.getByRole("dialog").filter({ has: areaContents });
             await areaDialog.getByRole("button", { name: `Меню сессии ${closedTitle}`, exact: true }).click();
             await button("Закрыть сессию").click();
             await page.getByText("Сессия закрыта", { exact: true }).waitFor();
@@ -360,7 +396,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
             assert(newTerminal);
 
             await enterSidebar();
-            await openSettings();
+            await openArea();
             const fixtureMenu = areaDialog.getByRole("button", { name: "Меню терминала Fixture terminal", exact: true });
             await fixtureMenu.click();
             const copyTerminalPath = button("Скопировать путь терминала");
@@ -375,7 +411,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
             await fixtureMenu.waitFor({ state: "hidden" });
             assert.deepEqual((await workspaceHandle.terminals.list()).entries.map((terminal) => terminal.id), [newTerminal.id]);
             await areaDialog.getByRole("button", { name: "Close", exact: true }).click();
-            await draft.waitFor({ state: "hidden" });
+            await areaContents.waitFor({ state: "hidden" });
 
             if (await areaToggle.getAttribute("aria-expanded") !== "true") await areaToggle.click();
             const newTerminalMenu = sidebar.getByRole("button", { name: `Меню терминала ${newTerminal.name}`, exact: true });
@@ -389,10 +425,10 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
             await newTerminalMenu.waitFor({ state: "hidden" });
             assert.equal((await workspaceHandle.terminals.list()).entries.length, 0);
             await areaToggle.click();
-            await openSettings();
+            await openArea();
             await actions[0].click();
-            await draft.waitFor({ state: "hidden" });
-            await openSettings();
+            await areaContents.waitFor({ state: "hidden" });
+            await openArea();
             await button("Открепить область").waitFor();
             await transfer.click();
             await history.click();
@@ -405,8 +441,8 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
             await assertInHistory(chat.id, workspace.id, "Fixture chat");
             await assertInHistory(created.agent.id, workspace.id, created.agent.title);
             await page.waitForURL((url) => url.pathname.endsWith(`/workspace/${moved.id}`));
-            await openSettings();
-            await page.getByText("Сессии и терминалы", { exact: true }).waitFor();
+            await openArea();
+            await areaContents.waitFor();
             assert.equal(await page.getByRole("button", { name: /^Открыть сессию / }).count(), 1);
             assert(daemonSocket);
             const [archiveFrame] = await Promise.all([
@@ -419,7 +455,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
             const result = JSON.parse(String(archiveFrame.payload)).message.payload;
             assert.equal(result.workspaceId, moved.id);
             assert.equal(result.error, null);
-            await draft.waitFor({ state: "hidden" });
+            await areaContents.waitFor({ state: "hidden" });
             const remaining = await client.workspaces.list({});
             assert(!remaining.entries.some((entry) => entry.id === moved.id));
             await button("Новая область в проекте target").click();
