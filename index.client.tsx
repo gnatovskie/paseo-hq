@@ -4248,7 +4248,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                           theme={theme}
                           platform={layout.platform}
                         />
-                        <Icon name="ChevronRight" size={14} color={c.foregroundMuted} />
                       </Pressable>
                       {serverState.pinnedSessions[ag.id] ? <Icon name="Pin" size={12} color={c.accent} /> : null}
                       <ChatActionButton
@@ -4283,7 +4282,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                         <Text numberOfLines={1} style={{ flex: 1, color: c.foreground, fontSize: 13 }}>
                           {agentTitle(agent)}
                         </Text>
-                        <Icon name="ChevronRight" size={14} color={c.foregroundMuted} />
                       </Pressable>
                     ))}
                     {closedAgents.isError ? (
