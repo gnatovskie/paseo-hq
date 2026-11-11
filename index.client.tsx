@@ -926,13 +926,13 @@ function TerminalRow({ terminal, label, onOpen, onMenu, disabled, theme, nested 
         accessibilityLabel={`Открыть терминал ${label}`}
         onPress={onOpen}
         style={({ pressed }) => ({
-          flex: 1, minWidth: 0, flexDirection: "row", alignItems: "flex-start", minHeight: 44,
+          flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", minHeight: 44,
           gap: nested ? NESTED_ITEM_GAP : 7,
           paddingLeft: nested ? NESTED_ITEM_INSET : 10, paddingRight: 10, paddingVertical: 5, borderRadius: 8,
           backgroundColor: pressed ? c.surface2 : undefined,
         })}
       >
-        <View style={{ paddingTop: 2 }}>
+        <View>
           <Icon name="Terminal" size={SESSION_STATUS_SIZE} color={c.foregroundMuted} />
         </View>
         <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
