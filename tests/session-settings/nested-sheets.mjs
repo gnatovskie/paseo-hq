@@ -399,6 +399,23 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
             await openArea();
             assert.equal(await areaButton("Открыть терминал Fixture terminal").getAttribute("aria-selected"), "true");
             assert.notEqual(await areaButton("Открыть агента Fixture chat").getAttribute("aria-selected"), "true");
+            await button("Закрыть").last().click();
+            await page.getByRole("dialog").waitFor({ state: "hidden" });
+            await page.getByTestId("workspace-split-pane-menu").click();
+            await page.getByTestId("workspace-split-pane-right").click();
+            await sidebarSession.click();
+            const selectedAgentTab = page.locator(`[data-testid="workspace-tab-agent_${chat.id}"][aria-selected="true"]`);
+            await selectedAgentTab.click();
+            await until(async () => await sidebarSession.getAttribute("aria-selected") === "true", "split view follows the focused agent pane");
+            await page.getByTestId(`workspace-tab-terminal_${fixtureTerminal.id}`).click();
+            await until(async () => await sidebarTerminal.getAttribute("aria-selected") === "true", "split view follows the focused terminal pane");
+            await page.getByTestId("workspace-new-tab-panel").click({ position: { x: 20, y: 150 } });
+            await until(async () => await sidebarTerminal.getAttribute("aria-selected") !== "true", "empty focused pane clears the session selection");
+            await page.getByTestId(`workspace-tab-terminal_${fixtureTerminal.id}`).click();
+            await until(async () => await sidebarTerminal.getAttribute("aria-selected") === "true", "returning to the terminal pane restores its selection");
+            await openArea();
+            assert.equal(await areaButton("Открыть терминал Fixture terminal").getAttribute("aria-selected"), "true");
+            assert.notEqual(await areaButton("Открыть агента Fixture chat").getAttribute("aria-selected"), "true");
           }
           if (width === 1280) await button("Закрыть").last().click();
           const terminalsBefore = (await workspaceHandle.terminals.list()).entries.length;
