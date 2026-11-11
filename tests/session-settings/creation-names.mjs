@@ -218,7 +218,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await button("Новая сессия").click();
           const agentName = page.getByRole("textbox", { name: "Название нового агента", exact: true });
           const terminalName = page.getByRole("textbox", { name: "Название нового терминала", exact: true });
-          assert.equal(await agentName.inputValue(), "Агент без названия");
+          assert.equal(await agentName.inputValue(), "");
           await agentName.fill(`Проверка агента ${width}`);
           assert.equal(await button("Сгенерировать название сессии").count(), 0);
           const editAtEnd = async (field) => {
@@ -253,12 +253,12 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await enterSidebar();
           await openArea();
           await button("Новая сессия").click();
-          assert.equal(await agentName.inputValue(), "Агент без названия", "a new form shows its actual default name");
+          assert.equal(await agentName.inputValue(), "", "a new agent form starts without a title");
           await button("Терминал").click();
           const existingTerminals = (await client.terminals.list()).entries.filter(item => item.cwd === workspace.workspaceDirectory);
           assert.equal(await terminalName.inputValue(), `Terminal ${existingTerminals.length + 1}`);
           await button("Агент").click();
-          assert.equal(await agentName.inputValue(), "Агент без названия");
+          assert.equal(await agentName.inputValue(), "");
           await button("Терминал").click();
           await terminalName.fill(`Терминал ${width}`);
           await editAtEnd(terminalName);
@@ -269,7 +269,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await enterSidebar();
           await button("Новая область в проекте target").click();
           await newAreaName.fill(`Новая ${width}`);
-          assert.equal(await agentName.inputValue(), "Агент без названия");
+          assert.equal(await agentName.inputValue(), "");
           await editAtEnd(agentName);
           await selectCodex();
           await assertSettings(changedSettings);
@@ -281,7 +281,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           const firstAgent = (await client.agents.list({})).entries.find(({ agent }) => agent.workspaceId === area.id).agent;
           assert.equal(firstAgent.currentModeId, changedSettings.modeId);
           assert.equal(firstAgent.thinkingOptionId, changedSettings.thinkingOptionId);
-          assert((await client.agents.list({})).entries.some(({ agent }) => agent.workspaceId === area.id && agent.title === "Агент без названия"));
+          assert(!firstAgent.title, "an empty agent title stays unset for automatic naming");
           await enterSidebar();
           await button("Новая область в проекте target").click();
           await newAreaName.fill(`Область терминала ${width}`);

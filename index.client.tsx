@@ -1586,7 +1586,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     setModeId(next.modeId);
     setThinkingOptionId(next.thinkingOptionId);
   };
-  const [newSessionTitle, setNewSessionTitle] = useState(DEFAULT_AGENT_TITLE);
+  const [newSessionTitle, setNewSessionTitle] = useState("");
   const [newTerminalTitle, setNewTerminalTitle] = useState<string | null>(null);
   const [newSessionKind, setNewSessionKind] = useState<"agent" | "terminal">("agent");
   const [newAgentModelsError, setNewAgentModelsError] = useState<string | null>(null);
@@ -2040,7 +2040,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   };
 
   const openNewArea = (group: ProjectGroup) => {
-    setNewSessionTitle(DEFAULT_AGENT_TITLE);
+    setNewSessionTitle("");
     setNewTerminalTitle(null);
     setNewArea({ projectId: group.id, name: "Новая область", firstTab: "session", place: "project" });
     setWorktreeOptions(null);
@@ -2053,7 +2053,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const openNewAreaAgent = (workspaceId: string) => {
     const group = allGroups.find(item => item.chats.some(chat => chat.id === workspaceId));
     if (!group) return;
-    setNewSessionTitle(DEFAULT_AGENT_TITLE);
+    setNewSessionTitle("");
     setNewTerminalTitle(null);
     setNewSessionKind("agent");
     setNewAgentWorkspaceId(workspaceId);
