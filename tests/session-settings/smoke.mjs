@@ -209,7 +209,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           }
           const copySessionLink = button("Скопировать ссылку на агента");
           const sessionActions = [
-            copySessionLink, button("Переименовать агента"), button("Перезагрузить агента"), button("Закрыть агента"),
+            copySessionLink, button("Перезагрузить агента"), button("Закрыть агента"),
           ];
           const expectSessionActions = () => Promise.all(sessionActions.map((action) => action.waitFor()));
           await sidebar.getByRole("button", { name: "Меню агента Fixture chat", exact: true }).click();
@@ -410,10 +410,10 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await button(`Меню агента ${selectedTitle}`).click();
           await expectSessionActions();
           if (width === 1280) {
-            await button("Переименовать агента").click();
             selectedTitle = "Renamed fixture chat";
-            await page.getByPlaceholder("Название агента", { exact: true }).fill(selectedTitle);
-            await button("Переименовать").click();
+            const agentTitle = page.getByRole("textbox", { name: "Название агента", exact: true });
+            await agentTitle.fill(selectedTitle);
+            await agentTitle.blur();
             await page.getByText("Агент переименован", { exact: true }).waitFor();
             assert.equal((await client.agents.ref(selectedChat.id).refresh()).agent.title, selectedTitle);
           } else {

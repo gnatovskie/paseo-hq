@@ -1091,6 +1091,9 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const [suggestingTitle, setSuggestingTitle] = useState(false);
   const [agentMenuId, setAgentMenuId] = useState<string | null>(null);
   const [draftAgentTitle, setDraftAgentTitle] = useState<string | null>(null);
+  const [agentTitleModelChoice, setAgentTitleModelChoice] = useState<string | null>(null);
+  const [suggestingAgentTitle, setSuggestingAgentTitle] = useState(false);
+  const agentTitleInput = useRef<React.ElementRef<typeof TextInput>>(null);
   const [confirmClosingSession, setConfirmClosingSession] = useState(false);
   const [terminalMenuId, setTerminalMenuId] = useState<string | null>(null);
   const [confirmClosingTerminal, setConfirmClosingTerminal] = useState(false);
@@ -1614,17 +1617,18 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     }
   };
 
+  const agentMenuWorkspace = workspaces.find(workspace => workspace.id === agentMenuChat?.workspaceId);
   useEffect(() => {
-    if (!editingChatId) return;
+    if (!editingChatId && !agentMenuId) return;
     let cancelled = false;
     setTitleModelsError(null);
-    void paseo.providers.waitForReady({ cwd: editingChat?.workspaceDirectory }).then(snapshot => {
+    void paseo.providers.waitForReady({ cwd: (editingChat ?? agentMenuWorkspace)?.workspaceDirectory }).then(snapshot => {
       if (!cancelled) setTitleProviders(snapshot.entries);
     }).catch(error => {
       if (!cancelled) setTitleModelsError(error instanceof Error ? error.message : "Каталог моделей недоступен");
     });
     return () => { cancelled = true; };
-  }, [editingChatId, editingChat?.workspaceDirectory, paseo]);
+  }, [editingChatId, agentMenuId, editingChat?.workspaceDirectory, agentMenuWorkspace?.workspaceDirectory, paseo]);
 
   const openProjectSettings = (group: ProjectGroup) => {
     setEditingProjectId(group.id);
@@ -1869,7 +1873,50 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     }
   };
 
+  const agentTitleModel = agentTitleModelChoice
+    ?? (agentMenuWorkspace ? serverState.projects[agentMenuWorkspace.projectId]?.sessionTitleModel : null)
+    ?? "first_line";
+
+  const handleRenameAgent = async () => {
+    const title = draftAgentTitle?.trim();
+    if (!agentMenuChat?.workspaceId || draftAgentTitle === null) return;
+    if (!title || title === (agentMenuChat.title ?? "")) {
+      setDraftAgentTitle(null);
+      return;
+    }
+    const { workspaceId, id: agentId } = agentMenuChat;
+    try {
+      await renameAgent({ workspaceId, agentId, title });
+      setDraftAgentTitle(null);
+      await reloadAll();
+      toast.show("Агент переименован", { variant: "success" });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Не удалось переименовать агента");
+    }
+  };
+
+  const handleSuggestAgentTitle = async (model: string) => {
+    if (!agentMenuChat?.workspaceId || !agentMenuWorkspace || suggestingAgentTitle || chatMutationPending) return;
+    setAgentTitleModelChoice(model);
+    setSuggestingAgentTitle(true);
+    try {
+      const { title } = await suggestSessionTitle({
+        model,
+        workspaceId: agentMenuChat.workspaceId,
+        agentId: agentMenuChat.id,
+        projectId: agentMenuWorkspace.projectId,
+      });
+      setDraftAgentTitle(title);
+      requestAnimationFrame(() => agentTitleInput.current?.focus());
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Не удалось сгенерировать название");
+    } finally {
+      setSuggestingAgentTitle(false);
+    }
+  };
+
   const openAgentMenu = (agentId: string) => {
+    setAgentTitleModelChoice(null);
     setDraftAgentTitle(null);
     setConfirmClosingSession(false);
     setAgentMenuId(agentId);
@@ -1885,22 +1932,17 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     }
   };
 
-  const handleAgentMenuAction = async (action: "rename" | "reload" | "close") => {
+  const handleAgentMenuAction = async (action: "reload" | "close") => {
     const workspaceId = agentMenuChat?.workspaceId;
     if (!workspaceId || !agentMenuChat || chatMutationPending) return;
-    const title = draftAgentTitle?.trim();
-    if (action === "rename" && !title) return;
     const agentId = agentMenuChat.id;
     const result = {
-      rename: "Агент переименован",
       reload: "Агент перезагружен",
       close: "Агент закрыт",
     };
     setSavingChat(true);
     try {
-      if (action === "rename" && title) {
-        await renameAgent({ workspaceId, agentId, title });
-      } else if (action === "reload") {
+      if (action === "reload") {
         await paseo.agents.ref(agentId).reload();
       } else if (action === "close") {
         await paseo.agents.ref(agentId).archive();
@@ -3588,26 +3630,62 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       <Modal
         title={confirmClosingSession
           ? "Закрыть работающего агента"
-          : draftAgentTitle === null ? "Действия с агентом" : "Переименовать агента"}
+          : "Действия с агентом"}
         open={Boolean(agentMenuChat)}
         onOpenChange={(open) => {
           if (!open) setAgentMenuId(null);
         }}
       >
         <Modal.Content>
-          {agentMenuChat && (draftAgentTitle === null ? (
+          {agentMenuChat && (
             <View style={{ gap: 8 }}>
               {confirmClosingSession ? (
                 <Text style={{ color: c.foreground, fontSize: 14 }}>
                   Текущая работа остановится. Сохраненные сообщения будут доступны в истории Paseo.
                 </Text>
-              ) : null}
+              ) : (
+                <View style={{ gap: 4 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <View style={{
+                      flex: 1, minWidth: 0, height: 44, flexDirection: "row", alignItems: "center",
+                      paddingLeft: 12, paddingRight: 4, borderRadius: 9, borderWidth: 1,
+                      borderColor: draftAgentTitle === null ? c.border : c.accent,
+                      backgroundColor: c.surface2,
+                    }}>
+                      <TextInput
+                        ref={agentTitleInput}
+                        accessibilityLabel="Название агента"
+                        placeholder="Название агента"
+                        placeholderTextColor={c.foregroundMuted}
+                        value={draftAgentTitle ?? agentMenuChat.title ?? ""}
+                        onChangeText={setDraftAgentTitle}
+                        onFocus={() => {
+                          if (draftAgentTitle === null) setDraftAgentTitle(agentMenuChat.title ?? "");
+                        }}
+                        onBlur={() => void handleRenameAgent()}
+                        onSubmitEditing={() => void handleRenameAgent()}
+                        maxLength={200}
+                        editable={!chatMutationPending}
+                        style={{ flex: 1, minWidth: 0, padding: 0, outlineWidth: 0, color: c.foreground, fontSize: 15 }}
+                      />
+                    </View>
+                    <TitleModelPicker
+                      theme={theme}
+                      value={agentTitleModel}
+                      options={titleModelOptions(titleProviders, agentTitleModel)}
+                      disabled={suggestingAgentTitle || chatMutationPending}
+                      pending={suggestingAgentTitle}
+                      hint={titleModelsError ? `Не удалось загрузить модели: ${titleModelsError}` : undefined}
+                      onValueChange={(model) => void handleSuggestAgentTitle(model)}
+                    />
+                  </View>
+                </View>
+              )}
               <ItemMenuActions theme={theme} disabled={chatMutationPending} actions={confirmClosingSession ? [
                 { label: "Отмена", icon: "ArrowLeft", onPress: () => setConfirmClosingSession(false) },
                 { label: "Остановить и закрыть", icon: "Archive", danger: true, onPress: () => void handleAgentMenuAction("close") },
               ] : [
                 { label: "Скопировать ссылку на агента", icon: "Link2", onPress: () => void handleCopyAgentLink(agentMenuChat.id) },
-                { label: "Переименовать агента", icon: "Pencil", onPress: () => setDraftAgentTitle(agentMenuChat.title ?? "") },
                 { label: "Перезагрузить агента", icon: "RefreshCw", onPress: () => void handleAgentMenuAction("reload") },
                 {
                   label: "Закрыть агента",
@@ -3620,44 +3698,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                 },
               ]} />
             </View>
-          ) : (
-            <View style={{ gap: 10 }}>
-              <TextInput
-                accessibilityLabel="Название агента"
-                placeholder="Название агента"
-                placeholderTextColor={c.foregroundMuted}
-                value={draftAgentTitle}
-                onChangeText={setDraftAgentTitle}
-                onSubmitEditing={() => void handleAgentMenuAction("rename")}
-                maxLength={200}
-                editable={!chatMutationPending}
-                style={{
-                  paddingHorizontal: 12,
-                  paddingVertical: 10,
-                  borderRadius: 9,
-                  backgroundColor: c.surface1,
-                  borderWidth: 1,
-                  borderColor: c.border,
-                  color: c.foreground,
-                  fontSize: 14,
-                }}
-              />
-              <Pressable
-                accessibilityRole="button"
-                disabled={chatMutationPending || !draftAgentTitle.trim()}
-                onPress={() => void handleAgentMenuAction("rename")}
-                style={({ pressed }) => ({
-                  alignItems: "center",
-                  paddingVertical: 11,
-                  borderRadius: 9,
-                  backgroundColor: c.accent,
-                  opacity: chatMutationPending || !draftAgentTitle.trim() ? 0.5 : pressed ? 0.85 : 1,
-                })}
-              >
-                <Text style={{ color: c.accentForeground, fontSize: 14, fontWeight: "600" }}>Переименовать</Text>
-              </Pressable>
-            </View>
-          ))}
+          )}
         </Modal.Content>
       </Modal>
 
