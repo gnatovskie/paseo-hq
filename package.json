@@ -28,7 +28,7 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "npm run test:hq && npm run test:limits && npm run test:genui && npm run test:git",
+    "test": "npm run test:hq && npm run test:limits && npm run test:genui && npm run test:git && npm run test:updates",
     "test:genui": "vitest run shared/genui server/genui client/genui-integration.test.ts --maxWorkers=1 --no-file-parallelism",
     "smoke:genui": "node tests/genui/smoke.mjs",
     "smoke:sessions": "node --test tests/session-settings/smoke.mjs",
@@ -38,7 +38,8 @@
     "test:git": "vitest run server/git-login.test.ts server/git-repositories.test.ts --maxWorkers=1",
     "smoke:git": "node tests/git/smoke.mjs",
     "test:limits": "vitest run server/gemini-api.test.ts server/gemini-live.test.ts --maxWorkers=1",
-    "smoke:limits": "node tests/limits/smoke.mjs"
+    "smoke:limits": "node tests/limits/smoke.mjs",
+    "test:updates": "vitest run server/plugin-sync.test.ts client/plugin-sync.test.ts --maxWorkers=1"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.4.0",

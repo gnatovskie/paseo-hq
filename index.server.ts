@@ -1,3 +1,4 @@
+import { PluginSyncService } from "./server/plugin-sync.server";
 import v8 from "node:v8";
 v8.setFlagsFromString("--no-maglev");
 
@@ -8,7 +9,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, realpath, rename, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import {
   areaPreferencesSchema,
@@ -532,77 +533,14 @@ function normalizeCloneUrl(repoUrl: string): string {
   return trimmed;
 }
 
-async function syncPluginUpdates(): Promise<{
-  success: boolean;
-  updated: boolean;
-  message: string;
-  details?: string;
-}> {
-  const candidateBinaries = [
-    "paseo",
-    "/home/agent/.nvm/versions/node/v24.20.0/bin/paseo",
-    "/home/zor/.local/paseo/node_modules/.bin/paseo",
-    "/usr/local/bin/paseo",
-    "/usr/bin/paseo",
-    join(dirname(process.execPath), "paseo"),
-  ];
-
-  let paseoBin: string | null = null;
-  for (const bin of candidateBinaries) {
-    try {
-      await execFileAsync(bin, ["--version"]);
-      paseoBin = bin;
-      break;
-    } catch {
-      // try next
-    }
+async function pluginSyncService(): Promise<PluginSyncService> {
+  const candidates = ["paseo", join(dirname(process.execPath), "paseo"), "/home/zor/.local/paseo/node_modules/.bin/paseo", "/usr/local/bin/paseo", "/usr/bin/paseo"];
+  for (const binary of candidates) {
+    try { await execFileAsync(binary, ["--version"]); }
+    catch { continue; }
+    return new PluginSyncService(join(paseoHome, "hq-plugin-updates"), binary);
   }
-
-  if (paseoBin) {
-    try {
-      const { stdout, stderr } = await execFileAsync(
-        paseoBin,
-        ["plugin", "update", "paseo-hq", "--yes"],
-        { timeout: 60_000, env: process.env },
-      );
-      const out = (stdout + "\n" + stderr).trim();
-      const updated = out.includes("updated") || out.includes("→");
-      return {
-        success: true,
-        updated,
-        message: updated
-          ? "Штаб успешно синхронизирован и обновлен до последней версии"
-          : "У вас уже установлена последняя версия Штаба",
-        details: out,
-      };
-    } catch (err: any) {
-      console.warn("[paseo-hq] paseo plugin update failed, trying git fallback:", err?.message);
-    }
-  }
-
-  try {
-    const { stdout, stderr } = await execFileAsync("git", ["pull", "origin", "main"], {
-      cwd: dirname(fileURLToPath(import.meta.url)),
-      timeout: 30_000,
-    });
-    const out = (stdout + "\n" + stderr).trim();
-    const updated = !out.includes("Already up to date") && !out.includes("Уже актуально");
-    return {
-      success: true,
-      updated,
-      message: updated
-        ? "Штаб успешно обновлен из репозитория через Git"
-        : "У вас уже последняя версия Штаба",
-      details: out,
-    };
-  } catch (err: any) {
-    return {
-      success: false,
-      updated: false,
-      message: `Не удалось синхронизировать обновления: ${err?.message || String(err)}`,
-      details: err?.stack,
-    };
-  }
+  throw new Error("Не найдена команда Paseo для обновления Штаба");
 }
 
 export default function contribute(server: PluginServerContext) {
@@ -1319,8 +1257,11 @@ export default function contribute(server: PluginServerContext) {
     return { ok };
   });
 
-  server.handle(pluginSyncRpc, async () => {
-    return await syncPluginUpdates();
+  server.handle(pluginSyncRpc, async ({ action, jobId }) => {
+    if (action === "status") {
+      return new PluginSyncService(join(paseoHome, "hq-plugin-updates"), "paseo").status(jobId);
+    }
+    return (await pluginSyncService()).start(jobId);
   });
 
   const removeUsage = contributeUsageServer(server);
