@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -238,6 +239,33 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await button("Создать область").waitFor();
           await button("Закрыть").last().click();
           await newAreaName.waitFor({ state: "hidden" });
+
+          // Область в своем worktree на новой ветке рядом с проектом, затем архивация с удалением папки.
+          const wtBranch = `hq-wt-${width}`;
+          const wtPath = `${source}-${wtBranch}`;
+          const wtTitle = `WT ${width}`;
+          await button("Новая область в проекте source").click();
+          await newAreaName.fill(wtTitle);
+          await button("Новая ветка").click();
+          await page.getByRole("textbox", { name: "Имя новой ветки", exact: true }).fill(wtBranch);
+          assert.equal(await page.getByRole("textbox", { name: "Папка worktree", exact: true }).inputValue(), wtPath);
+          await page.waitForTimeout(400);
+          await capture("new-area-worktree");
+          await button("Терминал").click();
+          await button("Создать область").click();
+          await until(async () => existsSync(wtPath), "worktree folder created next to the project");
+          assert.equal(execFileSync("git", ["-C", wtPath, "branch", "--show-current"], { encoding: "utf8" }).trim(), wtBranch);
+          await enterSidebar();
+          await page.getByLabel(`Ветка области ${wtBranch}`).waitFor();
+          await writeFile(join(wtPath, "dirty.txt"), "uncommitted");
+          await button(`Действия области ${wtTitle}`).click();
+          await page.getByText(new RegExp(`^Worktree на ветке ${wtBranch}`)).waitFor();
+          await button("Архивировать область").click();
+          await page.getByText("Незакоммиченные изменения: 1", { exact: true }).waitFor();
+          await capture("archive-worktree");
+          await button("Архивировать и удалить папку вместе с изменениями").click();
+          await until(async () => !existsSync(wtPath), "worktree folder removed on archive");
+          assert(!execFileSync("git", ["-C", source, "worktree", "list"], { encoding: "utf8" }).includes(wtPath));
 
           const terminalsBefore = (await workspaceHandle.terminals.list()).entries.length;
           await button("Новая область в проекте source").click();

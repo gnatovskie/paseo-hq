@@ -43,6 +43,10 @@ import {
   projectSaveRpc,
   sessionPinRpc,
   terminalRenameRpc,
+  areaWorktreeOptionsRpc,
+  areaWorktreeCreateRpc,
+  areaWorktreeInfoRpc,
+  areaWorktreeRemoveRpc,
   sessionTitleSuggestRpc,
   sessionTransferRpc,
   sidebarReadRpc,
@@ -85,6 +89,7 @@ import {
 } from "./client/session-buckets";
 import { z } from "zod";
 import { Markdown } from "@getpaseo/plugin/client/ui";
+import { defaultWorktreePath } from "./shared/worktree";
 
 
 const EMOJI_PRESETS = ["🚀", "⚡", "🛠", "📦", "🧠", "🌐", "💳", "🎨", "🔒", "📱", "🤖", "🔥"];
@@ -1096,9 +1101,54 @@ function ActionSheet({ title, open, onClose, theme, actions, disabled, fixedHeig
   );
 }
 
+type Choice<T> = { value: T; label: string; icon: string; detail?: string; a11yLabel?: string };
+
+// Список вариантов с галочкой у выбранного, в рамке поля.
+function ChoiceList<T>({ theme, options, value, onChange, disabled }: {
+  theme: PluginTheme;
+  options: Choice<T>[];
+  value: T;
+  onChange: (value: T) => void;
+  disabled?: boolean;
+}) {
+  const c = theme.colors;
+  return (
+    <View style={{ borderRadius: 9, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface2, padding: 4, gap: 2 }}>
+      {options.map((option) => {
+        const selected = value === option.value;
+        return (
+          <Pressable
+            key={String(option.value)}
+            accessibilityRole="button"
+            accessibilityLabel={option.a11yLabel ?? option.label}
+            accessibilityState={{ selected }}
+            disabled={disabled}
+            onPress={() => onChange(option.value)}
+            style={({ pressed }) => ({
+              minHeight: 40, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 10, paddingVertical: 6,
+              borderRadius: 7, backgroundColor: selected || pressed ? c.surface1 : undefined, opacity: disabled ? 0.6 : 1,
+            })}
+          >
+            <Icon name={option.icon} size={15} color={selected ? c.accent : c.foregroundMuted} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 14, fontWeight: selected ? "600" : "400" }}>
+                {option.label}
+              </Text>
+              {option.detail ? (
+                <Text numberOfLines={1} style={{ color: c.foregroundMuted, fontSize: 11 }}>{option.detail}</Text>
+              ) : null}
+            </View>
+            {selected ? <Icon name="Check" size={16} color={c.accent} /> : null}
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 // Общее окно создания: «Новая область» (с названием) и «Новая сессия» (без названия) отличаются только полем названия.
 function NewSessionWindow({ theme, title, open, onClose, narrow, kind, onKindChange, kindLocked, name, onNameChange, nameEditable,
-  target, model, modelsError, modelOptions, onModelChange, folder, busy, submitLabel, submitAgentLabel, onSubmit }: {
+  target, extra, model, modelsError, modelOptions, onModelChange, folder, busy, submitLabel, submitAgentLabel, onSubmit }: {
   theme: PluginTheme;
   title: string;
   open: boolean;
@@ -1112,6 +1162,8 @@ function NewSessionWindow({ theme, title, open, onClose, narrow, kind, onKindCha
   onNameChange?: (name: string) => void;
   nameEditable?: boolean;
   /** Куда создавать: новая область или одна из имеющихся (value = id области, null = новая). */
+  /** Дополнительные поля после названия (ветка и папка worktree у новой области). */
+  extra?: React.ReactNode;
   target?: { value: string | null; options: { value: string; label: string }[]; onChange: (value: string | null) => void; locked?: boolean };
   model: string | null;
   modelsError: string | null;
@@ -1138,32 +1190,18 @@ function NewSessionWindow({ theme, title, open, onClose, narrow, kind, onKindCha
         {target ? (
           <View style={{ gap: 6 }}>
             <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Область</Text>
-            <View style={{ ...field, padding: 4, gap: 2 }}>
-              {[{ value: null, label: "Новая область" }, ...target.options].map((option) => {
-                const selected = target.value === option.value;
-                return (
-                  <Pressable
-                    key={option.value ?? "new"}
-                    accessibilityRole="button"
-                    accessibilityLabel={option.value === null ? "Новая область" : `Область: ${option.label}`}
-                    accessibilityState={{ selected }}
-                    disabled={busy || target.locked}
-                    onPress={() => target.onChange(option.value)}
-                    style={({ pressed }) => ({
-                      minHeight: 40, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 10,
-                      borderRadius: 7, backgroundColor: selected ? c.surface1 : pressed ? c.surface1 : undefined,
-                      opacity: busy || target.locked ? 0.6 : 1,
-                    })}
-                  >
-                    <Icon name={option.value === null ? "Plus" : "Folder"} size={15} color={selected ? c.accent : c.foregroundMuted} />
-                    <Text numberOfLines={1} style={{ flex: 1, color: c.foreground, fontSize: 14, fontWeight: selected ? "600" : "400" }}>
-                      {option.label}
-                    </Text>
-                    {selected ? <Icon name="Check" size={16} color={c.accent} /> : null}
-                  </Pressable>
-                );
-              })}
-            </View>
+            <ChoiceList
+              theme={theme}
+              options={[
+                { value: null as string | null, label: "Новая область", icon: "Plus" },
+                ...target.options.map((option) => ({
+                  value: option.value as string | null, label: option.label, icon: "Folder", a11yLabel: `Область: ${option.label}`,
+                })),
+              ]}
+              value={target.value}
+              onChange={target.onChange}
+              disabled={busy || target.locked}
+            />
           </View>
         ) : null}
         {name !== undefined ? (
@@ -1180,6 +1218,7 @@ function NewSessionWindow({ theme, title, open, onClose, narrow, kind, onKindCha
             </View>
           </View>
         ) : null}
+        {extra}
         {kind === "agent" ? (
           <View style={{ gap: 6 }}>
             <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Модель нового агента</Text>
@@ -1254,6 +1293,10 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const createAreaSession = useRpc(areaSessionCreateRpc);
   const saveProject = useRpc(projectSaveRpc);
   const pinSession = useRpc(sessionPinRpc);
+  const readWorktreeOptions = useRpc(areaWorktreeOptionsRpc);
+  const createAreaWorktree = useRpc(areaWorktreeCreateRpc);
+  const readAreaWorktree = useRpc(areaWorktreeInfoRpc);
+  const removeAreaWorktree = useRpc(areaWorktreeRemoveRpc);
   const renameTerminal = useRpc(terminalRenameRpc);
   const suggestSessionTitle = useRpc(sessionTitleSuggestRpc);
   const renameAgent = useRpc(chatRenameRpc);
@@ -1275,6 +1318,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     nativeIcons: {},
     areaIcons: {},
     areaIconBgs: {},
+    areaWorktrees: {},
     lastRunningAt: {},
     pinnedSessions: {},
     terminalNames: {},
@@ -1327,6 +1371,19 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     workspaceId?: string;
     /** Уже имеющаяся область проекта, куда добавить сессию вместо создания новой. */
     targetWorkspaceId?: string;
+    /** Где создать новую область: в папке проекта или в своем worktree на ветке. */
+    place?: "project" | "existing" | "new";
+    branch?: string;
+    newBranch?: string;
+    baseBranch?: string;
+    /** Путь, вписанный вручную; иначе путь по умолчанию рядом с проектом. */
+    worktreePath?: string;
+  } | null>(null);
+  const [worktreeOptions, setWorktreeOptions] = useState<{
+    projectId: string; isGit: boolean; rootPath: string; branches: string[]; checkedOut: string[]; currentBranch: string | null;
+  } | null>(null);
+  const [worktreeArchive, setWorktreeArchive] = useState<{
+    chat: PaseoWorkspace; path: string; branch: string; exists: boolean; changes: string[];
   } | null>(null);
 
   // Модалка добавления нового проекта
@@ -1671,11 +1728,19 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const newAreaTarget = newArea?.targetWorkspaceId
     ? newAreaGroup?.chats.find((chat) => chat.id === newArea.targetWorkspaceId)
     : undefined;
-  const newAreaFolder = !newAreaGroup ? ""
+  const freeBranches = worktreeOptions ? worktreeOptions.branches.filter((branch) => !worktreeOptions.checkedOut.includes(branch)) : [];
+  const newAreaPlace = newArea?.place ?? "project";
+  const newAreaBranch = newAreaPlace === "existing" ? newArea?.branch ?? freeBranches[0] ?? ""
+    : newAreaPlace === "new" ? newArea?.newBranch?.trim() ?? "" : "";
+  const newAreaBaseBranch = newArea?.baseBranch ?? worktreeOptions?.currentBranch ?? worktreeOptions?.branches[0] ?? "";
+  const newAreaWorktreePath = newAreaPlace === "project" || !worktreeOptions ? ""
+    : newArea?.worktreePath ?? (newAreaBranch ? defaultWorktreePath(worktreeOptions.rootPath, newAreaBranch) : "");
+  const newAreaFolder = newAreaPlace !== "project" ? newAreaWorktreePath || "Укажите ветку"
+    : !newAreaGroup ? ""
     : newAreaGroup.meta.newSessionMode === "worktree"
       ? `${newAreaGroup.rootPath} (отдельный worktree создастся вместе с областью)`
       : newAreaGroup.rootPath;
-  const hqWindowOpen = addModalOpen || Boolean(editingGroup) || Boolean(newArea) || Boolean(editingChat)
+  const hqWindowOpen = Boolean(worktreeArchive) || addModalOpen || Boolean(editingGroup) || Boolean(newArea) || Boolean(editingChat)
     || Boolean(newAgentWorkspaceId) || Boolean(agentMenuChat) || Boolean(terminalMenuItem) || panelSettingsOpen;
 
   const currentProjectGroup = useMemo(
@@ -1734,8 +1799,12 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   };
 
   const openNewArea = (group: ProjectGroup) => {
-    setNewArea({ projectId: group.id, name: "Новая область", firstTab: "session" });
+    setNewArea({ projectId: group.id, name: "Новая область", firstTab: "session", place: "project" });
+    setWorktreeOptions(null);
     void prepareAgentModels(group);
+    void readWorktreeOptions({ projectId: group.id })
+      .then((options) => setWorktreeOptions({ projectId: group.id, ...options }))
+      .catch(() => setWorktreeOptions(null));
   };
 
   const openNewAreaAgent = (workspaceId: string) => {
@@ -1802,6 +1871,21 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     setCreatingId(group.id);
     try {
       let workspaceId = newArea.workspaceId;
+      if (!workspaceId && newAreaPlace !== "project") {
+        if (newArea.firstTab === "session" && !newAgentModel) throw new Error("Выберите модель агента");
+        if (!newAreaBranch) throw new Error(newAreaPlace === "new" ? "Впишите имя новой ветки" : "Выберите ветку");
+        const created = await createAreaWorktree({
+          projectId: group.id,
+          title: newArea.name.trim() || "Новая область",
+          path: newAreaWorktreePath,
+          branch: newAreaBranch,
+          newBranch: newAreaPlace === "new",
+          baseBranch: newAreaPlace === "new" ? newAreaBaseBranch : undefined,
+          agentModel: newArea.firstTab === "session" ? newAgentModel ?? undefined : undefined,
+        });
+        workspaceId = created.workspaceId;
+        setNewArea({ ...newArea, workspaceId });
+      }
       if (!workspaceId) {
         if (newArea.firstTab === "session" && !newAgentModel) throw new Error("Выберите модель агента");
         const agent = newArea.firstTab === "session"
@@ -2416,8 +2500,21 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     () => setTerminalMenuId(null),
   );
 
-  const handleArchiveChat = async (chat: PaseoWorkspace) => {
+  // Папку worktree, созданную Штабом, Paseo при архивации не удаляет: сначала спрашиваем, что с ней делать.
+  const handleArchiveChat = async (chat: PaseoWorkspace, worktreeDecision?: "keep" | "remove" | "force") => {
     if (chatMutationPending) return;
+    if (!worktreeDecision && serverState.areaWorktrees[chat.id]) {
+      try {
+        const info = await readAreaWorktree({ workspaceId: chat.id });
+        if (info.worktree) {
+          setWorktreeArchive({ chat, ...info.worktree, exists: info.exists, changes: info.changes });
+          return;
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Не удалось проверить папку worktree");
+        return;
+      }
+    }
     setSavingChat(true);
     try {
       setArchivedIds((prev) => ({ ...prev, [chat.id]: true }));
@@ -2425,6 +2522,12 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       if (error) throw new Error(error);
       if (editingChatId === chat.id) {
         setEditingChatId(null);
+      }
+      setWorktreeArchive(null);
+      if (worktreeDecision === "remove" || worktreeDecision === "force") {
+        await removeAreaWorktree({ workspaceId: chat.id, force: worktreeDecision === "force" }).catch((err) => {
+          toast.error(`Область в архиве, но папку не удалось удалить: ${err instanceof Error ? err.message : err}`);
+        });
       }
       toast.show("Область отправлена в архив", { variant: "success" });
       void reloadAll();
@@ -2851,6 +2954,15 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                                 <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 14, fontWeight: "600" }}>
                                   {title}
                                 </Text>
+                                {serverState.areaWorktrees[chat.id] ? (
+                                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                                    <Icon name="GitBranch" size={11} color={c.foregroundMuted} />
+                                    <Text numberOfLines={1} accessibilityLabel={`Ветка области ${serverState.areaWorktrees[chat.id]!.branch}`}
+                                      style={{ flexShrink: 1, color: c.foregroundMuted, fontSize: 11 }}>
+                                      {serverState.areaWorktrees[chat.id]!.branch}
+                                    </Text>
+                                  </View>
+                                ) : null}
                                 {!expanded ? (
                                   <AreaSessionBadges sessions={sessions} terminalCount={areaTerminals.length}
                                     theme={theme} platform={layout.platform} />
@@ -3696,6 +3808,85 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
             onChange: (value) => setNewArea({ ...newArea, targetWorkspaceId: value ?? undefined }),
             locked: Boolean(newArea.workspaceId),
           }}
+          extra={!newAreaTarget && worktreeOptions?.isGit && worktreeOptions.projectId === newArea.projectId ? (
+            <View style={{ gap: 12 }}>
+              <View style={{ gap: 6 }}>
+                <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Ветка</Text>
+                <ChoiceList
+                  theme={theme}
+                  disabled={Boolean(creatingId || newArea.workspaceId)}
+                  value={newAreaPlace}
+                  onChange={(place) => setNewArea({ ...newArea, place, worktreePath: undefined })}
+                  options={[
+                    { value: "project" as const, label: "В папке проекта", icon: "Folder",
+                      detail: worktreeOptions.currentBranch ? `Текущая ветка ${worktreeOptions.currentBranch}` : undefined },
+                    { value: "existing" as const, label: "Существующая ветка", icon: "GitBranch", detail: "Отдельная папка worktree" },
+                    { value: "new" as const, label: "Новая ветка", icon: "GitBranchPlus", detail: "Отдельная папка worktree" },
+                  ]}
+                />
+              </View>
+              {newAreaPlace === "existing" ? (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <View style={{ flex: 1, minWidth: 0, height: 44, justifyContent: "center", paddingHorizontal: 12,
+                    borderRadius: 9, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface2 }}>
+                    <Text numberOfLines={1} style={{ color: newAreaBranch ? c.foreground : c.foregroundMuted, fontSize: 15 }}>
+                      {newAreaBranch || "Все ветки уже открыты"}
+                    </Text>
+                  </View>
+                  <TitleModelPicker theme={theme} value={newAreaBranch}
+                    options={freeBranches.map((branch) => ({ label: branch, value: branch, provider: "", providerLabel: "", name: branch }))}
+                    disabled={!freeBranches.length || Boolean(creatingId)}
+                    label="Выбрать ветку" icon="ChevronDown" menuLabel="Ветки проекта"
+                    onValueChange={(branch) => setNewArea({ ...newArea, branch, worktreePath: undefined })} />
+                </View>
+              ) : null}
+              {newAreaPlace === "new" ? (
+                <View style={{ gap: 6 }}>
+                  <View style={{ height: 44, justifyContent: "center", paddingHorizontal: 12,
+                    borderRadius: 9, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface2 }}>
+                    <TextInput
+                      accessibilityLabel="Имя новой ветки"
+                      placeholder="Имя новой ветки"
+                      placeholderTextColor={c.foregroundMuted}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      value={newArea.newBranch ?? ""}
+                      editable={!creatingId}
+                      onChangeText={(newBranch) => setNewArea({ ...newArea, newBranch, worktreePath: undefined })}
+                      style={{ padding: 0, outlineWidth: 0, color: c.foreground, fontSize: 15 }}
+                    />
+                  </View>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <Text numberOfLines={1} style={{ flex: 1, color: c.foregroundMuted, fontSize: 12 }}>
+                      От ветки {newAreaBaseBranch}
+                    </Text>
+                    <TitleModelPicker theme={theme} value={newAreaBaseBranch}
+                      options={worktreeOptions.branches.map((branch) => ({ label: branch, value: branch, provider: "", providerLabel: "", name: branch }))}
+                      disabled={Boolean(creatingId)}
+                      label="Выбрать базовую ветку" icon="ChevronDown" menuLabel="Ветки проекта"
+                      onValueChange={(baseBranch) => setNewArea({ ...newArea, baseBranch })} />
+                  </View>
+                </View>
+              ) : null}
+              {newAreaPlace !== "project" ? (
+                <View style={{ gap: 6 }}>
+                  <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Папка worktree</Text>
+                  <View style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 12, paddingVertical: 8,
+                    borderRadius: 9, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface2 }}>
+                    <TextInput
+                      accessibilityLabel="Папка worktree"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      value={newAreaWorktreePath}
+                      editable={!creatingId && !newArea.workspaceId}
+                      onChangeText={(worktreePath) => setNewArea({ ...newArea, worktreePath })}
+                      style={{ padding: 0, outlineWidth: 0, color: c.foreground, fontSize: 12, fontFamily: "monospace" }}
+                    />
+                  </View>
+                </View>
+              ) : null}
+            </View>
+          ) : undefined}
           name={newAreaTarget ? undefined : newArea.name}
           onNameChange={(name) => setNewArea({ ...newArea, name })}
           nameEditable={!newArea.workspaceId}
@@ -3820,7 +4011,11 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                     />
                   )}
                 </View>
-
+                {serverState.areaWorktrees[editingChat.id] ? (
+                  <Text numberOfLines={1} ellipsizeMode="middle" selectable style={{ color: c.foregroundMuted, fontSize: 11 }}>
+                    Worktree на ветке {serverState.areaWorktrees[editingChat.id]!.branch}: {serverState.areaWorktrees[editingChat.id]!.path}
+                  </Text>
+                ) : null}
               </View>
 
               <View
@@ -4216,6 +4411,61 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
             </View>
           ) : null}
       </ActionSheet>
+
+      <HqModal theme={theme}
+        narrow
+        title="Архивировать область"
+        open={Boolean(worktreeArchive)}
+        onOpenChange={(open) => { if (!open && !chatMutationPending) setWorktreeArchive(null); }}
+      >
+        {worktreeArchive ? (
+          <View style={{ gap: 14 }}>
+            <Text style={{ color: c.foreground, fontSize: 14 }}>
+              Область работает в своей папке worktree на ветке {worktreeArchive.branch}. Paseo эту папку сам не удалит.
+            </Text>
+            <Text selectable style={{ color: c.foregroundMuted, fontSize: 12, fontFamily: "monospace" }}>{worktreeArchive.path}</Text>
+            {worktreeArchive.changes.length ? (
+              <View style={{ gap: 4, padding: 10, borderRadius: 9, borderWidth: 1, borderColor: c.statusDanger }}>
+                <Text style={{ color: c.statusDanger, fontSize: 13, fontWeight: "600" }}>
+                  Незакоммиченные изменения: {worktreeArchive.changes.length}
+                </Text>
+                {worktreeArchive.changes.slice(0, 8).map((line) => (
+                  <Text key={line} numberOfLines={1} style={{ color: c.foreground, fontSize: 12, fontFamily: "monospace" }}>{line}</Text>
+                ))}
+                {worktreeArchive.changes.length > 8 ? (
+                  <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>и еще {worktreeArchive.changes.length - 8}</Text>
+                ) : null}
+              </View>
+            ) : null}
+            {!worktreeArchive.exists ? (
+              <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Папки уже нет, Штаб уберет запись о ней из git.</Text>
+            ) : null}
+            {[
+              worktreeArchive.changes.length
+                ? { key: "force" as const, label: "Архивировать и удалить папку вместе с изменениями", danger: true }
+                : { key: "remove" as const, label: worktreeArchive.exists ? "Архивировать и удалить папку" : "Архивировать", danger: false },
+              ...(worktreeArchive.exists ? [{ key: "keep" as const, label: "Архивировать, папку оставить", danger: false }] : []),
+            ].map(({ key, label, danger }) => (
+              <Pressable
+                key={key}
+                accessibilityRole="button"
+                disabled={chatMutationPending}
+                onPress={() => void handleArchiveChat(worktreeArchive.chat, key)}
+                style={({ pressed }) => ({
+                  padding: 12, alignItems: "center", borderRadius: 9,
+                  backgroundColor: danger ? c.statusDanger : key === "keep" ? c.surface2 : c.accent,
+                  borderWidth: key === "keep" ? 1 : 0, borderColor: c.border,
+                  opacity: chatMutationPending || pressed ? 0.7 : 1,
+                })}
+              >
+                <Text style={{ color: key === "keep" ? c.foreground : danger ? "#FFFFFF" : c.accentForeground, fontSize: 14, fontWeight: "600" }}>
+                  {label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+      </HqModal>
 
       <HqModal theme={theme}
         narrow

@@ -12,6 +12,8 @@ export const sidebarStateSchema = z.object({
   nativeIcons: z.record(z.string(), z.string()),
   areaIcons: z.record(z.string(), z.string()).default({}),
   areaIconBgs: z.record(z.string(), z.string()).default({}),
+  /** Области в worktree, созданных Штабом: id области -> папка и ветка. */
+  areaWorktrees: z.record(z.string(), z.object({ path: z.string(), branch: z.string() })).default({}),
   lastRunningAt: z.record(z.string(), z.number()),
   pinnedSessions: z.record(z.string(), z.number()),
   terminalNames: z.record(z.string(), z.string()).default({}),
@@ -187,6 +189,52 @@ export const areaPreferencesSchema = z.object({
   titleModel: z.string().nullable().default(null),
   defaultBranch: z.string().nullable().default(null),
   launchBranches: z.record(z.string(), z.string()).default({}),
+  /** Worktree, созданный Штабом; rootPath нужен для уборки, когда область уже в архиве. */
+  worktree: z.object({ path: z.string(), branch: z.string(), rootPath: z.string().optional() }).nullable().default(null),
+});
+
+export const areaWorktreeOptionsRpc = defineRpc({
+  name: "sidebar.area-worktree-options",
+  input: z.object({ projectId: z.string().min(1) }),
+  output: z.object({
+    isGit: z.boolean(),
+    rootPath: z.string(),
+    branches: z.array(z.string()),
+    /** Ветки, уже открытые в каком-то worktree, включая корень проекта. */
+    checkedOut: z.array(z.string()),
+    currentBranch: z.string().nullable(),
+  }),
+});
+
+export const areaWorktreeCreateRpc = defineRpc({
+  name: "sidebar.area-worktree-create",
+  input: z.object({
+    projectId: z.string().min(1),
+    title: z.string(),
+    path: z.string().min(1),
+    branch: z.string().min(1),
+    newBranch: z.boolean(),
+    baseBranch: z.string().optional(),
+    /** Модель первого агента; без нее область создается пустой. */
+    agentModel: z.string().optional(),
+  }),
+  output: z.object({ workspaceId: z.string(), path: z.string() }),
+});
+
+export const areaWorktreeInfoRpc = defineRpc({
+  name: "sidebar.area-worktree-info",
+  input: z.object({ workspaceId: z.string().min(1) }),
+  output: z.object({
+    worktree: z.object({ path: z.string(), branch: z.string() }).nullable(),
+    exists: z.boolean(),
+    changes: z.array(z.string()),
+  }),
+});
+
+export const areaWorktreeRemoveRpc = defineRpc({
+  name: "sidebar.area-worktree-remove",
+  input: z.object({ workspaceId: z.string().min(1), force: z.boolean().default(false) }),
+  output: z.object({}),
 });
 
 export const areaSettingsRpc = defineRpc({

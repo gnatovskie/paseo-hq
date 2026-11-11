@@ -25,6 +25,10 @@ import {
   projectSaveRpc,
   sessionPinRpc,
   terminalRenameRpc,
+  areaWorktreeOptionsRpc,
+  areaWorktreeCreateRpc,
+  areaWorktreeInfoRpc,
+  areaWorktreeRemoveRpc,
   sessionTitleSuggestRpc,
   sessionTransferRpc,
   sidebarReadRpc,
@@ -43,6 +47,7 @@ import {
   type SidebarState,
 } from "./shared/contracts";
 import { currentGitBranch, localGitBranches } from "./server/area-git.server";
+import { createWorktree, removeWorktree, worktreeOptions, worktreeStatus } from "./server/area-worktree.server";
 import { GENERATOR_TITLE } from "./shared/title-models";
 import { ArtifactsService } from "./server/artifacts-service.server";
 import {
@@ -101,7 +106,7 @@ const MAX_HISTORY_ENTRIES = 500;
 type AreaPreferences = ReturnType<typeof areaPreferencesSchema.parse>;
 
 function emptyAreaPreferences(): AreaPreferences {
-  return { icon: null, iconBg: null, titleModel: null, defaultBranch: null, launchBranches: {} };
+  return { icon: null, iconBg: null, titleModel: null, defaultBranch: null, launchBranches: {}, worktree: null };
 }
 
 interface StoredData {
@@ -436,6 +441,10 @@ async function buildState(projectIds: string[]): Promise<SidebarState> {
     nativeIcons,
     areaIcons: Object.fromEntries(
       Object.entries(stored.areaPreferences).flatMap(([id, preferences]) => preferences.icon ? [[id, preferences.icon]] : []),
+    ),
+    areaWorktrees: Object.fromEntries(
+      Object.entries(stored.areaPreferences).flatMap(([id, preferences]) =>
+        preferences.worktree ? [[id, { path: preferences.worktree.path, branch: preferences.worktree.branch }]] : []),
     ),
     areaIconBgs: Object.fromEntries(
       Object.entries(stored.areaPreferences).flatMap(([id, preferences]) => preferences.iconBg ? [[id, preferences.iconBg]] : []),
@@ -864,6 +873,62 @@ export default function contribute(server: PluginServerContext) {
       await saveStored(stored);
     });
     return await buildState(projectIds);
+  });
+
+  const projectRoot = async (paseo: PaseoApi, projectId: string) => {
+    const project = ((await paseo.projects.list()).projects ?? []).find((item) => item.projectId === projectId);
+    if (!project) throw new Error("Проект не найден");
+    return project.projectRootPath;
+  };
+
+  server.handle(areaWorktreeOptionsRpc, async ({ projectId }, { paseo }) => {
+    const rootPath = await projectRoot(paseo, projectId);
+    return { rootPath, ...(await worktreeOptions(rootPath)) };
+  });
+
+  server.handle(areaWorktreeCreateRpc, async ({ projectId, title, path, branch, newBranch, baseBranch, agentModel }, { paseo }) => {
+    const rootPath = await projectRoot(paseo, projectId);
+    const worktree = await createWorktree(rootPath, { path, branch, newBranch, baseBranch });
+    try {
+      const workspace = await paseo.workspaces.create({
+        title: title.trim() || worktree.branch,
+        agent: agentModel ? { config: { provider: agentModel }, cwd: worktree.path } : undefined,
+        source: { kind: "directory", path: worktree.path, projectId },
+      });
+      await serializeWrite(async () => {
+        const stored = await readStored();
+        const area = stored.areaPreferences[workspace.id] ??= emptyAreaPreferences();
+        area.worktree = { ...worktree, rootPath };
+        await saveStored(stored);
+      });
+      return { workspaceId: workspace.id, path: worktree.path };
+    } catch (error) {
+      // Область не создалась: не оставляем пустую папку worktree.
+      await removeWorktree(rootPath, worktree.path, true).catch(() => {});
+      throw error;
+    }
+  });
+
+  server.handle(areaWorktreeInfoRpc, async ({ workspaceId }) => {
+    const worktree = (await readStored()).areaPreferences[workspaceId]?.worktree ?? null;
+    if (!worktree) return { worktree: null, exists: false, changes: [] };
+    return { worktree: { path: worktree.path, branch: worktree.branch }, ...(await worktreeStatus(worktree.path)) };
+  });
+
+  server.handle(areaWorktreeRemoveRpc, async ({ workspaceId, force }) => {
+    const worktree = (await readStored()).areaPreferences[workspaceId]?.worktree;
+    if (!worktree) return {};
+    // Область к этому моменту уже в архиве и в списке Paseo ее нет: корень берем из записи Штаба.
+    const rootPath = worktree.rootPath;
+    if (!rootPath) throw new Error("Не известен корень проекта этой папки worktree");
+    await removeWorktree(rootPath, worktree.path, force);
+    await serializeWrite(async () => {
+      const stored = await readStored();
+      const area = stored.areaPreferences[workspaceId];
+      if (area) area.worktree = null;
+      await saveStored(stored);
+    });
+    return {};
   });
 
   server.handle(terminalRenameRpc, async ({ terminalId, title, projectIds }) => {
