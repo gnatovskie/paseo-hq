@@ -95,6 +95,7 @@ import {
 import { z } from "zod";
 import { Markdown } from "@getpaseo/plugin/client/ui";
 import { defaultWorktreePath } from "./shared/worktree";
+import { openAgentTab } from "./client/agent-navigation";
 import { applyAgentUpdate } from "./shared/sidebar-agent-updates";
 import { clearProviders, peekProviders, providersSnapshot } from "./shared/provider-cache";
 
@@ -1992,8 +1993,15 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     [openScreen],
   );
 
-  const jumpToAgent = (agentId: string) => {
-    openScreen({ screenId: "jump", params: { agentId, t: String(Date.now()) } });
+  const jumpToAgent = async (agentId: string, workspaceId?: string) => {
+    const destination = workspaceId ?? agents.find(entry => entry.agent.id === agentId)?.agent.workspaceId ?? undefined;
+    try {
+      await openAgentTab({ agentId, workspaceId: destination, hostId: host.id, platform: layout.platform }, {
+        openURL: url => Linking.openURL(url), openScreen,
+      });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Не удалось открыть чат агента");
+    }
   };
 
   const prepareAgentModels = async (group: ProjectGroup, workspaceId?: string) => {
@@ -2073,7 +2081,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       setEditingChatId((current) => current === workspaceId ? null : current);
       setNewAgentWorkspaceId(null);
       setNewArea(null);
-      jumpToAgent(agentId);
+      await jumpToAgent(agentId, workspaceId);
       void reloadAll();
     } catch (error) {
       clearProviders();

@@ -99,6 +99,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
 
     browser = await chromium.launch({ executablePath: process.env.PASEO_CHROMIUM_EXECUTABLE });
     let expectedSettings = seedSettings;
+    const timings = [];
     for (const width of (process.env.PASEO_TEST_WIDTHS ?? "390,1280").split(",").map(Number)) {
       await t.test(`${width}px`, async () => {
         const page = await browser.newPage({
@@ -241,12 +242,26 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           });
           await assertSettings(expectedSettings);
           await changeSettings();
+          const createStarted = performance.now();
           await button("Создать агента с выбранной моделью").click();
           await agentName.waitFor({ state: "hidden" });
           const created = (await client.agents.list({})).entries.find(({ agent }) => agent.title === `Проверка агента ${width}`);
           assert(created);
           assert.equal(created.agent.currentModeId, changedSettings.modeId);
           assert.equal(created.agent.thinkingOptionId, changedSettings.thinkingOptionId);
+          await page.locator('textarea:visible').first().waitFor();
+          await page.getByTestId('agent-loading').waitFor({ state: 'hidden' });
+          timings.push({ name: `${width}px: create to message input`, metrics: { milliseconds: Math.round(performance.now() - createStarted) }, status: 'passed' });
+          await writeFile(join(output, 'creation-timings.json'), JSON.stringify(timings, null, 2));
+          await capture('created-agent-ready');
+          // Native HQ uses this workspace deep link instead of mounting a plugin screen.
+          // Exercise the same host route and ensure it selects the created agent.
+          const hostId = new URL(page.url()).pathname.split('/')[2];
+          assert(hostId, 'created agent has a host route');
+          await page.goto(`http://${endpoint}/h/${hostId}/workspace/${encodeURIComponent(workspace.id)}?open=${encodeURIComponent(`agent:${created.agent.id}`)}`);
+          await page.locator('textarea:visible').first().waitFor();
+          await page.getByTestId('agent-loading').waitFor({ state: 'hidden' });
+          await capture('created-agent-direct-route');
           expectedSettings = changedSettings;
           assert.equal(created.agent.workspaceId, workspace.id);
           assert.equal(created.agent.cwd, workspace.workspaceDirectory);
