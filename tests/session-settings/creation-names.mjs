@@ -255,6 +255,11 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await button("Новая сессия").click();
           assert.equal(await agentName.inputValue(), "Агент без названия", "a new form shows its actual default name");
           await button("Терминал").click();
+          const existingTerminals = (await client.terminals.list()).entries.filter(item => item.cwd === workspace.workspaceDirectory);
+          assert.equal(await terminalName.inputValue(), `Terminal ${existingTerminals.length + 1}`);
+          await button("Агент").click();
+          assert.equal(await agentName.inputValue(), "Агент без названия");
+          await button("Терминал").click();
           await terminalName.fill(`Терминал ${width}`);
           await editAtEnd(terminalName);
           await capture("session-name-terminal");
@@ -281,13 +286,13 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await button("Новая область в проекте target").click();
           await newAreaName.fill(`Область терминала ${width}`);
           await button("Терминал").click();
-          await terminalName.fill(`Первый терминал ${width}`);
+          assert.equal(await terminalName.inputValue(), "Terminal 1");
           await editAtEnd(terminalName);
           await button("Создать область").click();
           await terminalName.waitFor({ state: "hidden" });
           const terminalArea = (await client.workspaces.list()).entries.find(item => item.title === `Область терминала ${width}`);
           assert(terminalArea);
-          assert((await client.workspaces.ref(terminalArea.id).terminals.list()).entries.some(item => item.name === `Первый терминал ${width}`));
+          assert((await client.workspaces.ref(terminalArea.id).terminals.list()).entries.some(item => item.name === "Terminal 1"));
           await enterSidebar();
           const plainToggle = button(`Сессии области Область терминала ${width}`);
           if (await plainToggle.getAttribute("aria-expanded") !== "true") await plainToggle.click();

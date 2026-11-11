@@ -1586,6 +1586,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     setThinkingOptionId(next.thinkingOptionId);
   };
   const [newSessionTitle, setNewSessionTitle] = useState(DEFAULT_AGENT_TITLE);
+  const [newTerminalTitle, setNewTerminalTitle] = useState<string | null>(null);
   const [newSessionKind, setNewSessionKind] = useState<"agent" | "terminal">("agent");
   const [newAgentModelsError, setNewAgentModelsError] = useState<string | null>(null);
   const agentModelsRequest = useRef(0);
@@ -1954,6 +1955,12 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const newAreaFolder = newAreaPlace !== "project" ? newAreaWorktreePath || "Укажите ветку"
     : !newAreaGroup ? ""
     : newAreaGroup.rootPath;
+  const creationFolder = newArea ? newAreaTarget?.workspaceDirectory ?? newAreaFolder : newSessionWorkspace?.workspaceDirectory;
+  const defaultTerminalTitle = `Terminal ${terminals.filter(terminal => terminal.cwd === creationFolder).length + 1}`;
+  const terminalCreationTitle = newTerminalTitle ?? defaultTerminalTitle;
+  const creationNaming = (kind: "agent" | "terminal"): SessionNaming => kind === "agent"
+    ? { value: newSessionTitle, onChange: setNewSessionTitle }
+    : { value: terminalCreationTitle, onChange: setNewTerminalTitle };
   const hqWindowOpen = Boolean(worktreeArchive) || addModalOpen || Boolean(editingGroup) || Boolean(newArea) || Boolean(editingChat)
     || Boolean(newAgentWorkspaceId) || Boolean(agentMenuChat) || Boolean(terminalMenuItem) || panelSettingsOpen;
 
@@ -2026,14 +2033,13 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   };
 
   const changeCreationKind = (kind: "agent" | "terminal") => {
-    setNewSessionTitle(current => kind === "terminal" && current === DEFAULT_AGENT_TITLE ? ""
-      : kind === "agent" && !current ? DEFAULT_AGENT_TITLE : current);
     if (newArea) setNewArea({ ...newArea, firstTab: kind === "agent" ? "session" : "terminal" });
     else setNewSessionKind(kind);
   };
 
   const openNewArea = (group: ProjectGroup) => {
     setNewSessionTitle(DEFAULT_AGENT_TITLE);
+    setNewTerminalTitle(null);
     setNewArea({ projectId: group.id, name: "Новая область", firstTab: "session", place: "project" });
     setWorktreeOptions(null);
     void prepareAgentModels(group);
@@ -2046,6 +2052,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     const group = allGroups.find(item => item.chats.some(chat => chat.id === workspaceId));
     if (!group) return;
     setNewSessionTitle(DEFAULT_AGENT_TITLE);
+    setNewTerminalTitle(null);
     setNewSessionKind("agent");
     setNewAgentWorkspaceId(workspaceId);
     void prepareAgentModels(group, workspaceId);
@@ -2085,7 +2092,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     if (creatingTerminalId) return;
     setCreatingTerminalId(workspaceId);
     try {
-      const terminal = await paseo.workspaces.ref(workspaceId).terminals.create({ name: newSessionTitle.trim() || undefined });
+      const terminal = await paseo.workspaces.ref(workspaceId).terminals.create({ name: terminalCreationTitle.trim() || defaultTerminalTitle });
       const snapshot = terminal.current();
       if (!snapshot) throw new Error("Терминал создан, но его данные недоступны");
       setExpandedAreaIds((prev) => ({ ...prev, [workspaceId]: true }));
@@ -2142,7 +2149,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       setExpandedProjectIds((prev) => ({ ...prev, [group.id]: true }));
       setExpandedAreaIds((prev) => ({ ...prev, [workspaceId]: true }));
       if (newArea.firstTab === "terminal") {
-        const terminal = await paseo.workspaces.ref(workspaceId).terminals.create({ name: newSessionTitle.trim() || undefined });
+        const terminal = await paseo.workspaces.ref(workspaceId).terminals.create({ name: terminalCreationTitle.trim() || defaultTerminalTitle });
         const snapshot = terminal.current();
         if (!snapshot) throw new Error("Терминал создан, но его данные недоступны");
         openAreaTerminal(snapshot);
@@ -4013,7 +4020,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           theme={theme}
           key={newAreaTarget?.id ?? newArea.projectId}
           title="Новая область"
-          naming={{ value: newSessionTitle, onChange: setNewSessionTitle }}
+          naming={creationNaming(newArea.firstTab === "session" ? "agent" : "terminal")}
           open
           onClose={() => setNewArea(null)}
           kind={newArea.firstTab === "session" ? "agent" : "terminal"}
@@ -4381,7 +4388,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           theme={theme}
           narrow
           title="Новая сессия"
-          naming={{ value: newSessionTitle, onChange: setNewSessionTitle }}
+          naming={creationNaming(newSessionKind)}
           open
           onClose={() => setNewAgentWorkspaceId(null)}
           kind={newSessionKind}
