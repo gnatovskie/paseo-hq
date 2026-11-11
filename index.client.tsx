@@ -3292,16 +3292,10 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                       ref={areaTitleInput}
                       accessibilityLabel="Название области"
                       onTouchStart={event => event.stopPropagation()}
-                      onPressOut={() => {
-                        const end = (draftChatTitle ?? editingAreaTitle).length;
-                        setDraftTitleSelection({ start: end, end });
-                      }}
                       value={draftChatTitle ?? editingAreaTitle}
                       onChangeText={updateDraftChatTitle}
                       onFocus={() => {
                         if (draftChatTitle === null) updateDraftChatTitle(editingAreaTitle);
-                        const end = (draftChatTitle ?? editingAreaTitle).length;
-                        setDraftTitleSelection({ start: end, end });
                       }}
                       selection={draftTitleSelection}
                       onSelectionChange={({ nativeEvent: { selection } }) => {

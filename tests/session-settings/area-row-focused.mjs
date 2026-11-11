@@ -170,8 +170,9 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await input.waitFor();
           assert.equal(await button("Выбрать иконку области").count(), 0);
           assert.equal(await button("Редактировать название области").count(), 0);
-          await input.click();
-          assert.equal(await input.evaluate(element => element.selectionStart), title.length);
+          const box = await input.boundingBox();
+          await input.click({ position: { x: 2, y: box.height / 2 } });
+          assert.equal(await input.evaluate(element => element.selectionStart), 0);
           const updated = "🧠 Area name";
           await input.fill(updated);
           await page.getByText("Сессии", { exact: true }).click();
