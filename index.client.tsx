@@ -1244,7 +1244,7 @@ function NewSessionWindow({ theme, title, open, onClose, narrow, kind, onKindCha
                 </Text>
               </View>
               <TitleModelPicker theme={theme} options={modelOptions}
-                value={model ?? ""} disabled={!model || busy}
+                value={model ?? ""} disabled={!model || busy || !modelOptions.length}
                 label="Выбрать модель нового агента" icon="ChevronDown" menuLabel="Модели нового агента"
                 onValueChange={onModelChange} />
             </View>
@@ -1800,17 +1800,23 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       const cwd = workspaceId
         ? allGroups.flatMap(item => item.chats).find(chat => chat.id === workspaceId)?.workspaceDirectory ?? group.rootPath
         : group.rootPath;
-      const [snapshot, preferred] = await Promise.all([
-        paseo.providers.waitForReady({ cwd }),
-        projectAgentConfig(paseo, group, agents),
-      ]);
+      // Модель берем у последней сессии проекта из уже загруженного списка агентов: без запросов к провайдерам.
+      const preferred = await projectAgentConfig(paseo, group, agents);
       if (request !== agentModelsRequest.current) return;
-      const available = snapshot.entries.filter(entry => entry.enabled && entry.status === "ready");
-      const options = titleModelOptions(available, "first_line").filter(option => option.provider);
-      setNewAgentModels(available);
-      setNewAgentModel(options.some(option => option.value === preferred.provider)
-        ? preferred.provider : options[0]?.value ?? null);
-      if (!options.length) setNewAgentModelsError("Нет доступных моделей для нового агента");
+      setNewAgentModel(preferred.provider);
+      // Полный список моделей нужен только для выбора из него: грузим в фоне, создание не ждет.
+      void paseo.providers.waitForReady({ cwd }).then((snapshot) => {
+        if (request !== agentModelsRequest.current) return;
+        const available = snapshot.entries.filter(entry => entry.enabled && entry.status === "ready");
+        const options = titleModelOptions(available, "first_line").filter(option => option.provider);
+        setNewAgentModels(available);
+        setNewAgentModel((current) => current && options.some(option => option.value === current)
+          ? current : options[0]?.value ?? current);
+        if (!options.length) setNewAgentModelsError("Нет доступных моделей для нового агента");
+      }).catch((error) => {
+        if (request === agentModelsRequest.current) setNewAgentModelsError(
+          error instanceof Error ? error.message : "Не удалось загрузить модели");
+      });
     } catch (error) {
       if (request === agentModelsRequest.current) setNewAgentModelsError(
         error instanceof Error ? error.message : "Не удалось загрузить модели");
@@ -3010,7 +3016,10 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                           {expanded ? (
                             <View style={{
                               marginLeft: 20 - SESSION_STATUS_SIZE / 2,
-                              marginBottom: 4, paddingRight: 3, gap: 2,
+                              marginTop: 2, marginBottom: 8, padding: 4, gap: 2,
+                              borderRadius: 10, backgroundColor: c.surface2,
+                              borderWidth: 1, borderColor: c.border,
+                              borderLeftWidth: 3, borderLeftColor: c.accent,
                             }}>
                               {orderAreaSessions(sessions, areaTerminals, serverState.pinnedSessions).map((session) => session.kind === "terminal" ? (
                                 <TerminalRow key={session.id} terminal={session.terminal} label={terminalLabel(session.terminal)} theme={theme}
