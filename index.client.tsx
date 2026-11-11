@@ -3843,7 +3843,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                       {newAreaBranch || "Все ветки уже открыты"}
                     </Text>
                   </View>
-                  <TitleModelPicker theme={theme} value={newAreaBranch}
+                  <TitleModelPicker plain theme={theme} value={newAreaBranch}
                     options={freeBranches.map((branch) => ({ label: branch, value: branch, provider: "", providerLabel: "", name: branch }))}
                     disabled={!freeBranches.length || Boolean(creatingId)}
                     label="Выбрать ветку" icon="ChevronDown" menuLabel="Ветки проекта"
@@ -3870,7 +3870,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                     <Text numberOfLines={1} style={{ flex: 1, color: c.foregroundMuted, fontSize: 12 }}>
                       От ветки {newAreaBaseBranch}
                     </Text>
-                    <TitleModelPicker theme={theme} value={newAreaBaseBranch}
+                    <TitleModelPicker plain theme={theme} value={newAreaBaseBranch}
                       options={worktreeOptions.branches.map((branch) => ({ label: branch, value: branch, provider: "", providerLabel: "", name: branch }))}
                       disabled={Boolean(creatingId)}
                       label="Выбрать базовую ветку" icon="ChevronDown" menuLabel="Ветки проекта"

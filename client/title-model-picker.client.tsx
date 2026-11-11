@@ -12,7 +12,7 @@ interface Anchor {
   height: number;
 }
 
-export function TitleModelPicker({ theme, options, value, hint, disabled, pending, onValueChange, label = "Сгенерировать название", icon = "Sparkles", menuLabel = "Модели для названий областей" }: {
+export function TitleModelPicker({ theme, options, value, hint, disabled, pending, onValueChange, label = "Сгенерировать название", icon = "Sparkles", menuLabel = "Модели для названий областей", plain = false }: {
   theme: PluginTheme;
   options: readonly TitleModelOption[];
   value: string;
@@ -21,6 +21,8 @@ export function TitleModelPicker({ theme, options, value, hint, disabled, pendin
   pending?: boolean;
   onValueChange(value: string): void;
   label?: string;
+  /** Простой список с поиском (например, ветки): без провайдеров и без пункта «по первой строке». */
+  plain?: boolean;
   icon?: string;
   menuLabel?: string;
 }) {
@@ -36,8 +38,10 @@ export function TitleModelPicker({ theme, options, value, hint, disabled, pendin
   const [provider, setProvider] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const activeProvider = query ? null : provider;
-  const shown = filterTitleModels(options, activeProvider, query);
-  const firstLine = options.find(option => option.value === "first_line");
+  const shown = plain
+    ? options.filter(option => query.toLowerCase().split(/\s+/).filter(Boolean).every(word => option.label.toLowerCase().includes(word)))
+    : filterTitleModels(options, activeProvider, query);
+  const firstLine = plain ? undefined : options.find(option => option.value === "first_line");  
 
   useEffect(() => {
     if (!isOpen) return;
@@ -112,7 +116,7 @@ export function TitleModelPicker({ theme, options, value, hint, disabled, pendin
       <Pressable
         key={option.value}
         accessibilityRole="menuitem"
-        accessibilityLabel={option.value === "first_line" ? option.label : `Выбрать модель ${option.value}`}
+        accessibilityLabel={option.value === "first_line" ? option.label : plain ? `Выбрать ветку ${option.value}` : `Выбрать модель ${option.value}`}
         accessibilityState={{ selected }}
         onPress={() => select(option.value)}
         style={({ pressed }) => ({
@@ -149,8 +153,8 @@ export function TitleModelPicker({ theme, options, value, hint, disabled, pendin
           <TextInput
             value={query}
             onChangeText={setQuery}
-            accessibilityLabel="Поиск модели по всем провайдерам"
-            placeholder="Поиск модели по всем провайдерам"
+            accessibilityLabel={plain ? "Поиск ветки" : "Поиск модели по всем провайдерам"}
+            placeholder={plain ? "Поиск ветки" : "Поиск модели по всем провайдерам"}
             placeholderTextColor={c.foregroundMuted}
             autoCorrect={false}
             autoCapitalize="none"
@@ -162,25 +166,27 @@ export function TitleModelPicker({ theme, options, value, hint, disabled, pendin
           />
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Закрыть список моделей"
+            accessibilityLabel={plain ? "Закрыть список веток" : "Закрыть список моделей"}
             onPress={close}
             style={{ width: 32, height: 40, alignItems: "center", justifyContent: "center" }}
           >
             <Icon name="X" size={17} color={c.foregroundMuted} />
           </Pressable>
         </View>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ gap: 6 }}
-        >
-          {chip("all", "Все", !activeProvider, () => { setQuery(""); setProvider(null); })}
-          {providers.map(item => chip(item.provider, `${item.label} · ${item.count}`, activeProvider === item.provider, () => {
-            setQuery("");
-            setProvider(item.provider);
-          }))}
-        </ScrollView>
+        {plain ? null : (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={{ gap: 6 }}
+          >
+            {chip("all", "Все", !activeProvider, () => { setQuery(""); setProvider(null); })}
+            {providers.map(item => chip(item.provider, `${item.label} · ${item.count}`, activeProvider === item.provider, () => {
+              setQuery("");
+              setProvider(item.provider);
+            }))}
+          </ScrollView>
+        )}
       </View>
       <ScrollView
         keyboardShouldPersistTaps="handled"
@@ -189,7 +195,7 @@ export function TitleModelPicker({ theme, options, value, hint, disabled, pendin
       >
         {firstLine ? modelRow(firstLine) : null}
         {shown.length ? shown.map(modelRow) : (
-          <Text style={{ padding: 12, fontSize: 12, color: c.foregroundMuted }}>Ничего не найдено</Text>
+          <Text style={{ padding: 12, fontSize: 12, color: c.foregroundMuted }}>{plain ? "Веток не найдено" : "Ничего не найдено"}</Text>
         )}
       </ScrollView>
     </View>

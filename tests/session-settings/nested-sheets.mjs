@@ -245,8 +245,19 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           const wtBranch = `hq-wt-${width}`;
           const wtPath = `${source}-${wtBranch}`;
           const wtTitle = `WT ${width}`;
+          if (!execFileSync("git", ["-C", source, "branch", "--list", "hq-spare"], { encoding: "utf8" }).trim()) {
+            execFileSync("git", ["-C", source, "branch", "hq-spare"]);
+          }
           await button("Новая область в проекте source").click();
           await newAreaName.fill(wtTitle);
+          await button("Существующая ветка").click();
+          await button("Выбрать ветку").click();
+          await page.getByRole("textbox", { name: "Поиск ветки", exact: true }).waitFor();
+          await page.getByRole("menuitem", { name: "Выбрать ветку hq-spare", exact: true }).waitFor();
+          assert.equal(await page.getByRole("button", { name: "Все", exact: true }).count(), 0, "branch list has no provider chips");
+          await capture("branch-picker");
+          await page.getByRole("menuitem", { name: "Выбрать ветку hq-spare", exact: true }).click();
+          await page.getByText("hq-spare", { exact: true }).first().waitFor();
           await button("Новая ветка").click();
           await page.getByRole("textbox", { name: "Имя новой ветки", exact: true }).fill(wtBranch);
           assert.equal(await page.getByRole("textbox", { name: "Папка worktree", exact: true }).inputValue(), wtPath);
