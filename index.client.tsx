@@ -1474,6 +1474,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     lastRunningAt: {},
     pinnedSessions: {},
     terminalNames: {},
+    titleModel: "first_line",
     showHostMetrics: true,
     headerTitle: "Штаб",
     projectsSortMode: "auto",
@@ -1582,7 +1583,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const [suggestingTitle, setSuggestingTitle] = useState(false);
   const [agentMenuId, setAgentMenuId] = useState<string | null>(null);
   const [draftAgentTitle, setDraftAgentTitle] = useState<string | null>(null);
-  const [agentTitleModelChoice, setAgentTitleModelChoice] = useState<string | null>(null);
   const [suggestingAgentTitle, setSuggestingAgentTitle] = useState(false);
   const terminalNameInput = useRef<React.ElementRef<typeof TextInput>>(null);
   const agentTitleInput = useRef<React.ElementRef<typeof TextInput>>(null);
@@ -1877,7 +1877,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   }, [agentMenuId, terminalMenuId, reloadAll]);
   const terminalLabel = (terminal: PaseoTerminal) => serverState.terminalNames[terminal.id] ?? terminal.name;
   const titleSourceAgent = editingChatEntries[0]?.agent;
-  const titleModel = areaSettings?.titleModel ?? (editingChat ? serverState.projects[editingChat.projectId]?.sessionTitleModel : null) ?? "first_line";
+  const titleModel = serverState.titleModel;
   const canSuggestTitle = Boolean(titleSourceAgent) && !suggestingTitle && !chatMutationPending;
   const agentMenuChat = agents.find(({ agent }) =>
     agent.id === agentMenuId && agent.workspaceId && !agent.archivedAt && !agent.internal,
@@ -2184,7 +2184,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
 
   const agentMenuWorkspace = workspaces.find(workspace => workspace.id === agentMenuChat?.workspaceId);
   useEffect(() => {
-    if (!editingChatId && !agentMenuId) return;
+    if (!panelSettingsOpen) return;
     let cancelled = false;
     setTitleModelsError(null);
     const projectRoot = (editingChat ?? agentMenuWorkspace)?.projectRootPath;
@@ -2196,7 +2196,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       if (!cancelled) setTitleModelsError(error instanceof Error ? error.message : "Каталог моделей недоступен");
     });
     return () => { cancelled = true; };
-  }, [editingChatId, agentMenuId, editingChat?.projectRootPath, agentMenuWorkspace?.projectRootPath, paseo]);
+  }, [panelSettingsOpen, paseo]);
 
   const openProjectSettings = (group: ProjectGroup) => {
     setEditingProjectId(group.id);
@@ -2425,15 +2425,13 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     areaTitleInput.current?.blur();
   };
 
-  // Выбор модели принадлежит области. Название остается черновиком до сохранения.
+  // Единая модель панели. Название остается черновиком до сохранения.
   const handleSuggestTitle = async (model: string) => {
     if (!editingChat || !titleSourceAgent || !canSuggestTitle) return;
     if (draftChatTitle === null) startAreaTitleEdit();
     const revision = draftTitleRevision.current;
     setSuggestingTitle(true);
     try {
-      const settings = await readAreaSettings({ workspaceId: editingChat.id, titleModel: model });
-      setAreaSettings(settings);
       const { title } = await suggestSessionTitle({
         model,
         workspaceId: editingChat.id,
@@ -2452,9 +2450,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     }
   };
 
-  const agentTitleModel = agentTitleModelChoice
-    ?? (agentMenuWorkspace ? serverState.projects[agentMenuWorkspace.projectId]?.sessionTitleModel : null)
-    ?? "first_line";
+  const agentTitleModel = serverState.titleModel;
 
   const handleRenameAgent = async () => {
     const title = draftAgentTitle?.trim();
@@ -2483,7 +2479,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
 
   const handleSuggestAgentTitle = async (model: string) => {
     if (!agentMenuChat?.workspaceId || !agentMenuWorkspace || suggestingAgentTitle || chatMutationPending) return;
-    setAgentTitleModelChoice(model);
     setSuggestingAgentTitle(true);
     try {
       const { title } = await suggestSessionTitle({
@@ -2502,7 +2497,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   };
 
   const openAgentMenu = (agentId: string) => {
-    setAgentTitleModelChoice(null);
     setDraftAgentTitle(null);
     savedAgentTitle.current = null;
     setConfirmClosingSession(false);
@@ -4125,15 +4119,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                       theme={theme}
                     />
                   ) : (
-                    <TitleModelPicker
-                      theme={theme}
-                      value={titleModel}
-                      options={titleModelOptions(titleProviders, titleModel)}
-                      disabled={!canSuggestTitle}
-                      pending={suggestingTitle}
-                      hint={titleModelsError ? `Не удалось загрузить модели: ${titleModelsError}` : undefined}
-                      onValueChange={(model) => void handleSuggestTitle(model)}
-                    />
+                    <ChatActionButton theme={theme} label="Сгенерировать название" icon="Sparkles" disabled={!canSuggestTitle || suggestingTitle} onPress={() => void handleSuggestTitle(titleModel)} />
                   )}
                 </View>
                 {editingChat.projectKind === "git" ? (
@@ -4412,15 +4398,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                         theme={theme}
                       />
                     ) : (
-                      <TitleModelPicker
-                        theme={theme}
-                        value={agentTitleModel}
-                        options={titleModelOptions(titleProviders, agentTitleModel)}
-                        disabled={suggestingAgentTitle || chatMutationPending}
-                        pending={suggestingAgentTitle}
-                        hint={titleModelsError ? `Не удалось загрузить модели: ${titleModelsError}` : undefined}
-                        onValueChange={(model) => void handleSuggestAgentTitle(model)}
-                      />
+                      <ChatActionButton theme={theme} label="Сгенерировать название" icon="Sparkles" disabled={suggestingAgentTitle || chatMutationPending} onPress={() => void handleSuggestAgentTitle(agentTitleModel)} />
                     )}
                   </View>
                 </View>
@@ -4686,6 +4664,16 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       >
         <HqModal.Content>
           <View style={{ gap: 16 }}>
+            <SettingsSection title="Автогенерация названий">
+              <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Единая модель для всех проектов, областей и агентов Штаба.</Text>
+              <SettingsSelect label="Модель генерации названий" value={serverState.titleModel}
+                options={titleModelOptions(titleProviders, serverState.titleModel)}
+                onValueChange={(titleModel) => {
+                  void updatePanelSettings({ titleModel, projectIds: projects.map(project => project.projectId) })
+                    .then(setServerState).catch(error => toast.error(error instanceof Error ? error.message : "Не удалось сохранить модель"));
+                }} />
+              {titleModelsError ? <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>{titleModelsError}</Text> : null}
+            </SettingsSection>
             <SettingsSection title="Название вкладки">
               <View
                 style={{

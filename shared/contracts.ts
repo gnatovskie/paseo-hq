@@ -17,6 +17,7 @@ export const sidebarStateSchema = z.object({
   lastRunningAt: z.record(z.string(), z.number()),
   pinnedSessions: z.record(z.string(), z.number()),
   terminalNames: z.record(z.string(), z.string()).default({}),
+  titleModel: z.string().default("first_line"),
   showHostMetrics: z.boolean().default(true),
   headerTitle: z.string().default("Штаб"),
   projectsSortMode: z.enum(["auto", "manual"]).default("auto"),
@@ -64,6 +65,7 @@ export const sidebarReadRpc = defineRpc({
 export const panelSettingsRpc = defineRpc({
   name: "sidebar.settings",
   input: z.object({
+    titleModel: z.string().trim().min(1).optional(),
     headerTitle: z.string().optional(),
     showHostMetrics: z.boolean().optional(),
     projectsSortMode: z.enum(["auto", "manual"]).optional(),

@@ -119,6 +119,7 @@ interface StoredData {
   pinnedSessions: Record<string, number>;
   terminalNames: Record<string, string>;
   titledSessions: Record<string, number>;
+  titleModel: string;
   showHostMetrics: boolean;
   headerTitle: string;
   projectsSortMode: "auto" | "manual";
@@ -199,6 +200,7 @@ async function readStored(): Promise<StoredData> {
       pinnedSessions: parseNumberMap(raw.pinnedSessions),
       terminalNames: parseStringMap(raw.terminalNames),
       titledSessions: parseNumberMap(raw.titledSessions),
+      titleModel: typeof raw.titleModel === "string" && raw.titleModel.trim() ? raw.titleModel.trim() : "first_line",
       showHostMetrics: typeof raw.showHostMetrics === "boolean" ? raw.showHostMetrics : true,
       headerTitle: typeof raw.headerTitle === "string" && raw.headerTitle.trim() ? raw.headerTitle.trim() : "Штаб",
       projectsSortMode: raw.projectsSortMode === "manual" ? "manual" : "auto",
@@ -214,6 +216,7 @@ async function readStored(): Promise<StoredData> {
       pinnedSessions: {},
       terminalNames: {},
       titledSessions: {},
+      titleModel: "first_line",
       showHostMetrics: true,
       headerTitle: "Штаб",
       projectsSortMode: "auto",
@@ -233,6 +236,7 @@ async function saveStored(data: StoredData): Promise<void> {
     pinnedSessions: data.pinnedSessions,
     terminalNames: data.terminalNames,
     titledSessions: data.titledSessions,
+    titleModel: data.titleModel,
     showHostMetrics: data.showHostMetrics,
     headerTitle: data.headerTitle || "Штаб",
     projectsSortMode: data.projectsSortMode || "auto",
@@ -455,6 +459,7 @@ async function buildState(projectIds: string[]): Promise<SidebarState> {
     lastRunningAt: stored.lastRunningAt,
     pinnedSessions: stored.pinnedSessions,
     terminalNames: stored.terminalNames,
+    titleModel: stored.titleModel,
     showHostMetrics: stored.showHostMetrics,
     headerTitle: stored.headerTitle || "Штаб",
     projectsSortMode: stored.projectsSortMode || "auto",
@@ -564,7 +569,7 @@ export default function contribute(server: PluginServerContext) {
     if (stored.titledSessions[workspaceId]) return null;
     stored.titledSessions[workspaceId] = Date.now();
     await saveStored(stored);
-    return { model: stored.projects[projectId]?.sessionTitleModel ?? null };
+    return { model: stored.titleModel === "first_line" ? null : stored.titleModel };
   }));
 
   let sampler: ReturnType<typeof startSampler> | null = null;
@@ -709,6 +714,7 @@ export default function contribute(server: PluginServerContext) {
     panelSettingsRpc,
     async ({
       headerTitle,
+      titleModel,
       showHostMetrics,
       projectsSortMode,
       projectOrder,
@@ -717,6 +723,7 @@ export default function contribute(server: PluginServerContext) {
       let nextShow = showHostMetrics;
       await serializeWrite(async () => {
         const stored = await readStored();
+        if (titleModel !== undefined) stored.titleModel = titleModel;
         if (typeof headerTitle === "string") {
           const trimmed = headerTitle.trim();
           stored.headerTitle = trimmed || "Штаб";
@@ -749,7 +756,7 @@ export default function contribute(server: PluginServerContext) {
   // Закрепление хранится только внутри нашего виджета и не затрагивает нативный сайдбар Paseo
   server.handle(sessionTitleSuggestRpc, async ({ workspaceId, agentId, projectId, model }, { paseo }) => {
     const stored = await readStored();
-    const selectedModel = model ?? stored.areaPreferences[workspaceId]?.titleModel ?? stored.projects[projectId]?.sessionTitleModel ?? "first_line";
+    const selectedModel = stored.titleModel;
     return { title: await suggestTitle(paseo, workspaceId, agentId, selectedModel) };
   });
 

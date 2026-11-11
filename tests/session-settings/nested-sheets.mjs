@@ -145,6 +145,10 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
 
         try {
           await enterSidebar();
+          await button("Настройки штаба").click();
+          await page.getByText("Автогенерация названий", { exact: true }).waitFor();
+          await page.getByText("Модель генерации названий", { exact: true }).waitFor();
+          await button("Закрыть").last().click();
           await openArea();
           const closeTop = async () => (await button("Закрыть").last().boundingBox()).y;
           const topBefore = await closeTop();
