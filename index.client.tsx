@@ -3239,8 +3239,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                           </View>
                           {expanded ? (
                             <View style={{
-                              // Левый край на одной вертикали с названием области (отступ строки области - 7).
-                              marginLeft: 7,
                               marginTop: 2, marginBottom: 8, padding: 4, gap: 2,
                               borderRadius: 10, backgroundColor: c.surface2,
                               borderWidth: 1, borderColor: c.border,
