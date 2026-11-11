@@ -111,10 +111,11 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
         const settings = button("Настройки области");
         const openSettings = () => settings.click();
         const editTitle = button("Редактировать название области");
-        const cancelTitle = button("Отменить редактирование названия");
+        const areaIcon = button("Выбрать иконку области");
+        const generate = button("Сгенерировать название");
         const areaToggle = button(`Сессии области ${title}`);
         const sidebar = button("Новая область в проекте source").locator("../..");
-        const sidebarSession = sidebar.getByRole("button", { name: "Открыть сессию Fixture chat", exact: true });
+        const sidebarSession = sidebar.getByRole("button", { name: "Открыть агента Fixture chat", exact: true });
         const sidebarTerminal = sidebar.getByRole("button", { name: "Открыть терминал Fixture terminal", exact: true });
         const newAreaName = page.getByRole("textbox", { name: "Название новой области", exact: true });
         const choose = async (trigger, choice) => {
@@ -128,10 +129,11 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
         };
         const transfer = button("Перенести в проект");
         const archive = page.getByRole("switch", { name: "Архивировать исходную область", exact: true });
-        const history = page.getByRole("switch", { name: "Перенести историю последней сессии", exact: true });
+        const history = page.getByRole("switch", { name: "Перенести историю последнего агента", exact: true });
         const draft = page.getByPlaceholder("Новая область", { exact: true });
-        const areaContents = page.getByText("Сессии и терминалы", { exact: true });
+        const areaContents = page.getByText("Сессии", { exact: true });
         const settingsHeading = page.getByText("Настройки области", { exact: true });
+        const iconPicker = page.getByText("Иконка области", { exact: true });
         const closeSettings = async () => {
           await button("Close").last().click();
           await settingsHeading.waitFor({ state: "hidden" });
@@ -145,7 +147,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await button("Новая область в проекте source").click();
           await newAreaName.waitFor();
           assert.equal(await newAreaName.inputValue(), "Новая сессия");
-          await button("Открыть в новой области: Сессия").waitFor();
+          await button("Открыть в новой области: Агент").waitFor();
           assert.equal((await client.workspaces.list({})).entries.length, 1, "opening the form creates nothing");
           await button("Close").last().click();
           await newAreaName.waitFor({ state: "hidden" });
@@ -159,17 +161,17 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await sidebarTerminal.waitFor();
           await sidebarTerminal.getByText(workspace.workspaceDirectory, { exact: true }).waitFor();
           const areaGlyph = await areaActions.locator("svg").innerHTML();
-          for (const menu of ["Меню сессии Fixture chat", "Меню терминала Fixture terminal"]) {
+          for (const menu of ["Меню агента Fixture chat", "Меню терминала Fixture terminal"]) {
             const menuGlyph = await sidebar.getByRole("button", { name: menu, exact: true }).locator("svg").innerHTML();
             assert.notEqual(areaGlyph, menuGlyph, "area actions use a different icon from row menus");
           }
           assert.equal(await sidebar.getByText(/^\d+ сесси[ийя]$/).count(), 0);
-          assert.equal(await button(`Новая сессия в области ${title}`).count(), 0, "creation belongs in area settings");
+          assert.equal(await button(`Новый агент в области ${title}`).count(), 0, "creation belongs in area settings");
           const [areaTitleBox, areaBox, sessionTitleBox, statusBox, modelBox, settingsBox] = await Promise.all([
             areaTitle.boundingBox(),
             areaToggle.boundingBox(),
             sidebarSession.getByText("Fixture chat", { exact: true }).boundingBox(),
-            sidebarSession.getByLabel(/^Статус сессии: /).boundingBox(),
+            sidebarSession.getByLabel(/^Статус агента: /).boundingBox(),
             sidebarSession.getByText("Codex", { exact: true }).locator("..").boundingBox(),
             areaActions.boundingBox(),
           ]);
@@ -191,12 +193,12 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
             await enterSidebar();
             await areaToggle.click();
           }
-          const copySessionLink = button("Скопировать ссылку на сессию");
+          const copySessionLink = button("Скопировать ссылку на агента");
           const sessionActions = [
-            copySessionLink, button("Переименовать сессию"), button("Перезагрузить сессию"), button("Закрыть сессию"),
+            copySessionLink, button("Переименовать агента"), button("Перезагрузить агента"), button("Закрыть агента"),
           ];
           const expectSessionActions = () => Promise.all(sessionActions.map((action) => action.waitFor()));
-          await sidebar.getByRole("button", { name: "Меню сессии Fixture chat", exact: true }).click();
+          await sidebar.getByRole("button", { name: "Меню агента Fixture chat", exact: true }).click();
           await expectSessionActions();
           await capture("sidebar-session-menu");
           await copySessionLink.click();
@@ -222,13 +224,15 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await openArea();
           await areaContents.waitFor();
           await page.getByText("Функционал области", { exact: true }).waitFor();
+          assert.equal(await areaIcon.count(), 1, "the icon picker opens from the title row");
+          assert.equal((await areaIcon.textContent()).trim(), "");
           await editTitle.locator("..").getByText(title, { exact: true }).waitFor();
           assert.equal(await draft.count(), 0, "the title is read-only until the edit button is pressed");
           assert.equal(await page.getByText("Иконка области", { exact: true }).count(), 0);
           assert.equal(await archive.count(), 0, "transfer options should open only after pressing the icon");
           const actions = ["Закрепить область", "Скопировать путь к папке проекта",
             "Перенести в проект", "Архивировать область"].map(button);
-          const createSession = button("Новая сессия");
+          const createSession = button("Новый агент");
           const createTerminal = button("Новый терминал");
           await actions[0].click({ trial: true });
           const boxes = await Promise.all([createSession, createTerminal, ...actions.slice(0, 2), settings, ...actions.slice(2)].map(async (action) => {
@@ -241,36 +245,78 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           assert(lastAction.x + lastAction.width <= width);
           const editBox = await editTitle.boundingBox();
           assert(editBox.y + editBox.height < boxes[0].y);
+          const [nameBox, iconBox, generatorBox] = await Promise.all([
+            editTitle.locator("..").boundingBox(), areaIcon.boundingBox(), generate.boundingBox(),
+          ]);
+          assert.equal(iconBox.width, iconBox.height);
+          assert.equal(generatorBox.width, generatorBox.height);
+          assert(iconBox.x + iconBox.width < nameBox.x && nameBox.x + nameBox.width < generatorBox.x);
+          assert.equal(nameBox.y, iconBox.y);
+          assert.equal(iconBox.y, generatorBox.y);
           assert(boxes[0].y + boxes[0].height < (await areaContents.boundingBox()).y);
-          const chatRows = page.getByRole("button", { name: /^Открыть сессию / });
+          const chatRows = page.getByRole("button", { name: /^Открыть агента / });
           assert.equal(await chatRows.count(), 2);
-          await button("Открыть сессию Fixture chat").getByLabel(`Ветка при запуске: ${firstBranch}`).waitFor();
-          await button("Открыть сессию Second fixture chat").getByLabel("Ветка при запуске: hq-next").waitFor();
+          await button("Открыть агента Fixture chat").getByLabel(`Ветка при запуске: ${firstBranch}`).waitFor();
+          await button("Открыть агента Second fixture chat").getByLabel("Ветка при запуске: hq-next").waitFor();
           await button("Открыть терминал Fixture terminal").waitFor();
           assert.equal(await page.getByRole("button", { name: /^(ID|Скопировать ID.*)$/ }).count(), 0);
           assert.equal(await page.getByText(/^ID: [a-f\d]{8}/).count(), 0);
           await capture("area-actions");
+          const openTerminal = button("Открыть терминал Fixture terminal");
+          await button("Агенты").click();
+          await openTerminal.waitFor({ state: "hidden" });
+          assert.equal(await chatRows.count(), 2);
+          await button("Терминалы").click();
+          await openTerminal.waitFor();
+          assert.equal(await chatRows.count(), 0);
+          await button("Все").click();
+          await openTerminal.waitFor();
+          assert.equal(await chatRows.count(), 2);
           const firstChatLabel = await chatRows.first().getAttribute("aria-label");
-          const firstChat = firstChatLabel === "Открыть сессию Fixture chat" ? chat : secondChat;
+          const firstChat = firstChatLabel === "Открыть агента Fixture chat" ? chat : secondChat;
 
           await openSettings();
           await settingsHeading.waitFor();
           assert.equal(await draft.count(), 0, "the title editor belongs in the area panel");
-          await button("Иконка области: Без иконки").waitFor();
+          assert.equal(await iconPicker.count(), 0, "the settings sheet only contains the branch selector");
           await button("Ветка по умолчанию: Текущая ветка · hq-next").waitFor();
-          await button("Иконка области: Без иконки").click({ trial: true });
           await capture("area-details");
           await closeSettings();
+
+          await areaIcon.click();
+          await iconPicker.waitFor();
+          await button("Выбрать 📦").click({ trial: true });
+          await capture("area-emoji-picker");
+          await button("Выбрать 📦").click();
+          await iconPicker.waitFor({ state: "hidden" });
+          await areaIcon.getByText("📦", { exact: true }).waitFor();
+          await areaToggle.getByText("📦", { exact: true }).waitFor();
+          await areaIcon.click({ trial: true });
+          await capture("area-with-emoji");
+          await areaIcon.click();
+          await button("Убрать иконку").click();
+          await iconPicker.waitFor({ state: "hidden" });
+          await areaToggle.getByText("📦", { exact: true }).waitFor({ state: "hidden" });
+          assert.equal((await areaIcon.textContent()).trim(), "");
+
           await editTitle.click();
           await draft.waitFor();
           assert.equal(await draft.inputValue(), title);
-          const generate = button("Сгенерировать название");
+          assert.deepEqual(await draft.evaluate((input) => [document.activeElement === input, input.selectionStart, input.selectionEnd]),
+            [true, title.length, title.length]);
+          await draft.press("Backspace");
+          assert.equal(await draft.inputValue(), title.slice(0, -1));
+          assert.equal(await editTitle.count(), 0);
+          await button("Сохранить название").waitFor();
+          await draft.fill(title);
           await generate.click({ trial: true });
           await capture("area-title-edit");
           const fieldBox = await draft.boundingBox();
           const generateBox = await generate.boundingBox();
           assert(generateBox.x >= fieldBox.x + fieldBox.width);
           assert(Math.abs(generateBox.y + generateBox.height / 2 - fieldBox.y - fieldBox.height / 2) < 2);
+          await button("Сохранить название").click();
+          await draft.waitFor({ state: "hidden" });
           assert(daemonSocket);
           const [generationFrame] = await Promise.all([
             daemonSocket.waitForEvent("framesent", {
@@ -279,6 +325,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
             generate.click(),
           ]);
           assert.equal(JSON.parse(String(generationFrame.payload)).message.input.agentId, firstChat.id);
+          await draft.waitFor();
           await generate.click({ trial: true });
           await draft.fill("Unsaved title");
 
@@ -297,24 +344,27 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await capture("session-transfer");
           await button("Close").last().click();
           await archive.waitFor({ state: "hidden" });
+          await page.getByText("Перенос области в проект", { exact: true }).waitFor({ state: "hidden" });
           assert.equal(await draft.inputValue(), "Unsaved title");
-          await cancelTitle.click();
+          await button("Close").last().click();
+          await areaContents.waitFor({ state: "hidden" });
+          await openArea();
           await draft.waitFor({ state: "hidden" });
           await editTitle.locator("..").getByText(title, { exact: true }).waitFor();
 
           const selectedChat = link.endsWith(`/${chat.id}`) ? secondChat : chat;
           let selectedTitle = selectedChat.id === chat.id ? "Fixture chat" : "Second fixture chat";
-          await button(`Меню сессии ${selectedTitle}`).click();
+          await button(`Меню агента ${selectedTitle}`).click();
           await expectSessionActions();
           if (width === 1280) {
-            await button("Переименовать сессию").click();
+            await button("Переименовать агента").click();
             selectedTitle = "Renamed fixture chat";
-            await page.getByPlaceholder("Название сессии", { exact: true }).fill(selectedTitle);
+            await page.getByPlaceholder("Название агента", { exact: true }).fill(selectedTitle);
             await button("Переименовать").click();
-            await page.getByText("Сессия переименована", { exact: true }).waitFor();
+            await page.getByText("Агент переименован", { exact: true }).waitFor();
             assert.equal((await client.agents.ref(selectedChat.id).refresh()).agent.title, selectedTitle);
           } else {
-            const reloadChat = button("Перезагрузить сессию");
+            const reloadChat = button("Перезагрузить агента");
             const [reloadFrame] = await Promise.all([
               daemonSocket.waitForEvent("framesent", {
                 predicate: ({ payload }) => JSON.parse(String(payload)).message?.type === "refresh_agent_request",
@@ -322,16 +372,16 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
               reloadChat.click(),
             ]);
             assert.equal(JSON.parse(String(reloadFrame.payload)).message.agentId, selectedChat.id);
-            const reloadResult = page.getByText(/Сессия перезагружена|thread\/items\/list is not supported yet/);
+            const reloadResult = page.getByText(/Агент перезагружен|thread\/items\/list is not supported yet/);
             await reloadResult.waitFor();
             if (await reloadChat.isVisible()) {
               await button("Close").last().click();
               await reloadChat.waitFor({ state: "hidden" });
             }
           }
-          const openChat = button(`Открыть сессию ${selectedTitle}`);
+          const openChat = button(`Открыть агента ${selectedTitle}`);
           assert.equal(await openChat.count(), 1, "each listed session should be openable");
-          await button(`Меню сессии ${selectedTitle}`).click();
+          await button(`Меню агента ${selectedTitle}`).click();
           await expectSessionActions();
           await copySessionLink.click();
           await page.waitForFunction(
@@ -367,21 +417,11 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
             await button("Сохранить название").click();
             await draft.waitFor({ state: "hidden" });
             await openSettings();
-            await choose("Иконка области: Без иконки", "📦");
-            await button("Иконка области: 📦").waitFor();
-            await closeSettings();
-            await areaToggle.getByText("📦", { exact: true }).waitFor();
-            await openSettings();
-            await choose("Иконка области: 📦", "Без иконки");
-            await button("Иконка области: Без иконки").waitFor();
-            await closeSettings();
-            await areaToggle.getByText("📦", { exact: true }).waitFor({ state: "hidden" });
-            await openSettings();
             await choose("Ветка по умолчанию: Текущая ветка · hq-next", firstBranch);
             await button(`Ветка по умолчанию: ${firstBranch}`).waitFor();
             await closeSettings();
             await createSession.click();
-            await page.getByText(`Переключите область на ветку «${firstBranch}», чтобы создать сессию`).waitFor();
+            await page.getByText(`Переключите область на ветку «${firstBranch}», чтобы создать агента`).waitFor();
             assert.equal(git("branch", "--show-current"), "hq-next");
             assert.equal((await client.agents.list({})).entries.filter(({ agent }) => agent.workspaceId === workspace.id).length, 2);
             await openSettings();
@@ -395,13 +435,24 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
             assert(created, "the settings plus creates a session in the same area");
             assert.equal(created.agent.cwd, workspace.workspaceDirectory);
             await openArea();
-            const closedTitle = created.agent.title || "Сессия без названия";
+            const closedTitle = created.agent.title || "Агент без названия";
             const areaDialog = page.getByRole("dialog").filter({ has: areaContents });
-            await areaDialog.getByRole("button", { name: `Меню сессии ${closedTitle}`, exact: true }).click();
-            await button("Закрыть сессию").click();
-            await page.getByText("Сессия закрыта", { exact: true }).waitFor();
-            await areaDialog.getByRole("button", { name: `Открыть сессию ${closedTitle}`, exact: true }).waitFor({ state: "hidden" });
+            await areaDialog.getByRole("button", { name: `Меню агента ${closedTitle}`, exact: true }).click();
+            await button("Закрыть агента").click();
+            await page.getByText("Агент закрыт", { exact: true }).waitFor();
+            await areaDialog.getByRole("button", { name: `Открыть агента ${closedTitle}`, exact: true }).waitFor({ state: "hidden" });
             await assertInHistory(created.agent.id, workspace.id, created.agent.title);
+            const closedAgent = button(`Открыть закрытого агента ${closedTitle}`);
+            await closedAgent.waitFor();
+            await areaDialog.getByRole("button", { name: "Close", exact: true }).click();
+            await areaContents.waitFor({ state: "hidden" });
+            await openArea();
+            await closedAgent.scrollIntoViewIfNeeded();
+            await capture("area-closed-sessions");
+            await closedAgent.click();
+            await page.getByText("This agent is archived", { exact: true }).filter({ visible: true }).first().waitFor();
+            await assertInHistory(created.agent.id, workspace.id, created.agent.title);
+            await openArea();
             await Promise.all([page.waitForEvent("load"), createTerminal.click()]);
             await page.locator(".xterm").first().waitFor({ state: "visible" });
             const { entries: activeTerminals } = await workspaceHandle.terminals.list();
@@ -457,7 +508,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
             await page.waitForURL((url) => url.pathname.endsWith(`/workspace/${moved.id}`));
             await openArea();
             await areaContents.waitFor();
-            assert.equal(await page.getByRole("button", { name: /^Открыть сессию / }).count(), 1);
+            assert.equal(await page.getByRole("button", { name: /^Открыть агента / }).count(), 1);
             assert(daemonSocket);
             const [archiveFrame] = await Promise.all([
               daemonSocket.waitForEvent("framereceived", {
@@ -474,7 +525,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
             assert(!remaining.entries.some((entry) => entry.id === moved.id));
             await button("Новая область в проекте target").click();
             await newAreaName.fill("Project modal session fixture");
-            await button("Открыть в новой области: Сессия").waitFor();
+            await button("Открыть в новой области: Агент").waitFor();
             await button("Создать область").click();
             await newAreaName.waitFor({ state: "hidden" });
             const sessionArea = (await client.workspaces.list({})).entries.find((entry) => entry.title === "Project modal session fixture");
@@ -484,15 +535,15 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
             const sidebarNewArea = button("Новая область в проекте target").locator("../..");
             const newAreaToggle = button("Сессии области Project modal session fixture");
             if (await newAreaToggle.getAttribute("aria-expanded") !== "true") await newAreaToggle.click();
-            const firstSessionTitle = firstSession.title || "Сессия без названия";
-            await sidebarNewArea.getByRole("button", { name: `Меню сессии ${firstSessionTitle}`, exact: true }).click();
-            await button("Закрыть сессию").click();
-            await page.getByText("Сессия закрыта", { exact: true }).waitFor();
-            await sidebarNewArea.getByRole("button", { name: `Открыть сессию ${firstSessionTitle}`, exact: true }).waitFor({ state: "hidden" });
+            const firstSessionTitle = firstSession.title || "Агент без названия";
+            await sidebarNewArea.getByRole("button", { name: `Меню агента ${firstSessionTitle}`, exact: true }).click();
+            await button("Закрыть агента").click();
+            await page.getByText("Агент закрыт", { exact: true }).waitFor();
+            await sidebarNewArea.getByRole("button", { name: `Открыть агента ${firstSessionTitle}`, exact: true }).waitFor({ state: "hidden" });
             await assertInHistory(firstSession.id, sessionArea.id, firstSession.title);
             await button("Новая область в проекте target").click();
             await newAreaName.fill("Project modal terminal fixture");
-            await choose("Открыть в новой области: Сессия", "Терминал");
+            await choose("Открыть в новой области: Агент", "Терминал");
             await button("Открыть в новой области: Терминал").waitFor();
             await button("Создать область").click();
             await page.locator(".xterm").first().waitFor({ state: "visible" });

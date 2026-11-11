@@ -138,7 +138,7 @@ export async function suggestTitle(paseo: PaseoApi, workspaceId: string, agentId
   const history = await paseo.agents.ref(agentId).timeline.refetch({ direction: "tail", limit: 100 });
   if (history.error) throw new Error(history.error);
   const material = titleContext(history.entries.map(entry => entry.item as TimelineItem));
-  if (!material) throw new Error("В сессии нет промпта и ответа");
+  if (!material) throw new Error("У агента нет промпта и ответа");
   const generated = (await generate(paseo, workspaceId, model, material)).trim().replace(/^["«]|["»]$/g, "");
   if (!generated || generated.includes("\n") || generated.length > 80) throw new Error("Модель вернула неподходящее название");
   return shortTitle(generated);

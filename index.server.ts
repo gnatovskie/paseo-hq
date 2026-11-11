@@ -813,7 +813,7 @@ export default function contribute(server: PluginServerContext) {
     const config = await projectAgentConfig(paseo, { rootPath: area.workspaceDirectory, chats: [area] }, entries);
     const branch = (await readStored()).areaPreferences[workspaceId]?.defaultBranch;
     if (branch && await currentGitBranch(area.workspaceDirectory) !== branch) {
-      throw new Error(`Переключите область на ветку «${branch}», чтобы создать сессию`);
+      throw new Error(`Переключите область на ветку «${branch}», чтобы создать агента`);
     }
     const agent = await paseo.workspaces.ref(area).agents.create({ config });
     return { agentId: agent.id };
@@ -823,7 +823,7 @@ export default function contribute(server: PluginServerContext) {
     const result = await paseo.agents.ref(agentId).refresh();
     const agent = result?.agent;
     if (!agent || agent.id !== agentId || agent.workspaceId !== workspaceId || agent.archivedAt || agent.internal) {
-      throw new Error("Сессия не найдена в этой области");
+      throw new Error("Агент не найден в этой области");
     }
     await execFileAsync("paseo", ["agent", "update", "--home", paseoHome, `--name=${title}`, "--", agentId], {
       timeout: 15_000,

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Animated,
   Easing,
@@ -85,6 +86,11 @@ import { Markdown } from "@getpaseo/plugin/client/ui";
 
 const EMOJI_PRESETS = ["🚀", "⚡", "🛠", "📦", "🧠", "🌐", "💳", "🎨", "🔒", "📱", "🤖", "🔥"];
 const AREA_ICONS = ["📁", "💻", "🛠", "📦", "🚀", "🧪", "📝", "🎨"];
+const AREA_SESSION_FILTERS = [
+  { value: "all", label: "Все" },
+  { value: "agents", label: "Агенты" },
+  { value: "terminals", label: "Терминалы" },
+] as const;
 const COLOR_PRESETS = ["#3B82F6", "#8B5CF6", "#10B981", "#F59E0B", "#EF4444", "#EC4899", "#06B6D4", "#64748B"];
 
 const DEFAULT_META: ProjectMeta = {
@@ -111,7 +117,7 @@ interface ProjectGroup {
   meta: ProjectMeta;
   resolvedAvatarUri: string | null;
   lastRunningAt: number;
-  /** Последний промпт в любой сессии проекта, используется для порядка внутри группы. */
+  /** Последний промпт любого агента проекта, используется для порядка внутри группы. */
   lastPromptAt: number;
   hasRunning: boolean;
   summaryBucket: UiSessionBucket;
@@ -247,7 +253,7 @@ function chatLastRunningMs(
  */
 function chatLastPromptMs(w: PaseoWorkspace, agentPromptMap: Record<string, number>): number {
   // Сводное время области учитывает и служебный генератор названия,
-  // поэтому оно лишь запасное, когда сессий области нет в списке.
+  // поэтому оно лишь запасное, когда агентов области нет в списке.
   return agentPromptMap[w.id] || parseIsoMs(w.lastUserMessageAt) || parseIsoMs(w.createdAt);
 }
 
@@ -708,6 +714,40 @@ function ChatActionButton({ label, icon, color, disabled, onPress, theme, quiet 
   );
 }
 
+function AreaEmojiButton({ label, emoji, selected, disabled, onPress, theme }: {
+  label: string;
+  emoji?: string;
+  selected?: boolean;
+  disabled: boolean;
+  onPress: () => void;
+  theme: PluginTheme;
+}) {
+  const c = theme.colors;
+  return (
+    <TooltipPressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ selected }}
+      tooltip={label}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        width: 44,
+        height: 44,
+        borderRadius: 9,
+        borderWidth: 1,
+        borderColor: selected ? c.accent : c.border,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: pressed ? c.surface1 : c.surface2,
+        opacity: disabled ? 0.5 : 1,
+      })}
+    >
+      {emoji ? <Text style={{ fontSize: 20 }}>{emoji}</Text> : null}
+    </TooltipPressable>
+  );
+}
+
 function ProjectHeaderPressable({
   group,
   isOpen,
@@ -788,11 +828,11 @@ function ProjectHeaderPressable({
   );
 }
 
-function sessionTitle(agent: AgentEntry["agent"]): string {
-  return agent.title?.trim() || "Сессия без названия";
+function agentTitle(agent: AgentEntry["agent"]): string {
+  return agent.title?.trim() || "Агент без названия";
 }
 
-function SessionSummary({ agent, branch, theme, platform, gap = 4 }: {
+function AgentSummary({ agent, branch, theme, platform, gap = 4 }: {
   agent: AgentEntry["agent"];
   branch?: string;
   theme: PluginTheme;
@@ -804,12 +844,12 @@ function SessionSummary({ agent, branch, theme, platform, gap = 4 }: {
   const bucket = deriveAgentBucket(agent);
   return (
     <View style={{ flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap }}>
-      <View accessible accessibilityLabel={`Статус сессии: ${SESSION_STATUS_LABEL[bucket]}`}>
+      <View accessible accessibilityLabel={`Статус агента: ${SESSION_STATUS_LABEL[bucket]}`}>
         <SessionStatusIndicator bucket={bucket} theme={theme} platform={platform} size={SESSION_STATUS_SIZE} />
       </View>
       <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
         <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 13, lineHeight: 18, fontWeight: "500" }}>
-          {sessionTitle(agent)}
+          {agentTitle(agent)}
         </Text>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 6, minHeight: 16 }}>
           {family ? (
@@ -1028,8 +1068,10 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
 
   // Панель области и ее настройки
   const [editingChatId, setEditingChatId] = useState<string | null>(null);
-  const [areaSettingsOpen, setAreaSettingsOpen] = useState(false);
+  const [areaSessionFilter, setAreaSessionFilter] = useState<(typeof AREA_SESSION_FILTERS)[number]["value"]>("all");
+  const [areaSettingsPanel, setAreaSettingsPanel] = useState<"icon" | "branch" | null>(null);
   const [draftChatTitle, setDraftChatTitle] = useState<string | null>(null);
+  const [draftTitleSelection, setDraftTitleSelection] = useState<{ start: number; end: number }>();
   const draftTitleRevision = useRef(0);
   const [savingChat, setSavingChat] = useState(false);
   const [areaSettings, setAreaSettings] = useState<z.infer<typeof areaSettingsRpc.output> | null>(null);
@@ -1281,13 +1323,37 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
 
   const editingChatPinned = editingChat ? Boolean(serverState.pinnedSessions[editingChat.id]) : false;
   const editingChatAgent = editingChat ? latestAgentByWorkspace[editingChat.id] : undefined;
+  const editingAreaTitle = editingChat ? chatTitle(editingChat, editingChatAgent) : "";
+  const editingAreaIcon = editingChat ? serverState.areaIcons[editingChat.id] : undefined;
   const editingChatEntries = (editingChat ? agentsByWorkspace.get(editingChat.id) : undefined) ?? [];
   const editingChatTerminals = terminals.filter((terminal) => terminal.workspaceId === editingChatId);
+  const visibleAreaAgents = areaSessionFilter === "terminals" ? [] : editingChatEntries;
+  const visibleAreaTerminals = areaSessionFilter === "agents" ? [] : editingChatTerminals;
+  const queryClient = useQueryClient();
+  const closedAgents = useQuery({
+    queryKey: ["hq-closed-agents", host.id, editingChat?.id],
+    enabled: Boolean(editingChat),
+    queryFn: async () => {
+      if (!editingChat) return [];
+      const archived: AgentEntry["agent"][] = [];
+      let cursor: string | null = null;
+      do {
+        const page: Awaited<ReturnType<typeof paseo.agents.list>> = await paseo.agents.list({
+          filter: { includeArchived: true, projectKeys: [editingChat.projectId] },
+          page: { limit: 200, cursor: cursor ?? undefined },
+        });
+        for (const { agent } of page.entries) {
+          if (agent.workspaceId === editingChat.id && agent.archivedAt && !agent.internal) archived.push(agent);
+        }
+        cursor = page.pageInfo.nextCursor;
+      } while (cursor);
+      return archived.sort((left, right) => (right.archivedAt ?? "").localeCompare(left.archivedAt ?? ""));
+    },
+  });
   const terminalMenuItem = terminals.find((terminal) => terminal.id === terminalMenuId);
   const titleSourceAgent = editingChatEntries[0]?.agent;
   const titleModel = editingChat ? serverState.projects[editingChat.projectId]?.sessionTitleModel : null;
-  const canSuggestTitle = draftChatTitle !== null && Boolean(titleModel && titleSourceAgent)
-    && !suggestingTitle && !chatMutationPending;
+  const canSuggestTitle = Boolean(titleModel && titleSourceAgent) && !suggestingTitle && !chatMutationPending;
   const agentMenuChat = agents.find(({ agent }) =>
     agent.id === agentMenuId && agent.workspaceId && !agent.archivedAt && !agent.internal,
   )?.agent;
@@ -1331,7 +1397,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       jumpToAgent(agentId);
       void reloadAll();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Не удалось создать сессию");
+      toast.error(error instanceof Error ? error.message : "Не удалось создать агента");
     } finally {
       setCreatingAreaIds((prev) => {
         const next = { ...prev };
@@ -1637,6 +1703,12 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const updateDraftChatTitle = (value: string | null) => {
     draftTitleRevision.current += 1;
     setDraftChatTitle(value);
+    setDraftTitleSelection(undefined);
+  };
+
+  const startAreaTitleEdit = () => {
+    updateDraftChatTitle(editingAreaTitle);
+    setDraftTitleSelection({ start: editingAreaTitle.length, end: editingAreaTitle.length });
   };
 
   const openAreaActions = (chat: PaseoWorkspace) => {
@@ -1644,7 +1716,8 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     setAreaSettings(null);
     setAreaSettingsError(null);
     setEditingChatId(chat.id);
-    setAreaSettingsOpen(false);
+    setAreaSessionFilter("all");
+    setAreaSettingsPanel(null);
     setAgentMenuId(null);
     setChatTransferOpen(false);
     updateDraftChatTitle(null);
@@ -1668,6 +1741,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           else delete areaIcons[workspaceId];
           return { ...prev, areaIcons };
         });
+        setAreaSettingsPanel(null);
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Не удалось сохранить настройки области");
@@ -1720,6 +1794,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   // Предлагает название моделью проекта по последнему промпту и ответу; сохраняет Руслан.
   const handleSuggestTitle = async () => {
     if (!editingChat || !titleSourceAgent || !canSuggestTitle) return;
+    if (draftChatTitle === null) startAreaTitleEdit();
     const revision = draftTitleRevision.current;
     setSuggestingTitle(true);
     try {
@@ -1728,7 +1803,10 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
         agentId: titleSourceAgent.id,
         projectId: editingChat.projectId,
       });
-      if (draftTitleRevision.current === revision) setDraftChatTitle(title);
+      if (draftTitleRevision.current === revision) {
+        setDraftChatTitle(title);
+        setDraftTitleSelection({ start: title.length, end: title.length });
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Не удалось сгенерировать название");
     } finally {
@@ -1746,7 +1824,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     try {
       await copyText(`paseo:///h/${host.id || "local"}/agent/${agentId}`);
       setAgentMenuId((current) => current === agentId ? null : current);
-      toast.show("Ссылка на сессию скопирована", { variant: "info" });
+      toast.show("Ссылка на агента скопирована", { variant: "info" });
     } catch {
       toast.error("Не удалось скопировать ссылку");
     }
@@ -1759,9 +1837,9 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     if (action === "rename" && !title) return;
     const agentId = agentMenuChat.id;
     const result = {
-      rename: "Сессия переименована",
-      reload: "Сессия перезагружена",
-      close: "Сессия закрыта",
+      rename: "Агент переименован",
+      reload: "Агент перезагружен",
+      close: "Агент закрыт",
     };
     setSavingChat(true);
     try {
@@ -1771,12 +1849,13 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
         await paseo.agents.ref(agentId).reload();
       } else if (action === "close") {
         await paseo.agents.ref(agentId).archive();
+        void queryClient.invalidateQueries({ queryKey: ["hq-closed-agents", host.id, workspaceId] });
       }
       await reloadAll();
       setAgentMenuId(null);
       toast.show(result[action], { variant: "success" });
     } catch (err) {
-      const fallback = action === "close" ? "Не удалось закрыть сессию" : "Не удалось обновить сессию";
+      const fallback = action === "close" ? "Не удалось закрыть агента" : "Не удалось обновить агента";
       toast.error(err instanceof Error ? err.message : fallback);
     } finally {
       setSavingChat(false);
@@ -2307,7 +2386,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                                 <View key={agent.id} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
                                   <Pressable
                                     accessibilityRole="button"
-                                    accessibilityLabel={`Открыть сессию ${sessionTitle(agent)}`}
+                                    accessibilityLabel={`Открыть агента ${agentTitle(agent)}`}
                                     onPress={() => jumpToAgent(agent.id)}
                                     style={({ pressed }) => ({
                                       flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center",
@@ -2315,10 +2394,10 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                                       backgroundColor: pressed ? c.surface2 : undefined,
                                     })}
                                   >
-                                    <SessionSummary agent={agent} theme={theme} platform={layout.platform} gap={NESTED_ITEM_GAP} />
+                                    <AgentSummary agent={agent} theme={theme} platform={layout.platform} gap={NESTED_ITEM_GAP} />
                                   </Pressable>
                                   <ChatActionButton
-                                    label={`Меню сессии ${sessionTitle(agent)}`}
+                                    label={`Меню агента ${agentTitle(agent)}`}
                                     icon="MoreHorizontal"
                                     quiet
                                     disabled={chatMutationPending}
@@ -2336,7 +2415,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                               ))}
                               {terminalListFailed || (!sessions.length && !areaTerminals.length) ? (
                                 <Text style={{ padding: 8, color: c.foregroundMuted, fontSize: 12 }}>
-                                  {terminalListFailed ? "Не удалось загрузить терминалы" : "Нет сессий и терминалов"}
+                                  {terminalListFailed ? "Не удалось загрузить терминалы" : "Нет сессий"}
                                 </Text>
                               ) : null}
                             </View>
@@ -3101,7 +3180,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
               <SettingsSelect<"session" | "terminal">
                 label="Открыть в новой области"
                 value={newArea.firstTab}
-                options={[{ value: "session", label: "Сессия" }, { value: "terminal", label: "Терминал" }]}
+                options={[{ value: "session", label: "Агент" }, { value: "terminal", label: "Терминал" }]}
                 disabled={Boolean(creatingId || newArea.workspaceId)}
                 onValueChange={(firstTab) => setNewArea({ ...newArea, firstTab })}
               />
@@ -3136,82 +3215,71 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
         <Modal.Content>
           {editingChat ? (
             <View style={{ gap: 16 }}>
-              {draftChatTitle === null ? (
+              <View style={{ gap: 4 }}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                  <Text style={{ flex: 1, color: c.foreground, fontSize: 16, fontWeight: "600" }}>
-                    {chatTitle(editingChat, editingChatAgent)}
-                  </Text>
-                  <ChatActionButton
-                    label="Редактировать название области"
-                    icon="Pencil"
-                    quiet
+                  <AreaEmojiButton
+                    label="Выбрать иконку области"
+                    emoji={editingAreaIcon}
                     disabled={chatMutationPending}
-                    onPress={() => updateDraftChatTitle(chatTitle(editingChat, editingChatAgent))}
+                    onPress={() => setAreaSettingsPanel("icon")}
                     theme={theme}
                   />
-                </View>
-              ) : (
-                <View style={{ gap: 4 }}>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                    <TextInput
-                      accessibilityLabel="Название области"
-                      value={draftChatTitle}
-                      onChangeText={updateDraftChatTitle}
-                      placeholder="Новая область"
-                      placeholderTextColor={c.foregroundMuted}
-                      onSubmitEditing={() => void handleRenameChat()}
-                      editable={!chatMutationPending}
-                      autoFocus
-                      style={{
-                        flex: 1,
-                        minWidth: 0,
-                        paddingHorizontal: 12,
-                        paddingVertical: 10,
-                        borderRadius: 9,
-                        backgroundColor: c.surface1,
-                        borderWidth: 1,
-                        borderColor: c.border,
-                        color: c.foreground,
-                        fontSize: 14,
-                      }}
-                    />
+                  <View style={{
+                    flex: 1, minWidth: 0, height: 44, flexDirection: "row", alignItems: "center",
+                    paddingLeft: 12, paddingRight: 4, borderRadius: 9, borderWidth: 1,
+                    borderColor: draftChatTitle === null ? c.border : c.accent,
+                    backgroundColor: c.surface2,
+                  }}>
+                    {draftChatTitle === null ? (
+                      <Text numberOfLines={1} style={{ flex: 1, color: c.foreground, fontSize: 15, fontWeight: "600" }}>
+                        {editingAreaTitle}
+                      </Text>
+                    ) : (
+                      <TextInput
+                        accessibilityLabel="Название области"
+                        value={draftChatTitle}
+                        onChangeText={updateDraftChatTitle}
+                        selection={draftTitleSelection}
+                        onSelectionChange={({ nativeEvent: { selection } }) => {
+                          if (selection.start === draftTitleSelection?.start && selection.end === draftTitleSelection.end) {
+                            setDraftTitleSelection(undefined);
+                          }
+                        }}
+                        placeholder="Новая область"
+                        placeholderTextColor={c.foregroundMuted}
+                        onSubmitEditing={() => void handleRenameChat()}
+                        editable={!chatMutationPending}
+                        autoFocus
+                        style={{ flex: 1, minWidth: 0, padding: 0, outlineWidth: 0, color: c.foreground, fontSize: 15 }}
+                      />
+                    )}
                     <ChatActionButton
-                      label={suggestingTitle ? "Генерирую название" : "Сгенерировать название"}
-                      icon={suggestingTitle ? "LoaderCircle" : "Sparkles"}
-                      quiet
-                      disabled={!canSuggestTitle}
-                      onPress={() => void handleSuggestTitle()}
-                      theme={theme}
-                    />
-                    <ChatActionButton
-                      label="Сохранить название"
-                      icon="Check"
-                      color={c.accent}
+                      label={draftChatTitle === null ? "Редактировать название области" : "Сохранить название"}
+                      icon={draftChatTitle === null ? "Pencil" : "Check"}
+                      color={draftChatTitle === null ? undefined : c.accent}
                       quiet
                       disabled={chatMutationPending}
-                      onPress={() => void handleRenameChat()}
-                      theme={theme}
-                    />
-                    <ChatActionButton
-                      label="Отменить редактирование названия"
-                      icon="X"
-                      color={c.foregroundMuted}
-                      quiet
-                      disabled={chatMutationPending}
-                      onPress={() => updateDraftChatTitle(null)}
+                      onPress={draftChatTitle === null ? startAreaTitleEdit : () => void handleRenameChat()}
                       theme={theme}
                     />
                   </View>
-                  {!titleModel ? (
-                    <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>
-                      Выбери модель названия в настройках проекта
-                    </Text>
-                  ) : null}
+                  <ChatActionButton
+                    label={suggestingTitle ? "Генерирую название" : "Сгенерировать название"}
+                    icon={suggestingTitle ? "LoaderCircle" : "Sparkles"}
+                    disabled={!canSuggestTitle}
+                    onPress={() => void handleSuggestTitle()}
+                    theme={theme}
+                  />
                 </View>
-              )}
+                {draftChatTitle !== null && !titleModel ? (
+                  <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>
+                    Выбери модель названия в настройках проекта
+                  </Text>
+                ) : null}
+              </View>
               <View style={{ flexDirection: "row", gap: 8 }}>
                 <ChatActionButton
-                  label="Новая сессия"
+                  label="Новый агент"
                   icon="Plus"
                   disabled={chatMutationPending || Boolean(creatingAreaIds[editingChat.id])}
                   onPress={() => void handleCreateAreaSession(editingChat.id)}
@@ -3243,13 +3311,15 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                   }}
                   theme={theme}
                 />
-                <ChatActionButton
-                  label="Настройки области"
-                  icon="Settings"
-                  disabled={chatMutationPending}
-                  onPress={() => setAreaSettingsOpen(true)}
-                  theme={theme}
-                />
+                {editingChat.projectKind === "git" ? (
+                  <ChatActionButton
+                    label="Настройки области"
+                    icon="Settings"
+                    disabled={chatMutationPending}
+                    onPress={() => setAreaSettingsPanel("branch")}
+                    theme={theme}
+                  />
+                ) : null}
                 <ChatActionButton
                   label="Перенести в проект"
                   icon="ArrowRightLeft"
@@ -3277,10 +3347,33 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                   gap: 10,
                 }}
               >
-                <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>Сессии и терминалы</Text>
-                {editingChatEntries.map((entry) => {
+                <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>Сессии</Text>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                  {AREA_SESSION_FILTERS.map(({ value, label }) => {
+                    const selected = areaSessionFilter === value;
+                    return (
+                      <Pressable
+                        key={value}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected }}
+                        onPress={() => setAreaSessionFilter(value)}
+                        style={({ pressed }) => ({
+                          minHeight: 34, paddingHorizontal: 12, borderRadius: 17,
+                          borderWidth: 1, borderColor: selected ? c.accent : c.border,
+                          justifyContent: "center", backgroundColor: selected ? c.accent : c.surface1,
+                          opacity: pressed ? 0.75 : 1,
+                        })}
+                      >
+                        <Text style={{ color: selected ? c.accentForeground : c.foreground, fontSize: 12 }}>
+                          {label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                {visibleAreaAgents.map((entry) => {
                   const ag = entry.agent;
-                  const agTitle = sessionTitle(ag);
+                  const agTitle = agentTitle(ag);
                   const isCurrent = editingChatAgent?.id === ag.id;
                   return (
                     <View
@@ -3298,7 +3391,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                     >
                       <Pressable
                         accessibilityRole="button"
-                        accessibilityLabel={`Открыть сессию ${agTitle}`}
+                        accessibilityLabel={`Открыть агента ${agTitle}`}
                         onPress={() => {
                           setEditingChatId(null);
                           jumpToAgent(ag.id);
@@ -3315,7 +3408,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                           opacity: pressed ? 0.7 : 1,
                         })}
                       >
-                        <SessionSummary
+                        <AgentSummary
                           agent={ag}
                           branch={areaSettings?.launchBranches[ag.id]}
                           theme={theme}
@@ -3324,7 +3417,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                         <Icon name="ChevronRight" size={14} color={c.foregroundMuted} />
                       </Pressable>
                       <ChatActionButton
-                        label={`Меню сессии ${agTitle}`}
+                        label={`Меню агента ${agTitle}`}
                         icon="MoreHorizontal"
                         disabled={chatMutationPending}
                         quiet
@@ -3334,7 +3427,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                     </View>
                   );
                 })}
-                {editingChatTerminals.map((terminal) => (
+                {visibleAreaTerminals.map((terminal) => (
                   <TerminalRow key={terminal.id} terminal={terminal} theme={theme}
                     disabled={chatMutationPending}
                     onMenu={() => openTerminalMenu(terminal.id)}
@@ -3343,7 +3436,87 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                       openAreaTerminal(terminal);
                     }} />
                 ))}
+                {terminalListFailed && areaSessionFilter !== "agents" ? (
+                  <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Не удалось загрузить терминалы</Text>
+                ) : !visibleAreaAgents.length && !visibleAreaTerminals.length ? (
+                  <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>
+                    {areaSessionFilter === "agents" ? "Нет агентов" : areaSessionFilter === "terminals" ? "Нет терминалов" : "Нет открытых сессий"}
+                  </Text>
+                ) : null}
               </View>
+              {closedAgents.data?.length || closedAgents.isError ? (
+                <View style={{ padding: 12, gap: 8, borderRadius: 12, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface2 }}>
+                  <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>Закрытые сессии</Text>
+                  {closedAgents.isError ? (
+                    <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Не удалось загрузить историю агентов</Text>
+                  ) : null}
+                  {closedAgents.data?.map((agent) => (
+                    <Pressable
+                      key={agent.id}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Открыть закрытого агента ${agentTitle(agent)}`}
+                      onPress={() => {
+                        setEditingChatId(null);
+                        jumpToAgent(agent.id);
+                      }}
+                      style={({ pressed }) => ({
+                        minHeight: 44, flexDirection: "row", alignItems: "center", gap: 8,
+                        paddingHorizontal: 10, borderRadius: 8,
+                        backgroundColor: pressed ? c.surface2 : c.surface1,
+                      })}
+                    >
+                      <Icon name="Bot" size={15} color={c.foregroundMuted} />
+                      <Text numberOfLines={1} style={{ flex: 1, color: c.foreground, fontSize: 13 }}>
+                        {agentTitle(agent)}
+                      </Text>
+                      <Icon name="ChevronRight" size={14} color={c.foregroundMuted} />
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+        </Modal.Content>
+      </Modal>
+
+      <Modal
+        title="Иконка области"
+        open={Boolean(editingChat && areaSettingsPanel === "icon")}
+        onOpenChange={(open) => {
+          if (!open) setAreaSettingsPanel(null);
+        }}
+      >
+        <Modal.Content>
+          {editingChat ? (
+            <View style={{ gap: 12 }}>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, maxWidth: 200 }}>
+                {AREA_ICONS.map((emoji) => (
+                  <AreaEmojiButton
+                    key={emoji}
+                    label={`Выбрать ${emoji}`}
+                    emoji={emoji}
+                    selected={editingAreaIcon === emoji}
+                    disabled={chatMutationPending}
+                    onPress={() => void handleSaveAreaSettings({ icon: emoji })}
+                    theme={theme}
+                  />
+                ))}
+              </View>
+              {editingAreaIcon ? (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={chatMutationPending}
+                  onPress={() => void handleSaveAreaSettings({ icon: null })}
+                  style={({ pressed }) => ({
+                    alignSelf: "flex-start", justifyContent: "center", minHeight: 44,
+                    paddingHorizontal: 12, borderRadius: 9,
+                    backgroundColor: pressed ? c.surface1 : c.surface2,
+                    opacity: chatMutationPending ? 0.5 : 1,
+                  })}
+                >
+                  <Text style={{ color: c.foreground, fontSize: 14 }}>Убрать иконку</Text>
+                </Pressable>
+              ) : null}
             </View>
           ) : null}
         </Modal.Content>
@@ -3351,41 +3524,29 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
 
       <Modal
         title="Настройки области"
-        open={Boolean(editingChat && areaSettingsOpen)}
-        onOpenChange={setAreaSettingsOpen}
+        open={Boolean(editingChat && areaSettingsPanel === "branch")}
+        onOpenChange={(open) => {
+          if (!open) setAreaSettingsPanel(null);
+        }}
       >
         <Modal.Content>
-          {editingChat && areaSettingsOpen ? (
-            <View style={{ padding: 12, borderRadius: 12, backgroundColor: c.surface2, borderWidth: 1, borderColor: c.border, gap: 8 }}>
+          {editingChat?.projectKind === "git" ? (
+            <View style={{ padding: 12, borderRadius: 12, backgroundColor: c.surface2, borderWidth: 1, borderColor: c.border }}>
               {areaSettings ? (
-                <>
-                  <SettingsSelect
-                    label="Иконка области"
-                    value={areaSettings.icon ?? ""}
-                    options={[
-                      { value: "", label: "Без иконки" },
-                      ...AREA_ICONS.map((icon) => ({ value: icon, label: icon })),
-                    ]}
-                    disabled={chatMutationPending}
-                    onValueChange={(value) => void handleSaveAreaSettings({ icon: value || null })}
-                  />
-                  {editingChat.projectKind === "git" ? (
-                    <SettingsSelect
-                      label="Ветка по умолчанию"
-                      hint="Рабочая папка общая для всех сессий. Перед созданием сессии переключите область на выбранную ветку."
-                      value={areaSettings.defaultBranch ?? ""}
-                      options={[
-                        { value: "", label: areaSettings.currentBranch ? `Текущая ветка · ${areaSettings.currentBranch}` : "Текущий checkout" },
-                        ...Array.from(new Set([
-                          ...areaSettings.branches,
-                          ...(areaSettings.defaultBranch ? [areaSettings.defaultBranch] : []),
-                        ])).map((branch) => ({ value: branch, label: branch })),
-                      ]}
-                      disabled={chatMutationPending}
-                      onValueChange={(value) => void handleSaveAreaSettings({ defaultBranch: value || null })}
-                    />
-                  ) : null}
-                </>
+                <SettingsSelect
+                  label="Ветка по умолчанию"
+                  hint="Рабочая папка общая для агентов области. Перед созданием агента переключите область на выбранную ветку."
+                  value={areaSettings.defaultBranch ?? ""}
+                  options={[
+                    { value: "", label: areaSettings.currentBranch ? `Текущая ветка · ${areaSettings.currentBranch}` : "Текущий checkout" },
+                    ...Array.from(new Set([
+                      ...areaSettings.branches,
+                      ...(areaSettings.defaultBranch ? [areaSettings.defaultBranch] : []),
+                    ])).map((branch) => ({ value: branch, label: branch })),
+                  ]}
+                  disabled={chatMutationPending}
+                  onValueChange={(value) => void handleSaveAreaSettings({ defaultBranch: value || null })}
+                />
               ) : (
                 <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>
                   {areaSettingsError ?? "Загружаю настройки области…"}
@@ -3398,8 +3559,8 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
 
       <Modal
         title={confirmClosingSession
-          ? "Закрыть работающую сессию"
-          : draftAgentTitle === null ? "Действия с сессией" : "Переименовать сессию"}
+          ? "Закрыть работающего агента"
+          : draftAgentTitle === null ? "Действия с агентом" : "Переименовать агента"}
         open={Boolean(agentMenuChat)}
         onOpenChange={(open) => {
           if (!open) setAgentMenuId(null);
@@ -3417,11 +3578,11 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                 { label: "Отмена", icon: "ArrowLeft", onPress: () => setConfirmClosingSession(false) },
                 { label: "Остановить и закрыть", icon: "Archive", danger: true, onPress: () => void handleAgentMenuAction("close") },
               ] : [
-                { label: "Скопировать ссылку на сессию", icon: "Link2", onPress: () => void handleCopyAgentLink(agentMenuChat.id) },
-                { label: "Переименовать сессию", icon: "Pencil", onPress: () => setDraftAgentTitle(agentMenuChat.title ?? "") },
-                { label: "Перезагрузить сессию", icon: "RefreshCw", onPress: () => void handleAgentMenuAction("reload") },
+                { label: "Скопировать ссылку на агента", icon: "Link2", onPress: () => void handleCopyAgentLink(agentMenuChat.id) },
+                { label: "Переименовать агента", icon: "Pencil", onPress: () => setDraftAgentTitle(agentMenuChat.title ?? "") },
+                { label: "Перезагрузить агента", icon: "RefreshCw", onPress: () => void handleAgentMenuAction("reload") },
                 {
-                  label: "Закрыть сессию",
+                  label: "Закрыть агента",
                   icon: "Archive",
                   danger: true,
                   onPress: () => {
@@ -3434,8 +3595,8 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           ) : (
             <View style={{ gap: 10 }}>
               <TextInput
-                accessibilityLabel="Название сессии"
-                placeholder="Название сессии"
+                accessibilityLabel="Название агента"
+                placeholder="Название агента"
                 placeholderTextColor={c.foregroundMuted}
                 value={draftAgentTitle}
                 onChangeText={setDraftAgentTitle}
@@ -3554,8 +3715,8 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                   />
 
                   <SettingsSwitch
-                    label="Перенести историю последней сессии"
-                    hint="Прикрепить сообщения и контекст к сессии в новой области"
+                    label="Перенести историю последнего агента"
+                    hint="Прикрепить сообщения и контекст к агенту в новой области"
                     value={transferIncludeHistory}
                     onValueChange={setTransferIncludeHistory}
                   />
@@ -3756,7 +3917,7 @@ export default function contribute(client: PluginClientContext) {
   const removeGenui = contributeGenuiClient(client);
   const disposeScreen = client.addScreen({
     id: "jump",
-    title: (params) => (params?.agentId ? "Переход к сессии" : "Переход к области"),
+    title: (params) => (params?.agentId ? "Переход к агенту" : "Переход к области"),
     Component: JumpBridgeScreen,
   });
 
