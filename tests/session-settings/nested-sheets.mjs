@@ -220,6 +220,18 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await page.keyboard.press("Escape");
           await projectName.waitFor({ state: "hidden" });
 
+          await button("Новая область в проекте source").click();
+          await newAreaName.waitFor();
+          await button("Выбрать модель нового агента").waitFor();
+          await page.waitForTimeout(700);
+          await capture("new-area");
+          await button("Терминал").click();
+          await page.getByLabel(/^Папка терминала: \/.+/).waitFor();
+          await button("Агент").click();
+          await button("Создать область").waitFor();
+          await button("Закрыть").last().click();
+          await newAreaName.waitFor({ state: "hidden" });
+
           const terminalsBefore = (await workspaceHandle.terminals.list()).entries.length;
           await openArea();
           await button("Новая сессия").click();
