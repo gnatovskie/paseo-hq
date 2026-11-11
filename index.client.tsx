@@ -4072,20 +4072,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
             onPress: () => void handleTogglePinChat(),
           },
           {
-            label: "Скопировать путь к папке проекта", icon: "Folders",
-            onPress: () => {
-              const path = currentProjectGroup?.rootPath || editingChat.workspaceDirectory;
-              void copyText(path)
-                .then(() => toast.show("Путь скопирован", { variant: "info" }))
-                .catch(() => toast.error("Не удалось скопировать путь"));
-            },
-          },
-          {
-            label: "Перенести в проект", icon: "ArrowRightLeft",
-            disabled: chatMutationPending,
-            onPress: () => setChatTransferOpen(true),
-          },
-          {
             label: "Архивировать область", icon: "Archive", danger: true,
             disabled: chatMutationPending,
             onPress: () => void handleArchiveChat(editingChat),
