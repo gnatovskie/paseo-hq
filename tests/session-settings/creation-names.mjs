@@ -286,13 +286,15 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await button("Новая область в проекте target").click();
           await newAreaName.fill(`Область терминала ${width}`);
           await button("Терминал").click();
-          assert.equal(await terminalName.inputValue(), "Terminal 1");
+          const targetTerminals = (await client.terminals.list()).entries.filter(item => item.cwd === target);
+          const defaultName = `Terminal ${targetTerminals.length + 1}`;
+          assert.equal(await terminalName.inputValue(), defaultName);
           await editAtEnd(terminalName);
           await button("Создать область").click();
           await terminalName.waitFor({ state: "hidden" });
           const terminalArea = (await client.workspaces.list()).entries.find(item => item.title === `Область терминала ${width}`);
           assert(terminalArea);
-          assert((await client.workspaces.ref(terminalArea.id).terminals.list()).entries.some(item => item.name === "Terminal 1"));
+          assert((await client.workspaces.ref(terminalArea.id).terminals.list()).entries.some(item => item.name === defaultName));
           await enterSidebar();
           const plainToggle = button(`Сессии области Область терминала ${width}`);
           if (await plainToggle.getAttribute("aria-expanded") !== "true") await plainToggle.click();
