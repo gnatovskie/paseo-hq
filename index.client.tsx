@@ -1357,7 +1357,7 @@ function SessionInformation({ theme, agent, workspace, path, branch, agentLink, 
       { label: "Провайдер", value: agent.provider.split("/")[0], a11y: "Провайдер агента", icon: "Bot" },
       { label: "Модель", value: agent.model || agent.provider.split("/").slice(1).join("/") || "Не указана", a11y: "Модель агента", icon: "Cpu" },
     ] : []),
-    ...(agentLink ? [{ label: "Ссылка на агента", value: agentLink, a11y: "Ссылка на агента", icon: "Link2", copy: true }] : []),
+    ...(agentLink ? [{ label: "ID агента", value: agent!.id, a11y: "ID агента", icon: "Link2", copy: true }] : []),
     ...(workspace?.projectKind === "git" ? [{ label: "Текущая ветка", value: branch || "Ветка не определена", a11y: "Текущая ветка", icon: "GitBranch", copy: Boolean(branch) }] : []),
     { label: project ? "Папка проекта" : "Рабочая папка", value: path, a11y: project ? "Папка проекта" : "Рабочая папка сессии", icon: "Folder", copy: Boolean(path && path !== "Папка недоступна") },
   ];
@@ -1368,7 +1368,7 @@ function SessionInformation({ theme, agent, workspace, path, branch, agentLink, 
         <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>{row.label}</Text>
         <Text selectable numberOfLines={row.icon === "Link2" ? 1 : undefined} ellipsizeMode="tail" accessibilityLabel={`${row.a11y}: ${row.value}`} style={{ color: c.foreground, fontSize: 12 }}>{row.value}</Text>
       </View>
-      {"copy" in row && row.copy ? <Pressable accessibilityRole="button" accessibilityLabel={row.icon === "GitBranch" ? "Скопировать ветку" : row.icon === "Link2" ? "Скопировать ссылку на агента" : project ? "Скопировать папку проекта" : "Скопировать рабочую папку"} onPress={() => void copy(row.value)} style={({ pressed }) => ({ padding: 7, borderRadius: 7, backgroundColor: pressed ? c.surface2 : "transparent" })}><Icon name="Copy" size={15} color={c.foregroundMuted} /></Pressable> : null}
+      {"copy" in row && row.copy ? <Pressable accessibilityRole="button" accessibilityLabel={row.icon === "GitBranch" ? "Скопировать ветку" : row.icon === "Link2" ? "Скопировать ссылку на агента" : project ? "Скопировать папку проекта" : "Скопировать рабочую папку"} onPress={() => void copy(row.icon === "Link2" ? agentLink! : row.value)} style={({ pressed }) => ({ padding: 7, borderRadius: 7, backgroundColor: pressed ? c.surface2 : "transparent" })}><Icon name="Copy" size={15} color={c.foregroundMuted} /></Pressable> : null}
     </View>)}
   </View>;
 }
