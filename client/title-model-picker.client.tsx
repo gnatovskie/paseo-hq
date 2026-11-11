@@ -12,7 +12,7 @@ interface Anchor {
   height: number;
 }
 
-export function TitleModelPicker({ theme, options, value, hint, disabled, pending, onValueChange, label = "Сгенерировать название", icon = "Sparkles", menuLabel = "Модели для названий областей", plain = false }: {
+export function TitleModelPicker({ theme, options, value, hint, disabled, pending, onValueChange, label = "Сгенерировать название", icon = "Sparkles", menuLabel = "Модели для названий областей", plain = false, selectionLabel }: {
   theme: PluginTheme;
   options: readonly TitleModelOption[];
   value: string;
@@ -23,6 +23,8 @@ export function TitleModelPicker({ theme, options, value, hint, disabled, pendin
   label?: string;
   /** Простой список с поиском (например, ветки): без провайдеров и без пункта «по первой строке». */
   plain?: boolean;
+  /** Accessible option prefix for compact settings selectors. */
+  selectionLabel?: string;
   icon?: string;
   menuLabel?: string;
 }) {
@@ -116,7 +118,7 @@ export function TitleModelPicker({ theme, options, value, hint, disabled, pendin
       <Pressable
         key={option.value}
         accessibilityRole="menuitem"
-        accessibilityLabel={option.value === "first_line" ? option.label : plain ? `Выбрать ветку ${option.value}` : `Выбрать модель ${option.value}`}
+        accessibilityLabel={option.value === "first_line" ? option.label : plain ? selectionLabel ? `${selectionLabel}: ${option.label}` : `Выбрать ветку ${option.value}` : `Выбрать модель ${option.value}`}
         accessibilityState={{ selected }}
         onPress={() => select(option.value)}
         style={({ pressed }) => ({
@@ -153,8 +155,8 @@ export function TitleModelPicker({ theme, options, value, hint, disabled, pendin
           <TextInput
             value={query}
             onChangeText={setQuery}
-            accessibilityLabel={plain ? "Поиск ветки" : "Поиск модели по всем провайдерам"}
-            placeholder={plain ? "Поиск ветки" : "Поиск модели по всем провайдерам"}
+            accessibilityLabel={plain ? selectionLabel ? `Поиск: ${selectionLabel}` : "Поиск ветки" : "Поиск модели по всем провайдерам"}
+            placeholder={plain ? selectionLabel ? `Поиск: ${selectionLabel}` : "Поиск ветки" : "Поиск модели по всем провайдерам"}
             placeholderTextColor={c.foregroundMuted}
             autoCorrect={false}
             autoCapitalize="none"
@@ -166,7 +168,7 @@ export function TitleModelPicker({ theme, options, value, hint, disabled, pendin
           />
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={plain ? "Закрыть список веток" : "Закрыть список моделей"}
+            accessibilityLabel={plain ? selectionLabel ? "Закрыть список вариантов" : "Закрыть список веток" : "Закрыть список моделей"}
             onPress={close}
             style={{ width: 32, height: 40, alignItems: "center", justifyContent: "center" }}
           >

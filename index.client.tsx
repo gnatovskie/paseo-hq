@@ -56,6 +56,7 @@ import {
   type ProjectMeta,
   type SidebarState,
 } from "./shared/contracts";
+import { agentCreationOptions } from "./shared/agent-creation-options";
 import { projectAgentConfig } from "./shared/project-agent-config";
 import { compareProjectOrder } from "./shared/project-order";
 import { groupAreaAgents } from "./shared/area-agents";
@@ -1204,9 +1205,35 @@ function NewSessionName({ theme, kind, naming, disabled }: {
     caption={kind === "agent" ? "Название агента" : "Название терминала"} editLabel="Редактировать название сессии" />;
 }
 
+function NewAgentOption({ theme, label, options, value, onChange, disabled, fallback }: {
+  theme: PluginTheme;
+  label: string;
+  options: { id: string; label: string }[];
+  value?: string;
+  onChange: (value: string) => void;
+  disabled: boolean;
+  fallback: string;
+}) {
+  const c = theme.colors;
+  const selected = options.find(option => option.id === value)?.label ?? (options.length ? "По умолчанию" : fallback);
+  return <View style={{ gap: 6 }}>
+    <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>{label}</Text>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+      <View style={{ flex: 1, minWidth: 0, height: 40, justifyContent: "center", paddingHorizontal: 12,
+        borderRadius: 9, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface2 }}>
+        <Text accessibilityLabel={`${label}: ${selected}`} style={{ color: c.foreground, fontSize: 14 }} numberOfLines={1}>{selected}</Text>
+      </View>
+      {options.length ? <TitleModelPicker theme={theme} plain selectionLabel={label}
+        options={options.map(option => ({ value: option.id, label: option.label, name: option.label, provider: "", providerLabel: "" }))}
+        value={value ?? ""} disabled={disabled} icon="ChevronDown" label={`Выбрать: ${label}`} menuLabel={`Варианты: ${label}`}
+        onValueChange={onChange} /> : null}
+    </View>
+  </View>;
+}
+
 // Одна форма для новой области и новой сессии.
 function NewSessionWindow({ theme, title, open, onClose, narrow, kind, onKindChange, kindLocked, name, onNameChange, nameEditable,
-  target, extra, naming, settings, model, modelsError, modelOptions, onModelChange, folder, busy, submitLabel, submitAgentLabel, onSubmit }: {
+  target, extra, naming, agentOptions, model, modelsError, modelOptions, onModelChange, folder, busy, submitLabel, submitAgentLabel, onSubmit }: {
   theme: PluginTheme;
   title: string;
   open: boolean;
@@ -1224,7 +1251,11 @@ function NewSessionWindow({ theme, title, open, onClose, narrow, kind, onKindCha
   extra?: React.ReactNode;
   naming: SessionNaming;
   target?: { value: string | null; options: { value: string; label: string; branch?: string }[]; onChange: (value: string | null) => void; locked?: boolean };
-  settings?: React.ReactNode;
+  agentOptions: ReturnType<typeof agentCreationOptions> & {
+    onModeChange: (value: string | undefined) => void;
+    onThinkingChange: (value: string | undefined) => void;
+    loading: boolean;
+  };
   model: string | null;
   modelsError: string | null;
   modelOptions: ReturnType<typeof titleModelOptions>;
@@ -1236,7 +1267,7 @@ function NewSessionWindow({ theme, title, open, onClose, narrow, kind, onKindCha
   onSubmit: () => void;
 }) {
   const c = theme.colors;
-  const disabled = busy || (kind === "agent" && !model);
+  const disabled = busy || (kind === "agent" && (!model || agentOptions.loading));
   const field = { borderRadius: 9, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface2 } as const;
   const kindActions: SheetAction[] = [
     { label: "Агент", icon: "Bot", selected: kind === "agent", onPress: () => onKindChange("agent") },
@@ -1309,7 +1340,18 @@ function NewSessionWindow({ theme, title, open, onClose, narrow, kind, onKindCha
             </View>
           </View>
         )}
-        {kind === "agent" ? settings : null}
+        {kind === "agent" ? (
+          <View style={{ gap: 12 }}>
+            {agentOptions.loading ? <Text style={{ color: c.foregroundMuted }}>Загружаю настройки модели...</Text> : <>
+              <NewAgentOption theme={theme} label="Permissions" options={agentOptions.modes}
+                value={agentOptions.modeId} onChange={agentOptions.onModeChange} disabled={busy}
+                fallback="Провайдер не предоставляет выбор" />
+              <NewAgentOption theme={theme} label="Уровень рассуждения" options={agentOptions.thinkingOptions}
+                value={agentOptions.thinkingOptionId} onChange={agentOptions.onThinkingChange} disabled={busy}
+                fallback="У модели нет выбора уровня" />
+            </>}
+          </View>
+        ) : null}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={kind === "agent" ? submitAgentLabel ?? submitLabel : submitLabel}
@@ -1526,9 +1568,19 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const [creatingTerminalId, setCreatingTerminalId] = useState<string | null>(null);
   const [newAgentWorkspaceId, setNewAgentWorkspaceId] = useState<string | null>(null);
   const [newAgentModels, setNewAgentModels] = useState<PaseoProviderSnapshotResult["entries"]>([]);
-  const [modeId, setModeId] = useState<string | undefined>();
-  const [thinkingOptionId, setThinkingOptionId] = useState<string | undefined>();
+  const [preferredModeId, setModeId] = useState<string | undefined>();
+  const [preferredThinkingOptionId, setThinkingOptionId] = useState<string | undefined>();
   const [newAgentModel, setNewAgentModel] = useState<string | null>(null);
+  const creationOptions = agentCreationOptions(newAgentModels, newAgentModel, {
+    modeId: preferredModeId, thinkingOptionId: preferredThinkingOptionId,
+  });
+  const { modeId, thinkingOptionId } = creationOptions;
+  const changeAgentModel = (model: string) => {
+    const next = agentCreationOptions(newAgentModels, model, { modeId, thinkingOptionId });
+    setNewAgentModel(model);
+    setModeId(next.modeId);
+    setThinkingOptionId(next.thinkingOptionId);
+  };
   const [newSessionTitle, setNewSessionTitle] = useState("");
   const [newSessionKind, setNewSessionKind] = useState<"agent" | "terminal">("agent");
   const [newAgentModelsError, setNewAgentModelsError] = useState<string | null>(null);
@@ -4051,8 +4103,8 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           model={newAgentModel}
           modelsError={newAgentModelsError}
           modelOptions={titleModelOptions(newAgentModels, "first_line").filter(option => option.provider)}
-          onModelChange={setNewAgentModel}
-          settings={<View style={{ gap: 8 }}>{[["Permissions", modeId, setModeId], ["Уровень рассуждения", thinkingOptionId, setThinkingOptionId]].map(([label, value, setter]) => <View key={String(label)}><Text style={{ color: theme.colors.foregroundMuted }}>{String(label)}</Text><TextInput accessibilityLabel={String(label)} value={typeof value === "string" ? value : ""} onChangeText={text => { if (typeof setter === "function") setter(text || undefined); }} style={{ color: theme.colors.foreground }} /></View>)}</View>}
+          onModelChange={changeAgentModel}
+          agentOptions={{ ...creationOptions, onModeChange: setModeId, onThinkingChange: setThinkingOptionId, loading: !newAgentModels.length }}
           folder={newAreaTarget ? newAreaTarget.workspaceDirectory : newAreaFolder}
           busy={Boolean(creatingId) || Object.values(creatingAreaIds).some(Boolean) || Boolean(creatingTerminalId)}
           submitLabel={newAreaTarget
@@ -4326,8 +4378,8 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           model={newAgentModel}
           modelsError={newAgentModelsError}
           modelOptions={titleModelOptions(newAgentModels, "first_line").filter(option => option.provider)}
-          onModelChange={setNewAgentModel}
-          settings={<View style={{ gap: 8 }}>{[["Permissions", modeId, setModeId], ["Уровень рассуждения", thinkingOptionId, setThinkingOptionId]].map(([label, value, setter]) => <View key={String(label)}><Text style={{ color: theme.colors.foregroundMuted }}>{String(label)}</Text><TextInput accessibilityLabel={String(label)} value={typeof value === "string" ? value : ""} onChangeText={text => { if (typeof setter === "function") setter(text || undefined); }} style={{ color: theme.colors.foreground }} /></View>)}</View>}
+          onModelChange={changeAgentModel}
+          agentOptions={{ ...creationOptions, onModeChange: setModeId, onThinkingChange: setThinkingOptionId, loading: !newAgentModels.length }}
           folder={newSessionWorkspace?.workspaceDirectory ?? "Папка области недоступна"}
           busy={Object.values(creatingAreaIds).some(Boolean) || Boolean(creatingTerminalId)}
           submitLabel={newSessionKind === "agent" ? "Создать агента" : "Создать терминал"}

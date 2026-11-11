@@ -79,9 +79,15 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
     const firstBranch = git("branch", "--show-current");
     assert(firstBranch);
     await writeFile(stateFile, JSON.stringify({ projects: { [workspace.projectId]: { sessionTitleModel: "first_line" } } }));
+    const catalog = await client.providers.waitForReady({ cwd: source });
+    const codex = catalog.entries.find(entry => entry.provider === "codex");
+    const model = codex.models.find(model => model.id === "gpt-6-luna");
+    assert(codex.modes.length > 1 && model.thinkingOptions.length > 1);
+    const seedSettings = { modeId: codex.modes[0].id, thinkingOptionId: model.thinkingOptions[0].id };
+    const changedSettings = { modeId: codex.modes.at(-1).id, thinkingOptionId: model.thinkingOptions.at(-1).id };
     const chat = await workspaceHandle.agents.create({ title: "Fixture chat", config: { provider: "codex/gpt-5.4" } });
     git("switch", "-qc", "hq-next");
-    const secondChat = await workspaceHandle.agents.create({ title: "Second fixture chat", config: { provider: "codex/gpt-5.4" } });
+    const secondChat = await workspaceHandle.agents.create({ title: "Second fixture chat", config: { provider: "codex/gpt-6-luna", ...seedSettings } });
     const { projects } = await client.projects.list({});
     const targetProject = projects.find((project) => project.projectRootPath === target);
     assert(targetProject);
@@ -92,6 +98,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
     });
 
     browser = await chromium.launch({ executablePath: process.env.PASEO_CHROMIUM_EXECUTABLE });
+    let expectedSettings = seedSettings;
     for (const width of (process.env.PASEO_TEST_WIDTHS ?? "390,1280").split(",").map(Number)) {
       await t.test(`${width}px`, async () => {
         const page = await browser.newPage({
@@ -112,6 +119,19 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           const menu = page.getByRole("menu", { name: "Модели нового агента", exact: true });
           await menu.getByPlaceholder("Поиск модели по всем провайдерам").fill("codex/gpt-6-luna");
           await menu.getByRole("menuitem", { name: /^Выбрать модель codex\// }).first().click();
+        };
+        const assertSettings = async (settings) => {
+          for (const [prefix, values, id] of [["Permissions", codex.modes, settings.modeId], ["Уровень рассуждения", model.thinkingOptions, settings.thinkingOptionId]]) {
+            const label = values.find(value => value.id === id).label;
+            await page.getByLabel(`${prefix}: ${label}`, { exact: true }).waitFor();
+          }
+        };
+        const changeSettings = async () => {
+          await page.getByRole("button", { name: "Выбрать: Permissions", exact: true }).click();
+          await page.getByRole("menuitem", { name: `Permissions: ${codex.modes.at(-1).label}`, exact: true }).click();
+          await page.getByRole("button", { name: "Выбрать: Уровень рассуждения", exact: true }).click();
+          await page.getByRole("menuitem", { name: `Уровень рассуждения: ${model.thinkingOptions.at(-1).label}`, exact: true }).click();
+          await assertSettings(changedSettings);
         };
         const button = (name) => page.getByRole("button", { name, exact: true });
         const areaActions = button(`Действия области ${title}`);
@@ -154,6 +174,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
 
         try {
           await enterSidebar();
+          if (!await sidebar.getByRole("tab", { name: "Пулы" }).isVisible()) await sidebar.getByText("source", { exact: true }).click();
           await sidebar.getByRole("tab", { name: "Пулы" }).click();
           await page.getByText("Сервис готовится. Здесь появятся пулы генераций проекта.").waitFor();
           assert.equal(await button("Новая область в проекте source").count(), 0);
@@ -211,10 +232,15 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await editAtEnd(agentName);
           await capture("session-name-agent");
           await selectCodex();
+          await assertSettings(expectedSettings);
+          await changeSettings();
           await button("Создать агента с выбранной моделью").click();
           await agentName.waitFor({ state: "hidden" });
           const created = (await client.agents.list({})).entries.find(({ agent }) => agent.title === `Проверка агента ${width}`);
           assert(created);
+          assert.equal(created.agent.currentModeId, changedSettings.modeId);
+          assert.equal(created.agent.thinkingOptionId, changedSettings.thinkingOptionId);
+          expectedSettings = changedSettings;
           assert.equal(created.agent.workspaceId, workspace.id);
           assert.equal(created.agent.cwd, workspace.workspaceDirectory);
           await enterSidebar();
@@ -234,10 +260,15 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await agentName.fill(`Первый ${width}`);
           await editAtEnd(agentName);
           await selectCodex();
+          await assertSettings(changedSettings);
+          await changeSettings();
           await button("Создать область").click();
           await agentName.waitFor({ state: "hidden" });
           const area = (await client.workspaces.list()).entries.find(item => item.title === `Новая ${width}`);
           assert(area);
+          const firstAgent = (await client.agents.list({})).entries.find(({ agent }) => agent.workspaceId === area.id).agent;
+          assert.equal(firstAgent.currentModeId, changedSettings.modeId);
+          assert.equal(firstAgent.thinkingOptionId, changedSettings.thinkingOptionId);
           assert((await client.agents.list({})).entries.some(({ agent }) => agent.workspaceId === area.id && agent.title === `Первый ${width}`));
           await enterSidebar();
           await button("Новая область в проекте target").click();
@@ -261,6 +292,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await button("Закрыть").last().click();
           assert.deepEqual(errors, []);
         } catch (error) {
+          console.error(error);
           console.error(await page.locator("body").innerText());
           console.error(paseo("plugin", "logs", "paseo-hq"));
           try {
