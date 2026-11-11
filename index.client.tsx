@@ -3023,11 +3023,11 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                           </View>
                           {expanded ? (
                             <View style={{
-                              marginLeft: 20 - SESSION_STATUS_SIZE / 2,
+                              // Левый край на одной вертикали с названием области (отступ строки области - 7).
+                              marginLeft: 7,
                               marginTop: 2, marginBottom: 8, padding: 4, gap: 2,
                               borderRadius: 10, backgroundColor: c.surface2,
                               borderWidth: 1, borderColor: c.border,
-                              borderLeftWidth: 1.5, borderLeftColor: c.accent,
                             }}>
                               {orderAreaSessions(sessions, areaTerminals, serverState.pinnedSessions).map((session) => session.kind === "terminal" ? (
                                 <TerminalRow key={session.id} terminal={session.terminal} label={terminalLabel(session.terminal)} theme={theme}
