@@ -225,6 +225,8 @@ export const areaWorktreeCreateRpc = defineRpc({
     baseBranch: z.string().optional(),
     /** Модель первого агента; без нее область создается пустой. */
     agentModel: z.string().optional(),
+    modeId: z.string().optional(),
+    thinkingOptionId: z.string().optional(),
     agentTitle: z.string().trim().max(200).optional(),
   }),
   output: z.object({ workspaceId: z.string(), path: z.string() }),
@@ -263,7 +265,7 @@ export const areaSettingsRpc = defineRpc({
 
 export const areaSessionCreateRpc = defineRpc({
   name: "sidebar.area-session-create",
-  input: z.object({ workspaceId: z.string().min(1), model: z.string().min(1), title: z.string().trim().max(200).optional() }),
+  input: z.object({ workspaceId: z.string().min(1), model: z.string().min(1), modeId: z.string().optional(), thinkingOptionId: z.string().optional(), title: z.string().trim().max(200).optional() }),
   output: z.object({ agentId: z.string() }),
 });
 

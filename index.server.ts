@@ -783,13 +783,13 @@ export default function contribute(server: PluginServerContext) {
     return { ...preferences, currentBranch, branches };
   });
 
-  server.handle(areaSessionCreateRpc, async ({ workspaceId, model, title }, { paseo }) => {
+  server.handle(areaSessionCreateRpc, async ({ workspaceId, model, title, modeId, thinkingOptionId }, { paseo }) => {
     const area = await requireArea(paseo, workspaceId);
     const snapshot = await providersSnapshot(paseo, area.projectRootPath);
     const selected = snapshot.entries.some(entry => entry.enabled && entry.status === "ready"
       && (entry.models ?? []).some(option => option.isSelectable !== false && `${entry.provider}/${option.id}` === model));
     if (!selected) throw new Error("Выбранная модель недоступна в этой области");
-    const agent = await paseo.workspaces.ref(area).agents.create({ config: { provider: model }, title: title || undefined });
+    const agent = await paseo.workspaces.ref(area).agents.create({ config: { provider: model, modeId, thinkingOptionId }, title: title || undefined });
     return { agentId: agent.id };
   });
 
@@ -847,13 +847,13 @@ export default function contribute(server: PluginServerContext) {
     return { rootPath, ...(await worktreeOptions(rootPath)) };
   });
 
-  server.handle(areaWorktreeCreateRpc, async ({ projectId, title, path, branch, newBranch, baseBranch, agentModel, agentTitle }, { paseo }) => {
+  server.handle(areaWorktreeCreateRpc, async ({ projectId, title, path, branch, newBranch, baseBranch, agentModel, agentTitle, modeId, thinkingOptionId }, { paseo }) => {
     const rootPath = await projectRoot(paseo, projectId);
     const worktree = await createWorktree(rootPath, { path, branch, newBranch, baseBranch });
     try {
       const workspace = await paseo.workspaces.create({
         title: title.trim() || worktree.branch,
-        agent: agentModel ? { config: { provider: agentModel }, title: agentTitle || undefined, cwd: worktree.path } : undefined,
+        agent: agentModel ? { config: { provider: agentModel, modeId, thinkingOptionId }, title: agentTitle || undefined, cwd: worktree.path } : undefined,
         source: { kind: "directory", path: worktree.path, projectId },
       });
       await serializeWrite(async () => {
