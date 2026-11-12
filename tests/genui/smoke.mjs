@@ -72,6 +72,11 @@ try {
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto(`http://127.0.0.1:${server.address().port}/${dark ? "?dark" : ""}`);
     await page.getByText("HQ file loaded", { exact: true }).waitFor();
+    await page.getByText("Клиент схемы", { exact: true }).waitFor();
+    await page.getByText("Демон схемы", { exact: true }).waitFor();
+    await page.getByText("Исполнитель схемы", { exact: true }).waitFor();
+    await page.getByText("Часть схемы не поддерживается. Пропущенные строки:", { exact: true }).waitFor();
+    await page.getByText("unsupported syntax", { exact: true }).waitFor();
     const fragment = page.getByText("важный фрагмент", { exact: true });
     assert.equal(await fragment.evaluate(el => getComputedStyle(el).userSelect), "text", "formatted card text must allow selection even when the host disables it");
     const selected = await fragment.evaluate(el => {
@@ -113,7 +118,7 @@ try {
     assert.equal(page.url(), beforeFileUrl);
     await page.getByRole("button", { name: "Закрыть файл", exact: true }).click();
     await page.getByText("21", { exact: true }).waitFor();
-    await page.getByRole("button", { name: "+", exact: true }).click();
+    await page.getByText("Количество", { exact: true }).locator("..").getByRole("button", { name: "+", exact: true }).click();
     await page.getByText("28", { exact: true }).waitFor();
     await page.getByRole("button", { name: "Применить", exact: true }).click();
     await page.locator("#sent").filter({ hasText: "Количество 4" }).waitFor();

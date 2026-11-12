@@ -26,6 +26,7 @@ export interface LaidOutEdge extends FlowEdge {
   segments: Segment[];
   /** Where the arrowhead sits and which way it points. */
   arrowAt: { x: number; y: number; direction: "up" | "down" | "left" | "right" } | null;
+  arrowStartAt: LaidOutEdge["arrowAt"];
   labelAt: { x: number; y: number } | null;
 }
 
@@ -243,7 +244,7 @@ function route(
   across: boolean,
   lane?: number,
 ): LaidOutEdge {
-  if (!from || !to) return { ...edge, segments: [], arrowAt: null, labelAt: null };
+  if (!from || !to) return { ...edge, segments: [], arrowAt: null, arrowStartAt: null, labelAt: null };
   if (lane !== undefined) return routeThroughLane(edge, from, to, across, lane);
 
   if (across) {
@@ -262,6 +263,7 @@ function route(
         span(Math.min(midX, endX), endY, Math.abs(endX - midX), LINE),
       ],
       arrowAt: edge.arrow ? { x: endX, y: endY, direction: forward ? "right" : "left" } : null,
+      arrowStartAt: edge.arrowStart ? { x: startX, y: startY, direction: forward ? "left" : "right" } : null,
       labelAt: { x: midX, y: (startY + endY) / 2 },
     };
   }
@@ -281,6 +283,7 @@ function route(
       span(endX - LINE / 2, Math.min(midY, endY), LINE, Math.abs(endY - midY)),
     ],
     arrowAt: edge.arrow ? { x: endX, y: endY, direction: forward ? "down" : "up" } : null,
+    arrowStartAt: edge.arrowStart ? { x: startX, y: startY, direction: forward ? "up" : "down" } : null,
     labelAt: { x: (startX + endX) / 2, y: midY },
   };
 }
@@ -315,6 +318,7 @@ function routeThroughLane(
         span(inX, endY, endX - inX, LINE),
       ],
       arrowAt: edge.arrow ? { x: endX, y: endY, direction: "right" } : null,
+      arrowStartAt: edge.arrowStart ? { x: startX, y: startY, direction: "left" } : null,
       labelAt: { x: (outX + inX) / 2, y: lane },
     };
   }
@@ -336,6 +340,7 @@ function routeThroughLane(
       span(endX - LINE / 2, inY, LINE, endY - inY),
     ],
     arrowAt: edge.arrow ? { x: endX, y: endY, direction: "down" } : null,
+    arrowStartAt: edge.arrowStart ? { x: startX, y: startY, direction: "up" } : null,
     labelAt: { x: lane, y: (outY + inY) / 2 },
   };
 }

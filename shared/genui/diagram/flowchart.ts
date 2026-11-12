@@ -24,6 +24,7 @@ export interface FlowEdge {
   label: string | null;
   style: EdgeStyle;
   arrow: boolean;
+  arrowStart?: boolean;
 }
 
 export interface Flowchart {
@@ -37,7 +38,10 @@ export interface Flowchart {
 const HEADER = /^\s*(?:flowchart|graph)(?:\s+(TD|TB|BT|LR|RL))?\s*$/i;
 
 /** Longest first: `-.->` must win over `-.-`. */
-const OPERATORS: { token: string; style: EdgeStyle; arrow: boolean }[] = [
+const OPERATORS: { token: string; style: EdgeStyle; arrow: boolean; arrowStart?: boolean }[] = [
+  { token: "<-.->", style: "dotted", arrow: true, arrowStart: true },
+  { token: "<==>", style: "thick", arrow: true, arrowStart: true },
+  { token: "<-->", style: "solid", arrow: true, arrowStart: true },
   { token: "-.->", style: "dotted", arrow: true },
   { token: "==>", style: "thick", arrow: true },
   { token: "-->", style: "solid", arrow: true },
@@ -95,7 +99,7 @@ export function parseNodeExpression(raw: string): FlowNode | null {
 
 interface Split {
   parts: string[];
-  operators: { style: EdgeStyle; arrow: boolean; label: string | null }[];
+  operators: { style: EdgeStyle; arrow: boolean; arrowStart?: boolean; label: string | null }[];
 }
 
 /** Splits `A -->|yes| B --> C` into its nodes and the operators between them. */
@@ -125,7 +129,7 @@ export function splitChain(line: string): Split | null {
       after = after.slice(labelled[0].length);
     }
 
-    operators.push({ style: best.op.style, arrow: best.op.arrow, label });
+    operators.push({ style: best.op.style, arrow: best.op.arrow, arrowStart: best.op.arrowStart, label });
     rest = after;
   }
 
@@ -196,6 +200,7 @@ export function parseFlowchart(source: string): Flowchart | null {
         label: operator.label,
         style: operator.style,
         arrow: operator.arrow,
+        arrowStart: operator.arrowStart,
       });
     }
   }

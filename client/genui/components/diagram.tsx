@@ -162,6 +162,17 @@ export function Diagram({ props }: { props: Props }) {
 
       <View onLayout={onLayout} style={{ alignSelf: "stretch", height: 0 }} />
 
+      {parsed.kind === "flow" && parsed.skipped.length > 0 ? (
+        <View style={{ gap: 4 }}>
+          <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>
+            Часть схемы не поддерживается. Пропущенные строки:
+          </Text>
+          <Text selectable style={{ color: theme.colors.foregroundMuted, fontSize: 12, fontFamily: "monospace" }}>
+            {parsed.skipped.join("\n")}
+          </Text>
+        </View>
+      ) : null}
+
       {showCode ? (
         <View
           style={{
@@ -379,19 +390,19 @@ function EdgeView({ edge, theme }: { edge: LaidOutEdge; theme: PluginTheme }) {
           }}
         />
       ))}
-      {edge.arrowAt ? (
-        <View
+      {[edge.arrowStartAt, edge.arrowAt].map((point, index) => point ? (
+        <View key={index}
           style={{
             position: "absolute",
-            left: edge.arrowAt.x - ARROW,
-            top: edge.arrowAt.y - ARROW,
+            left: point.x - ARROW,
+            top: point.y - ARROW,
             width: ARROW * 2,
             height: ARROW * 2,
             borderRadius: ARROW,
             backgroundColor: color,
           }}
         />
-      ) : null}
+      ) : null)}
       {edge.label && edge.labelAt ? (
         <View
           style={{

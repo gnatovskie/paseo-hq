@@ -12,6 +12,8 @@ const code = `$n = 3
 rows = Load("/tmp/opencode/hq-genui/rows.json")
 Card("Штаб: интерактивный ответ", [
   Text("Выделяем **важный фрагмент** и обычный текст"),
+  Diagram("flowchart TD\\n C[Клиент схемы] <-->|WebSocket| D[Демон схемы]\\n D <--> X[Исполнитель схемы]"),
+  Diagram("flowchart TD\\n A[Неполная схема] --> B[Цель]\\n unsupported syntax"),
   Stepper($n, 1, 10, label: "Количество"),
   Metric("Итого", $n * 7),
   Table(["Проверка", "Значение"], rows),
