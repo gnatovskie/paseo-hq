@@ -98,6 +98,7 @@ import { Markdown } from "@getpaseo/plugin/client/ui";
 import { defaultWorktreePath } from "./shared/worktree";
 import { openAgentTab } from "./client/agent-navigation";
 import { applyAgentUpdate } from "./shared/sidebar-agent-updates";
+import { createRefreshScheduler, shouldFetchAgents, SIDEBAR_PERIODIC_MS } from "./shared/sidebar-refresh";
 import { clearProviders, peekProviders, providersSnapshot } from "./shared/provider-cache";
 
 
@@ -1710,7 +1711,9 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const isWeb = layout.platform === "web" && typeof (globalThis as { document?: unknown }).document !== "undefined";
   const btnSize = layout.compact ? 36 : 30;
 
-  const reloadAll = useCallback(async () => {
+  const agentsFetchedAt = useRef<number | null>(null);
+  const reloadAll = useCallback(async (options?: { background?: boolean }) => {
+    const fetchAgents = shouldFetchAgents(agentsFetchedAt.current, Date.now(), !options?.background);
     const terminalRefresh = paseo.terminals.list()
       .then(({ entries }) => {
         setTerminals(entries);
@@ -1720,13 +1723,17 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       const [projRes, wsRes, agRes] = await Promise.all([
         paseo.projects.list({}),
         paseo.workspaces.list({}),
-        paseo.agents.list({}).catch(() => ({ entries: [] as AgentEntry[] })),
+        fetchAgents ? paseo.agents.list({}).catch(() => null) : Promise.resolve(null),
       ]);
       const nextProjects = projRes.projects ?? [];
       const nextWorkspaces = (wsRes.entries ?? []).filter((w) => !w.archivingAt && !w.background);
       setProjects(nextProjects);
       setWorkspaces(nextWorkspaces);
-      setAgents(agRes.entries ?? []);
+      // Between resyncs agents stay current through their subscription.
+      if (agRes) {
+        setAgents(agRes.entries ?? []);
+        agentsFetchedAt.current = Date.now();
+      }
       const ids = Array.from(
         new Set([
           ...nextProjects.map((p) => p.projectId),
@@ -1745,15 +1752,19 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
 
   useEffect(() => {
     void reloadAll();
-    const unsubWs = paseo.workspaces.subscribe(() => void reloadAll());
-    const unsubPrj = paseo.projects.subscribe(() => void reloadAll());
+    // Workspace events arrive in bursts while agents run. Coalesce them so a
+    // slow client link is not saturated by back-to-back full reloads.
+    const scheduler = createRefreshScheduler({ run: () => reloadAll({ background: true }) });
+    const unsubWs = paseo.workspaces.subscribe(() => scheduler.request());
+    const unsubPrj = paseo.projects.subscribe(() => scheduler.request());
     const unsubAg = paseo.agents.subscribe(update => setAgents(entries => applyAgentUpdate(entries, update)));
-    const timer = setInterval(() => void reloadAll(), 5000);
+    const timer = setInterval(() => scheduler.request(), SIDEBAR_PERIODIC_MS);
     return () => {
       unsubWs();
       unsubPrj();
       unsubAg();
       clearInterval(timer);
+      scheduler.stop();
     };
   }, [paseo, reloadAll]);
 
