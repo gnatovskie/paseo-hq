@@ -1,11 +1,16 @@
 import { execFile } from "node:child_process";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
+import { z } from "zod";
 import {
   EMPTY_BOARD,
   boardConfigSchema,
+  boardSchema,
+  taskSchema,
   boardDisplayName,
   mergeBoard,
   newId,
@@ -44,6 +49,7 @@ interface Draft {
   removedTaskIds: Set<string>;
   removedMemberIds: Set<string>;
   dirty: boolean;
+  revision: number;
 }
 
 const drafts = new Map<string, Draft>();
@@ -274,66 +280,130 @@ export async function pullRepo(cfg: BoardConfig): Promise<void> {
 }
 
 export async function readBoard(cfg: BoardConfig): Promise<TeamBoard> {
+  let shared = { ...EMPTY_BOARD };
   try {
-    const raw = await readFile(join(cfg.dir, BOARD_FILE), "utf8");
-    return parseBoard(JSON.parse(raw));
+    shared = parseBoard(JSON.parse(await readFile(join(cfg.dir, BOARD_FILE), "utf8")));
   } catch {
-    return { ...EMPTY_BOARD };
+    // An empty/new shared repository is a valid board.
+  }
+  const local = await readLocalState(cfg);
+  // Never adopt another host's personal tasks from legacy shared JSON.
+  const tasks = new Map(shared.tasks.filter((task) => !task.personal).map((task) => [task.id, task]));
+  for (const task of local.personalTasks) tasks.set(task.id, task);
+  return { ...shared, tasks: [...tasks.values()] };
+}
+
+const pendingSchema = z.object({
+  board: boardSchema,
+  removedTaskIds: z.array(z.string()).default([]),
+  removedMemberIds: z.array(z.string()).default([]),
+});
+const localStateSchema = z.object({
+  personalTasks: z.array(taskSchema).refine((tasks) => tasks.every((task) => task.personal)),
+  pending: pendingSchema.optional(),
+});
+type LocalState = z.infer<typeof localStateSchema>;
+
+function localStatePath(cfg: BoardConfig): string {
+  // Stable across disconnect/reconnect, but isolated per repository and branch.
+  const url = isAbsolute(cfg.url) ? pathToFileURL(cfg.url).href : cfg.url;
+  const key = createHash("sha256").update(JSON.stringify([canonicalRepoKey(url), cfg.branch])).digest("hex");
+  const path = resolve(BASE_DIR(), "local-boards", `${key}.json`);
+  if (path.startsWith(resolve(cfg.dir) + sep)) throw new Error("личные задачи нельзя хранить внутри Git-доски");
+  return path;
+}
+
+function missingFile(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException)?.code === "ENOENT";
+}
+
+async function readLocalState(cfg: BoardConfig): Promise<LocalState> {
+  try {
+    return localStateSchema.parse(JSON.parse(await readFile(localStatePath(cfg), "utf8")));
+  } catch (error) {
+    if (!missingFile(error)) throw error; // Do not silently erase corrupt/private data.
+  }
+  try {
+    const pending = pendingSchema.parse(JSON.parse(await readFile(join(cfg.dir, PENDING_FILE), "utf8")));
+    return { personalTasks: pending.board.tasks.filter((task) => task.personal), pending };
+  } catch (error) {
+    if (!missingFile(error)) throw error;
+    return { personalTasks: [] };
   }
 }
 
-function pendingPath(cfg: BoardConfig): string {
-  return join(cfg.dir, PENDING_FILE);
+// Serialize the entire local-file transaction, including flush acknowledgment.
+// A newer edit's pending snapshot must never be overtaken by an older write/cleanup.
+const localWrites = new Map<string, Promise<void>>();
+async function withLocalWrite(cfg: BoardConfig, operation: () => Promise<void>): Promise<void> {
+  const key = localStatePath(cfg);
+  const next = (localWrites.get(key) ?? Promise.resolve()).catch(() => undefined).then(operation);
+  localWrites.set(key, next);
+  try {
+    await next;
+  } finally {
+    if (localWrites.get(key) === next) localWrites.delete(key);
+  }
 }
 
-interface PendingFile {
-  board: TeamBoard;
-  removedTaskIds: string[];
-  removedMemberIds: string[];
+async function writeLocalState(cfg: BoardConfig, state: LocalState): Promise<void> {
+  const path = localStatePath(cfg);
+  const tmp = `${path}.${randomUUID()}.tmp`;
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  await writeFile(tmp, `${JSON.stringify(state, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  await rename(tmp, path);
+  // A legacy pending file is removed only after its replacement is safely written.
+  await unlink(join(cfg.dir, PENDING_FILE)).catch((error: unknown) => {
+    if (!missingFile(error)) throw error;
+  });
 }
 
 async function readPending(cfg: BoardConfig): Promise<Draft | null> {
-  try {
-    const raw = JSON.parse(await readFile(pendingPath(cfg), "utf8")) as Partial<PendingFile>;
-    return {
-      board: parseBoard(raw.board),
-      removedTaskIds: new Set(Array.isArray(raw.removedTaskIds) ? raw.removedTaskIds : []),
-      removedMemberIds: new Set(Array.isArray(raw.removedMemberIds) ? raw.removedMemberIds : []),
-      dirty: true,
-    };
-  } catch {
-    return null;
-  }
+  const { pending } = await readLocalState(cfg);
+  if (!pending) return null;
+  return {
+    board: pending.board,
+    removedTaskIds: new Set(pending.removedTaskIds),
+    removedMemberIds: new Set(pending.removedMemberIds),
+    dirty: true,
+    revision: 0,
+  };
 }
 
 async function writePending(cfg: BoardConfig, draft: Draft): Promise<void> {
-  const path = pendingPath(cfg);
-  const tmp = `${path}.${process.pid}.${Date.now()}.tmp`;
-  const payload: PendingFile = {
+  const pending = structuredClone({
     board: draft.board,
     removedTaskIds: [...draft.removedTaskIds],
     removedMemberIds: [...draft.removedMemberIds],
-  };
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  await writeFile(tmp, `${JSON.stringify(payload, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-  await rename(tmp, path);
+  });
+  const state: LocalState = { personalTasks: pending.board.tasks.filter((task) => task.personal), pending };
+  await withLocalWrite(cfg, () => writeLocalState(cfg, state));
 }
 
 async function removePending(cfg: BoardConfig): Promise<void> {
-  await unlink(pendingPath(cfg)).catch(() => undefined);
+  await withLocalWrite(cfg, async () => {
+    const state = await readLocalState(cfg);
+    await writeLocalState(cfg, { personalTasks: state.personalTasks });
+  });
 }
 
 async function doHydrate(): Promise<void> {
   const configs = await readConfigs();
   for (const cfg of configs) {
     const draft = await readPending(cfg);
-    if (draft) drafts.set(cfg.id, draft);
+    if (draft) {
+      drafts.set(cfg.id, draft);
+      await writePending(cfg, draft); // Also migrates legacy pending data outside Git.
+    }
   }
   if ([...drafts.values()].some((d) => d.dirty)) scheduleFlush();
 }
 
 function ensureHydrated(): Promise<void> {
-  if (!hydration) hydration = doHydrate();
+  if (!hydration) hydration = doHydrate().catch((error: unknown) => {
+    hydration = null;
+    throw error;
+  });
   return hydration;
 }
 
@@ -346,7 +416,8 @@ function scheduleFlush(): void {
 }
 
 async function writeAndPush(cfg: BoardConfig, merged: TeamBoard): Promise<void> {
-  await writeFile(join(cfg.dir, BOARD_FILE), `${JSON.stringify(merged, null, 2)}\n`, {
+  const shared = { ...merged, tasks: merged.tasks.filter((task) => !task.personal) };
+  await writeFile(join(cfg.dir, BOARD_FILE), `${JSON.stringify(shared, null, 2)}\n`, {
     encoding: "utf8",
     mode: 0o600,
   });
@@ -380,11 +451,63 @@ export async function saveBoard(
   removedTaskIds: readonly string[] = [],
   removedMemberIds: readonly string[] = [],
 ): Promise<TeamBoard> {
-  await pullRepo(cfg);
-  const remote = await readBoard(cfg);
-  const merged = mergeBoard(remote, incoming, removedTaskIds, removedMemberIds);
-  await writeAndPush(cfg, merged);
-  return merged;
+  // UI edits stay non-blocking, but two Git writers must not overlap.
+  if (flushing) throw new Error("синхронизация уже выполняется; сохраните правку через applyBoardChange");
+  flushing = true;
+  try {
+    await ensureHydrated();
+    const registered = (await readConfigs()).find(
+      (board) => board.branch === cfg.branch && sameRepoUrl(board.url, cfg.url),
+    );
+    let draft: Draft | undefined;
+    let revision = 0;
+    let snapshot = incoming;
+    let snapshotRemovedTaskIds = [...removedTaskIds];
+    let snapshotRemovedMemberIds = [...removedMemberIds];
+    if (registered) {
+      // Keep the UI and standalone API on the same draft, including another clone.
+      await applyBoardChange(registered.id, incoming, removedTaskIds, removedMemberIds);
+      draft = drafts.get(registered.id)!;
+      revision = draft.revision;
+      snapshot = draft.board;
+      snapshotRemovedTaskIds = [...draft.removedTaskIds];
+      snapshotRemovedMemberIds = [...draft.removedMemberIds];
+    } else if ((await readLocalState(cfg)).pending) {
+      throw new Error("есть неотправленный черновик; подключите доску перед сохранением");
+    }
+    await pullRepo(cfg);
+    const remote = await readBoard(cfg);
+    const merged = mergeBoard(remote, snapshot, snapshotRemovedTaskIds, snapshotRemovedMemberIds);
+    if (!registered) {
+      await withLocalWrite(cfg, () =>
+        writeLocalState(cfg, { personalTasks: merged.tasks.filter((task) => task.personal) }),
+      );
+    }
+    await writeAndPush(cfg, merged);
+    if (registered && draft) await acknowledgeDraft(cfg, registered.id, draft, merged, revision);
+    return merged;
+  } finally {
+    flushing = false;
+  }
+}
+
+async function acknowledgeDraft(
+  cfg: BoardConfig,
+  boardId: string,
+  draft: Draft,
+  merged: TeamBoard,
+  revision: number,
+): Promise<void> {
+  await withLocalWrite(cfg, async () => {
+    if (drafts.get(boardId) !== draft || draft.revision !== revision) return;
+    await writeLocalState(cfg, { personalTasks: merged.tasks.filter((task) => task.personal) });
+    // A newer edit's queued pending write follows this acknowledgment.
+    if (drafts.get(boardId) !== draft || draft.revision !== revision) return;
+    draft.board = merged;
+    draft.dirty = false;
+    draft.removedTaskIds.clear();
+    draft.removedMemberIds.clear();
+  });
 }
 
 async function flushBoard(boardId: string, draft: Draft): Promise<void> {
@@ -393,13 +516,10 @@ async function flushBoard(boardId: string, draft: Draft): Promise<void> {
   try {
     await pullRepo(cfg);
     const remote = await readBoard(cfg);
+    const revision = draft.revision;
     const merged = mergeBoard(remote, draft.board, [...draft.removedTaskIds], [...draft.removedMemberIds]);
     await writeAndPush(cfg, merged);
-    draft.board = merged;
-    draft.dirty = false;
-    draft.removedTaskIds.clear();
-    draft.removedMemberIds.clear();
-    await removePending(cfg);
+    await acknowledgeDraft(cfg, boardId, draft, merged, revision);
   } catch (err) {
     console.warn("[team] flush failed:", (err as Error)?.message || err);
   }
@@ -440,13 +560,18 @@ export async function applyBoardChange(
   await ensureHydrated();
   const cfg = await getConfig(boardId);
   if (!cfg) throw new Error("доска не найдена");
-  const draft: Draft =
-    drafts.get(boardId) ?? {
-      board: await readBoard(cfg),
+  let draft = drafts.get(boardId);
+  if (!draft) {
+    const board = await readBoard(cfg);
+    // Another first edit may have created the draft while readBoard was awaiting IO.
+    draft = drafts.get(boardId) ?? {
+      board,
       removedTaskIds: new Set<string>(),
       removedMemberIds: new Set<string>(),
       dirty: false,
+      revision: 0,
     };
+  }
   const merged = mergeBoard(draft.board, incoming, removedTaskIds, removedMemberIds);
   draft.board = merged;
   for (const id of removedTaskIds) draft.removedTaskIds.add(id);
@@ -454,6 +579,7 @@ export async function applyBoardChange(
   for (const task of incoming.tasks) draft.removedTaskIds.delete(task.id);
   for (const member of incoming.members) draft.removedMemberIds.delete(member.id);
   draft.dirty = true;
+  draft.revision++;
   drafts.set(boardId, draft);
   await writePending(cfg, draft);
   scheduleFlush();
@@ -537,6 +663,7 @@ export async function syncBoard(boardId: string): Promise<TeamBoard> {
   if (draft && draft.dirty) {
     const merged = mergeBoard(remote, draft.board, [...draft.removedTaskIds], [...draft.removedMemberIds]);
     draft.board = merged;
+    draft.revision++;
     await writePending(cfg, draft);
     return merged;
   }
