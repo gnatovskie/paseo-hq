@@ -61,6 +61,7 @@ import { projectAgentConfig } from "./shared/project-agent-config";
 import { compareProjectOrder } from "./shared/project-order";
 import { findFinalReply } from "./shared/reply-time";
 import { groupAreaAgents, compareAreaOrder } from "./shared/area-agents";
+import { EMPTY_PROJECT_DRAFT, projectAddInput, projectDraftFolder, projectDraftRoot, type NewProjectDraft, type NewProjectSource } from "./shared/new-project";
 import { agentActivity, matchesSearch, orderFlatSessions, searchArea, searchTerms, type FlatSessionKey, type SidebarMode } from "./shared/sidebar-search";
 import { GENERATOR_TITLE, titleModelOptions } from "./shared/title-models";
 import { useActiveSession } from "./client/active-session.client";
@@ -128,7 +129,7 @@ const DEFAULT_META: ProjectMeta = {
   showTerminalsInSessions: true,
 };
 
-type AddProjectMode = "existing" | "create" | "clone";
+const NEW_PROJECT = "";
 type AgentEntry = PaseoAgentListResult["entries"][number];
 
 interface ProjectGroup {
@@ -1331,9 +1332,110 @@ function NewAgentOption({ theme, label, options, value, onChange, disabled, fall
   </View>;
 }
 
+const PROJECT_SOURCES: { value: NewProjectSource; label: string; icon: string }[] = [
+  { value: "existing", label: "Папка на сервере", icon: "FolderOpen" },
+  { value: "create", label: "Новая папка", icon: "FolderPlus" },
+  { value: "clone", label: "Git-клон", icon: "GitBranch" },
+];
+const NEW_PROJECT_OPTION = "__new_project__";
+
+function PathField({ theme, label, value, onChange, placeholder, disabled }: {
+  theme: PluginTheme; label: string; value: string; onChange: (value: string) => void; placeholder: string; disabled: boolean;
+}) {
+  const c = theme.colors;
+  return (
+    <View style={{ flex: 1, minWidth: 0, height: 44, justifyContent: "center", paddingHorizontal: 12,
+      borderRadius: 9, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface2 }}>
+      <TextInput accessibilityLabel={label} value={value} onChangeText={onChange} placeholder={placeholder}
+        placeholderTextColor={c.foregroundMuted} editable={!disabled} autoCapitalize="none" autoCorrect={false}
+        style={{ padding: 0, outlineWidth: 0, color: c.foreground, fontSize: 13, fontFamily: "monospace" }} />
+    </View>
+  );
+}
+
+// Проект новой сессии: любой из списка или новый.
+function ProjectPicker({ theme, value, options, onChange, disabled }: {
+  theme: PluginTheme; value: string; options: { value: string; label: string }[]; onChange: (projectId: string) => void; disabled: boolean;
+}) {
+  const c = theme.colors;
+  const label = value === NEW_PROJECT ? "Новый проект" : options.find((option) => option.value === value)?.label ?? "Проект";
+  return (
+    <View style={{ gap: 6 }}>
+      <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Проект</Text>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <View style={{ flex: 1, minWidth: 0, height: 44, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12,
+          borderRadius: 9, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface2 }}>
+          <Icon name={value === NEW_PROJECT ? "FolderPlus" : "Folder"} size={15} color={value === NEW_PROJECT ? c.accent : c.foregroundMuted} />
+          <Text accessibilityLabel={`Проект: ${label}`} numberOfLines={1} style={{ flex: 1, minWidth: 0, color: c.foreground, fontSize: 15 }}>{label}</Text>
+        </View>
+        <TitleModelPicker plain theme={theme} selectionLabel="Проект" disabled={disabled}
+          value={value === NEW_PROJECT ? NEW_PROJECT_OPTION : value}
+          options={[{ value: NEW_PROJECT_OPTION, label: "Новый проект" }, ...options]
+            .map((option) => ({ ...option, name: option.label, provider: "", providerLabel: "" }))}
+          label="Выбрать проект" icon="ChevronDown" menuLabel="Проекты"
+          onValueChange={(next) => onChange(next === NEW_PROJECT_OPTION ? NEW_PROJECT : next)} />
+      </View>
+    </View>
+  );
+}
+
+// Новый проект компактно: источник иконками, одно поле пути, готовые репозитории во вложенном окне.
+function NewProjectFields({ theme, draft, onChange, defaultParent, onBrowse, disabled }: {
+  theme: PluginTheme; draft: NewProjectDraft; onChange: (draft: NewProjectDraft) => void;
+  defaultParent: string; onBrowse: () => void; disabled: boolean;
+}) {
+  const c = theme.colors;
+  const parent = defaultParent.replace(/\/+$/, "");
+  const source = PROJECT_SOURCES.find((item) => item.value === draft.source)!;
+  const caption = { existing: "Папка на сервере", create: "Путь новой папки", clone: "Куда клонировать" }[draft.source];
+  const placeholder = {
+    existing: `${parent}/my-project`,
+    create: `${parent}/new-project`,
+    clone: projectDraftRoot({ ...draft, path: "" }, parent) || `${parent}/<репозиторий>`,
+  }[draft.source];
+  return (
+    <View style={{ gap: 12 }}>
+      <View style={{ gap: 6 }}>
+        <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Откуда взять проект</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <ItemMenuActions theme={theme} disabled={disabled} actions={PROJECT_SOURCES.map((item) => ({
+            label: item.label, icon: item.icon, selected: item.value === draft.source,
+            onPress: () => onChange({ ...draft, source: item.value }),
+          }))} />
+          <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, color: c.foreground, fontSize: 14 }}>{source.label}</Text>
+        </View>
+      </View>
+      {draft.source === "clone" ? (
+        <View style={{ gap: 6 }}>
+          <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Ссылка на репозиторий</Text>
+          <PathField theme={theme} label="Ссылка на репозиторий" value={draft.repoUrl} disabled={disabled}
+            placeholder="git@github.com:org/repo.git или owner/repo" onChange={(repoUrl) => onChange({ ...draft, repoUrl })} />
+        </View>
+      ) : null}
+      <View style={{ gap: 6 }}>
+        <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>{caption}</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <PathField theme={theme} label={caption} value={draft.path} placeholder={placeholder} disabled={disabled}
+            onChange={(path) => onChange({ ...draft, path })} />
+          {draft.source === "existing" ? (
+            <ChatActionButton theme={theme} label="Готовые репозитории" icon="FolderSearch" disabled={disabled} onPress={onBrowse} />
+          ) : null}
+        </View>
+      </View>
+      {draft.source === "create" ? (
+        <SettingsSwitch label="Инициализировать Git" value={draft.initGit} disabled={disabled}
+          onValueChange={(initGit) => onChange({ ...draft, initGit })} />
+      ) : null}
+      <EditableName theme={theme} value={draft.name} onChange={(name) => onChange({ ...draft, name })} disabled={disabled}
+        label="Название нового проекта" caption="Название проекта" editLabel="Редактировать название проекта"
+        placeholder={projectDraftFolder(draft, parent) || "По имени папки"} />
+    </View>
+  );
+}
+
 // Одна форма для новой области и новой сессии.
 function NewSessionWindow({ theme, title, open, onClose, narrow, kind, onKindChange, kindLocked, name, onNameChange, nameEditable,
-  target, extra, naming, agentOptions, model, modelsError, modelOptions, onModelChange, folder, busy, submitLabel, submitAgentLabel, onSubmit }: {
+  top, target, extra, naming, agentOptions, model, modelsError, modelOptions, onModelChange, folder, busy, submitLabel, submitAgentLabel, onSubmit, secondary }: {
   theme: PluginTheme;
   title: string;
   open: boolean;
@@ -1346,6 +1448,8 @@ function NewSessionWindow({ theme, title, open, onClose, narrow, kind, onKindCha
   name?: string;
   onNameChange?: (name: string) => void;
   nameEditable?: boolean;
+  /** Выбор проекта у окна «Новая сессия» из строки над списком. */
+  top?: React.ReactNode;
   /** Куда создавать: новая область или одна из имеющихся (value = id области, null = новая). */
   /** Дополнительные поля после названия (ветка и папка worktree у новой области). */
   extra?: React.ReactNode;
@@ -1365,9 +1469,12 @@ function NewSessionWindow({ theme, title, open, onClose, narrow, kind, onKindCha
   submitLabel: string;
   submitAgentLabel?: string;
   onSubmit: () => void;
+  /** Второе действие под кнопкой создания (например, только добавить проект). */
+  secondary?: { label: string; onPress: () => void };
 }) {
   const c = theme.colors;
   const disabled = busy || (kind === "agent" && !model);
+  const inlineKind = Boolean(target || top);
   const field = { borderRadius: 9, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface2 } as const;
   const kindActions: SheetAction[] = [
     { label: "Агент", icon: "Bot", selected: kind === "agent", onPress: () => onKindChange("agent") },
@@ -1376,9 +1483,10 @@ function NewSessionWindow({ theme, title, open, onClose, narrow, kind, onKindCha
   return (
     <HqModal theme={theme} narrow={narrow} title={title} open={open} onOpenChange={(next) => { if (!next && !busy) onClose(); }}
       actionsDisabled={kindLocked}
-      actions={target ? undefined : kindActions}
+      actions={inlineKind ? undefined : kindActions}
     >
       <View style={{ gap: 16 }}>
+        {top}
         {target ? (
           <View style={{ gap: 6 }}>
             <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Область</Text>
@@ -1412,7 +1520,7 @@ function NewSessionWindow({ theme, title, open, onClose, narrow, kind, onKindCha
           </View>
         ) : null}
         {extra}
-        {target ? <ItemMenuActions theme={theme} actions={kindActions} disabled={kindLocked || busy} /> : null}
+        {inlineKind ? <ItemMenuActions theme={theme} actions={kindActions} disabled={kindLocked || busy} /> : null}
         <NewSessionName theme={theme} kind={kind} naming={naming} disabled={busy} />
         {kind === "agent" ? (
           <View style={{ gap: 6 }}>
@@ -1465,6 +1573,18 @@ function NewSessionWindow({ theme, title, open, onClose, narrow, kind, onKindCha
             {busy ? "Создаю…" : submitLabel}
           </Text>
         </Pressable>
+        {secondary ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={secondary.label}
+            disabled={busy}
+            onPress={secondary.onPress}
+            style={({ pressed }) => ({ padding: 10, alignItems: "center", borderRadius: 9, borderWidth: 1, borderColor: c.border,
+              backgroundColor: pressed ? c.surface2 : undefined, opacity: busy ? 0.6 : 1 })}
+          >
+            <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "500" }}>{secondary.label}</Text>
+          </Pressable>
+        ) : null}
       </View>
     </HqModal>
   );
@@ -1705,6 +1825,10 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     baseBranch?: string;
     /** Путь, вписанный вручную; иначе путь по умолчанию рядом с проектом. */
     worktreePath?: string;
+    /** Окно «Новая сессия» из строки над списком: проект выбирается в окне, NEW_PROJECT - новый. */
+    pickProject?: boolean;
+    /** Проект, только что добавленный этим окном, пока его нет в списке. */
+    addedRootPath?: string;
   } | null>(null);
   const [worktreeOptions, setWorktreeOptions] = useState<{
     projectId: string; isGit: boolean; rootPath: string; branches: string[]; checkedOut: string[]; currentBranch: string | null;
@@ -1713,17 +1837,12 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     chat: PaseoWorkspace; path: string; branch: string; exists: boolean; changes: string[];
   } | null>(null);
 
-  // Модалка добавления нового проекта
-  const [addModalOpen, setAddModalOpen] = useState(false);
-  const [addMode, setAddMode] = useState<AddProjectMode>("existing");
+  // Новый проект в окне «Новая сессия» и вложенное окно готовых репозиториев
+  const [projectDraft, setProjectDraft] = useState<NewProjectDraft>(EMPTY_PROJECT_DRAFT);
+  const [reposOpen, setReposOpen] = useState(false);
   const [candidates, setCandidates] = useState<CandidateDir[]>([]);
   const [candidateFilter, setCandidateFilter] = useState("");
-  const [manualPath, setManualPath] = useState("");
   const [parentPath, setParentPath] = useState("~/repos");
-  const [newFolderName, setNewFolderName] = useState("");
-  const [cloneRepoUrl, setCloneRepoUrl] = useState("");
-  const [addCustomName, setAddCustomName] = useState("");
-  const [initGit, setInitGit] = useState(true);
   const [addingProject, setAddingProject] = useState(false);
 
   // Модалка настроек проекта
@@ -2101,6 +2220,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   )?.agent;
   const newSessionWorkspace = workspaces.find(workspace => workspace.id === newAgentWorkspaceId);
   const newAreaGroup = newArea ? allGroups.find((item) => item.id === newArea.projectId) : undefined;
+  const creatingProject = Boolean(newArea?.pickProject && newArea.projectId === NEW_PROJECT);
   const newAreaTarget = newArea?.targetWorkspaceId
     ? newAreaGroup?.chats.find((chat) => chat.id === newArea.targetWorkspaceId)
     : undefined;
@@ -2112,15 +2232,15 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const newAreaWorktreePath = newAreaPlace === "project" || !worktreeOptions ? ""
     : newArea?.worktreePath ?? (newAreaBranch ? defaultWorktreePath(worktreeOptions.rootPath, newAreaBranch) : "");
   const newAreaFolder = newAreaPlace !== "project" ? newAreaWorktreePath || "Укажите ветку"
-    : !newAreaGroup ? ""
-    : newAreaGroup.rootPath;
+    : creatingProject ? projectDraftRoot(projectDraft, parentPath) || "Укажите папку проекта"
+    : newAreaGroup?.rootPath ?? newArea?.addedRootPath ?? "";
   const creationFolder = newArea ? newAreaTarget?.workspaceDirectory ?? newAreaFolder : newSessionWorkspace?.workspaceDirectory;
   const defaultTerminalTitle = `Terminal ${terminals.filter(terminal => terminal.cwd === creationFolder).length + 1}`;
   const terminalCreationTitle = newTerminalTitle ?? defaultTerminalTitle;
   const creationNaming = (kind: "agent" | "terminal"): SessionNaming => kind === "agent"
     ? { value: newSessionTitle, onChange: setNewSessionTitle }
     : { value: terminalCreationTitle, onChange: setNewTerminalTitle };
-  const hqWindowOpen = Boolean(worktreeArchive) || addModalOpen || Boolean(editingGroup) || Boolean(newArea) || Boolean(editingChat)
+  const hqWindowOpen = Boolean(worktreeArchive) || reposOpen || Boolean(editingGroup) || Boolean(newArea) || Boolean(editingChat)
     || Boolean(newAgentWorkspaceId) || Boolean(agentMenuChat) || Boolean(terminalMenuItem) || panelSettingsOpen;
 
   const currentProjectGroup = useMemo(
@@ -2156,7 +2276,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     }
   };
 
-  const prepareAgentModels = async (group: ProjectGroup, workspaceId?: string) => {
+  const prepareAgentModels = async (group: Pick<ProjectGroup, "rootPath" | "chats">, workspaceId?: string) => {
     const request = ++agentModelsRequest.current;
     setNewAgentModel(null);
     setNewAgentModels([]);
@@ -2202,15 +2322,67 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     else setNewSessionKind(kind);
   };
 
+  // Модели и ветки для выбранного проекта; у нового проекта модель берется у последней сессии вообще.
+  const prepareNewAreaProject = (group: ProjectGroup | undefined) => {
+    setWorktreeOptions(null);
+    void prepareAgentModels(group ?? { rootPath: visibleGroups[0]?.rootPath ?? parentPath, chats: [] });
+    if (!group) return;
+    void readWorktreeOptions({ projectId: group.id })
+      .then((options) => setWorktreeOptions({ projectId: group.id, ...options }))
+      .catch(() => setWorktreeOptions(null));
+  };
+
   const openNewArea = (group: ProjectGroup) => {
     setNewSessionTitle("");
     setNewTerminalTitle(null);
     setNewArea({ projectId: group.id, name: "Новая область", firstTab: "session", place: "project" });
-    setWorktreeOptions(null);
-    void prepareAgentModels(group);
-    void readWorktreeOptions({ projectId: group.id })
-      .then((options) => setWorktreeOptions({ projectId: group.id, ...options }))
-      .catch(() => setWorktreeOptions(null));
+    prepareNewAreaProject(group);
+  };
+
+  // Кнопка в строке над списком: сессия в любом проекте или в новом.
+  const openNewSession = () => {
+    const group = visibleGroups[0];
+    setNewSessionTitle("");
+    setNewTerminalTitle(null);
+    setProjectDraft(EMPTY_PROJECT_DRAFT);
+    setCandidateFilter("");
+    setNewArea({ projectId: group?.id ?? NEW_PROJECT, name: "Новая область", firstTab: "session", place: "project", pickProject: true });
+    prepareNewAreaProject(group);
+    void loadCandidates({ existingPaths: allGroups.map((g) => g.rootPath) })
+      .then((res) => {
+        setCandidates(res.items);
+        setParentPath(res.defaultParent);
+      })
+      .catch(() => setCandidates([]));
+  };
+
+  const selectNewAreaProject = (projectId: string) => {
+    if (!newArea) return;
+    const group = allGroups.find((item) => item.id === projectId);
+    setNewArea({ projectId, name: newArea.name, firstTab: newArea.firstTab, place: "project", pickProject: true });
+    prepareNewAreaProject(group);
+  };
+
+  const addDraftProject = async () => {
+    const res = await addProjectRpc(projectAddInput(projectDraft, parentPath));
+    setExpandedProjectIds((prev) => ({ ...prev, [res.projectId]: true }));
+    setCollapsed(false);
+    return res;
+  };
+
+  const addProjectOnly = async () => {
+    if (addingProject) return;
+    setAddingProject(true);
+    try {
+      await addDraftProject();
+      setNewArea(null);
+      await reloadAll();
+      toast.show("Проект добавлен", { variant: "success" });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Не удалось добавить проект");
+    } finally {
+      setAddingProject(false);
+    }
   };
 
   const openNewAreaAgent = (workspaceId: string) => {
@@ -2275,45 +2447,58 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
 
   const createNewArea = async () => {
     if (!newArea || creatingId) return;
-    const group = allGroups.find((item) => item.id === newArea.projectId);
-    if (!group) return;
-    setCreatingId(group.id);
+    let current = newArea;
+    let group: { id: string; rootPath: string } | undefined = allGroups.find((item) => item.id === current.projectId)
+      ?? (current.addedRootPath ? { id: current.projectId, rootPath: current.addedRootPath } : undefined);
+    if (!group && !creatingProject) return;
+    setCreatingId(current.projectId || "new-project");
     try {
-      let workspaceId = newArea.workspaceId;
+      if (!group) {
+        // Сначала проверяем модель, чтобы не добавить проект без сессии из-за пустого выбора.
+        if (current.firstTab === "session" && !newAgentModel) throw new Error("Выберите модель агента");
+        const added = await addDraftProject();
+        group = { id: added.projectId, rootPath: added.rootPath };
+        current = { ...current, projectId: added.projectId, addedRootPath: added.rootPath };
+        setNewArea(current);
+      }
+      let workspaceId = current.workspaceId;
       if (!workspaceId && newAreaPlace !== "project") {
-        if (newArea.firstTab === "session" && !newAgentModel) throw new Error("Выберите модель агента");
+        if (current.firstTab === "session" && !newAgentModel) throw new Error("Выберите модель агента");
         if (!newAreaBranch) throw new Error(newAreaPlace === "new" ? "Впишите имя новой ветки" : "Выберите ветку");
         const created = await createAreaWorktree({
           projectId: group.id,
-          title: newArea.name.trim() || "Новая область",
+          title: current.name.trim() || "Новая область",
           path: newAreaWorktreePath,
           branch: newAreaBranch,
           newBranch: newAreaPlace === "new",
           baseBranch: newAreaPlace === "new" ? newAreaBaseBranch : undefined,
           modeId, thinkingOptionId,
-          agentModel: newArea.firstTab === "session" ? newAgentModel ?? undefined : undefined,
+          agentModel: current.firstTab === "session" ? newAgentModel ?? undefined : undefined,
           agentTitle: newSessionTitle.trim(),
         });
         workspaceId = created.workspaceId;
-        setNewArea({ ...newArea, workspaceId });
+        current = { ...current, workspaceId };
+        setNewArea(current);
       }
       if (!workspaceId) {
-        if (newArea.firstTab === "session" && !newAgentModel) throw new Error("Выберите модель агента");
-        const agent = newArea.firstTab === "session"
+        if (current.firstTab === "session" && !newAgentModel) throw new Error("Выберите модель агента");
+        const agent = current.firstTab === "session"
           ? { config: { provider: newAgentModel!, modeId, thinkingOptionId }, title: newSessionTitle.trim() || undefined, cwd: group.rootPath }
           : undefined;
         const created = await paseo.workspaces.create({
-          title: newArea.name.trim() || "Новая область",
+          title: current.name.trim() || "Новая область",
           agent,
           source: { kind: "directory", path: group.rootPath, projectId: group.id },
         });
         workspaceId = created.id;
-        setNewArea({ ...newArea, workspaceId });
+        current = { ...current, workspaceId };
+        setNewArea(current);
       }
 
-      setExpandedProjectIds((prev) => ({ ...prev, [group.id]: true }));
+      const projectId = group.id;
+      setExpandedProjectIds((prev) => ({ ...prev, [projectId]: true }));
       setExpandedAreaIds((prev) => ({ ...prev, [workspaceId]: true }));
-      if (newArea.firstTab === "terminal") {
+      if (current.firstTab === "terminal") {
         const terminal = await paseo.workspaces.ref(workspaceId).terminals.create({ name: terminalCreationTitle.trim() || defaultTerminalTitle });
         const snapshot = terminal.current();
         if (!snapshot) throw new Error("Терминал создан, но его данные недоступны");
@@ -2327,97 +2512,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       toast.error(error instanceof Error ? error.message : "Не удалось создать область");
     } finally {
       setCreatingId(null);
-    }
-  };
-
-  const openAddProjectModal = async () => {
-    setAddMode("existing");
-    setCandidateFilter("");
-    setManualPath("");
-    setNewFolderName("");
-    setCloneRepoUrl("");
-    setAddCustomName("");
-    setInitGit(true);
-    setAddModalOpen(true);
-    try {
-      const res = await loadCandidates({ existingPaths: allGroups.map((g) => g.rootPath) });
-      setCandidates(res.items);
-      setParentPath(res.defaultParent);
-    } catch {
-      setCandidates([]);
-    }
-  };
-
-  const handleQuickAddCandidate = async (dir: CandidateDir) => {
-    if (addingProject) return;
-    setAddingProject(true);
-    try {
-      const res = await addProjectRpc({
-        mode: "existing",
-        path: dir.path,
-        customName: addCustomName.trim() || undefined,
-      });
-      await reloadAll();
-      setExpandedProjectIds((prev) => ({ ...prev, [res.projectId]: true }));
-      setCollapsed(false);
-      setAddModalOpen(false);
-      toast.show(`Проект ${dir.name} добавлен`, { variant: "success" });
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Не удалось добавить проект");
-    } finally {
-      setAddingProject(false);
-    }
-  };
-
-  const handleSubmitAddProject = async () => {
-    if (addingProject) return;
-    setAddingProject(true);
-    try {
-      let res: { projectId: string; rootPath: string };
-      if (addMode === "existing") {
-        const p = manualPath.trim();
-        if (!p) {
-          throw new Error("Выберите папку из списка выше или введите путь на сервере");
-        }
-        res = await addProjectRpc({
-          mode: "existing",
-          path: p,
-          customName: addCustomName.trim() || undefined,
-        });
-      } else if (addMode === "create") {
-        const fname = newFolderName.trim();
-        if (!fname) {
-          throw new Error("Введите имя новой папки проекта");
-        }
-        res = await addProjectRpc({
-          mode: "create",
-          parentPath: parentPath.trim() || "~/repos",
-          folderName: fname,
-          customName: addCustomName.trim() || undefined,
-          initGit,
-        });
-      } else {
-        const repo = cloneRepoUrl.trim();
-        if (!repo) {
-          throw new Error("Введите ссылку на Git-репозиторий");
-        }
-        res = await addProjectRpc({
-          mode: "clone",
-          repoUrl: repo,
-          parentPath: parentPath.trim() || "~/repos",
-          folderName: newFolderName.trim() || undefined,
-          customName: addCustomName.trim() || undefined,
-        });
-      }
-      await reloadAll();
-      setExpandedProjectIds((prev) => ({ ...prev, [res.projectId]: true }));
-      setCollapsed(false);
-      setAddModalOpen(false);
-      toast.show("Проект добавлен", { variant: "success" });
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Не удалось добавить проект");
-    } finally {
-      setAddingProject(false);
     }
   };
 
@@ -3052,6 +3146,30 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     setSearchOpen(false);
     setSearchQuery("");
   };
+  // Окно Штаба, закрытое прямо перед поиском, в конце анимации возвращает фокус на кнопку, которой его открыли,
+  // и забирает его у поля. Поэтому фокус возвращаем после анимации, а Escape ловим на документе.
+  const searchInputRef = useRef<React.ElementRef<typeof TextInput>>(null);
+  useEffect(() => {
+    if (!searchOpen || typeof document === "undefined") return;
+    const input = () => searchInputRef.current as unknown as HTMLElement | null;
+    const editable = (element: Element | null) => Boolean(element)
+      && (element!.tagName === "INPUT" || element!.tagName === "TEXTAREA" || (element as HTMLElement).isContentEditable);
+    const refocus = setTimeout(() => {
+      if (!editable(document.activeElement)) input()?.focus();
+    }, 400);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || hqWindowClosers.length) return;
+      const active = document.activeElement;
+      if (active !== input() && editable(active)) return;
+      setSearchOpen(false);
+      setSearchQuery("");
+    };
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      clearTimeout(refocus);
+      document.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, [searchOpen]);
 
   // Поиск в режиме «Проекты»: подходящие проекты и области раскрываются только на время поиска,
   // сохраненное раскрытие не меняется. Область, найденная по названию, показывает все сессии.
@@ -3280,7 +3398,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
         />
       ) : null}
 
-      {/* Инструменты списка: режим «Проекты» или «Сессии», поиск и добавление проекта */}
+      {/* Инструменты списка: режим «Проекты» или «Сессии», поиск и новая сессия (в том числе с новым проектом) */}
       {!collapsed ? (
         <View style={{ gap: 6, paddingHorizontal: 2 }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: layout.compact ? 5 : 6 }}>
@@ -3328,14 +3446,14 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
             </Pressable>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Добавить проект"
-              onPress={() => void openAddProjectModal()}
+              accessibilityLabel="Новая сессия в любом проекте"
+              onPress={openNewSession}
               style={({ pressed }) => ({
                 width: toolbarHeight + 6, height: toolbarHeight, borderRadius: 8, alignItems: "center", justifyContent: "center",
                 backgroundColor: c.surface2, borderWidth: 1, borderColor: c.border, opacity: pressed ? 0.75 : 1,
               })}
             >
-              <Icon name="FolderPlus" size={15} color={c.accent} />
+              <Icon name="SquarePen" size={15} color={c.accent} />
             </Pressable>
           </View>
           {searchOpen ? (
@@ -3343,6 +3461,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
               borderRadius: 8, borderWidth: 1, borderColor: c.accent, backgroundColor: c.surface1 }}>
               <Icon name="Search" size={13} color={c.foregroundMuted} />
               <TextInput
+                ref={searchInputRef}
                 autoFocus
                 accessibilityLabel="Поиск в сайдбаре"
                 placeholder="Проект, область или сессия"
@@ -3678,394 +3797,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       ) : null}
 
       <HqModalLayer visible={hqWindowOpen}>
-      {/* Модальное окно добавления проекта */}
-      <HqModal theme={theme}
-        title="Добавить проект"
-        open={addModalOpen}
-        onOpenChange={(open) => {
-          if (!open) setAddModalOpen(false);
-        }}
-      >
-        <HqModal.Content>
-          <View style={{ gap: 16 }}>
-            <View
-              style={{
-                flexDirection: "row",
-                padding: 4,
-                borderRadius: 10,
-                backgroundColor: c.surface2,
-                borderWidth: 1,
-                borderColor: c.border,
-                gap: 4,
-              }}
-            >
-              {(
-                [
-                  { id: "existing", label: "Папка на сервере" },
-                  { id: "create", label: "Новая папка" },
-                  { id: "clone", label: "Git-клон" },
-                ] as const
-              ).map((tab) => {
-                const active = addMode === tab.id;
-                return (
-                  <Pressable
-                    key={tab.id}
-                    accessibilityRole="button"
-                    onPress={() => setAddMode(tab.id)}
-                    style={{
-                      flex: 1,
-                      paddingVertical: 8,
-                      paddingHorizontal: 6,
-                      borderRadius: 7,
-                      alignItems: "center",
-                      backgroundColor: active ? c.surface1 : undefined,
-                      borderWidth: active ? 1 : 0,
-                      borderColor: c.border,
-                    }}
-                  >
-                    <Text
-                      numberOfLines={1}
-                      style={{
-                        color: active ? c.foreground : c.foregroundMuted,
-                        fontSize: 12,
-                        fontWeight: active ? "700" : "500",
-                      }}
-                    >
-                      {tab.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            <View style={{ gap: 6 }}>
-              <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>
-                Название в списке (необязательно - по умолчанию имя папки)
-              </Text>
-              <TextInput
-                value={addCustomName}
-                onChangeText={setAddCustomName}
-                placeholder="Например: Мой сервис"
-                placeholderTextColor={c.foregroundMuted}
-                style={{
-                  paddingHorizontal: 12,
-                  paddingVertical: 10,
-                  borderRadius: 9,
-                  backgroundColor: c.surface2,
-                  borderWidth: 1,
-                  borderColor: c.border,
-                  color: c.foreground,
-                  fontSize: 14,
-                }}
-              />
-            </View>
-
-            {addMode === "existing" ? (
-              <View style={{ gap: 14 }}>
-                {candidates.length > 0 ? (
-                  <View style={{ gap: 8 }}>
-                    <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>
-                      Готовые репозитории в ~/repos (в 1 нажатие)
-                    </Text>
-                    {candidates.length > 5 ? (
-                      <TextInput
-                        value={candidateFilter}
-                        onChangeText={setCandidateFilter}
-                        placeholder="Поиск по названию папки..."
-                        placeholderTextColor={c.foregroundMuted}
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                        style={{
-                          paddingHorizontal: 12,
-                          paddingVertical: 9,
-                          borderRadius: 9,
-                          backgroundColor: c.surface2,
-                          borderWidth: 1,
-                          borderColor: c.border,
-                          color: c.foreground,
-                          fontSize: 13,
-                        }}
-                      />
-                    ) : null}
-                    <View
-                      style={{
-                        borderRadius: 11,
-                        backgroundColor: c.surface2,
-                        borderWidth: 1,
-                        borderColor: c.border,
-                        overflow: "hidden",
-                      }}
-                    >
-                      {filteredCandidates.slice(0, 12).map((dir, idx) => (
-                        <View key={dir.path}>
-                          {idx > 0 ? <View style={{ height: 1, backgroundColor: c.border }} /> : null}
-                          <Pressable
-                            accessibilityRole="button"
-                            disabled={addingProject}
-                            onPress={() => void handleQuickAddCandidate(dir)}
-                            style={({ pressed }) => ({
-                              flexDirection: "row",
-                              alignItems: "center",
-                              gap: 10,
-                              paddingHorizontal: 12,
-                              paddingVertical: 11,
-                              backgroundColor: pressed ? c.surface1 : undefined,
-                            })}
-                          >
-                            <Icon
-                              name={dir.isGit ? "GitBranch" : "Folder"}
-                              size={16}
-                              color={dir.isGit ? c.accent : c.foregroundMuted}
-                            />
-                            <View style={{ flex: 1, minWidth: 0 }}>
-                              <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 14, fontWeight: "600" }}>
-                                {dir.name}
-                              </Text>
-                              <Text numberOfLines={1} style={{ color: c.foregroundMuted, fontSize: 11 }}>
-                                {dir.path}
-                              </Text>
-                            </View>
-                            <View
-                              style={{
-                                paddingHorizontal: 10,
-                                paddingVertical: 5,
-                                borderRadius: 7,
-                                backgroundColor: c.accent,
-                              }}
-                            >
-                              <Text style={{ color: "#FFFFFF", fontSize: 12, fontWeight: "600" }}>
-                                Добавить
-                              </Text>
-                            </View>
-                          </Pressable>
-                        </View>
-                      ))}
-                    </View>
-                  </View>
-                ) : null}
-
-                <View style={{ gap: 6 }}>
-                  <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>
-                    Или укажите любой путь к папке на сервере вручную:
-                  </Text>
-                  <TextInput
-                    value={manualPath}
-                    onChangeText={setManualPath}
-                    placeholder="~/repos/my-project"
-                    placeholderTextColor={c.foregroundMuted}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    style={{
-                      paddingHorizontal: 12,
-                      paddingVertical: 10,
-                      borderRadius: 9,
-                      backgroundColor: c.surface2,
-                      borderWidth: 1,
-                      borderColor: c.border,
-                      color: c.foreground,
-                      fontSize: 14,
-                    }}
-                  />
-                  <Pressable
-                    accessibilityRole="button"
-                    disabled={addingProject || !manualPath.trim()}
-                    onPress={() => void handleSubmitAddProject()}
-                    style={({ pressed }) => ({
-                      marginTop: 4,
-                      paddingVertical: 12,
-                      borderRadius: 10,
-                      alignItems: "center",
-                      justifyContent: "center",
-                      backgroundColor: c.accent,
-                      opacity: addingProject || !manualPath.trim() ? 0.45 : pressed ? 0.85 : 1,
-                    })}
-                  >
-                    <Text style={{ color: "#FFFFFF", fontSize: 14, fontWeight: "700" }}>
-                      {addingProject ? "Добавление..." : "Добавить по пути"}
-                    </Text>
-                  </Pressable>
-                </View>
-              </View>
-            ) : null}
-
-            {addMode === "create" ? (
-              <View style={{ gap: 12 }}>
-                <View style={{ gap: 6 }}>
-                  <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Имя новой папки</Text>
-                  <TextInput
-                    value={newFolderName}
-                    onChangeText={setNewFolderName}
-                    placeholder="my-new-project"
-                    placeholderTextColor={c.foregroundMuted}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    style={{
-                      paddingHorizontal: 12,
-                      paddingVertical: 10,
-                      borderRadius: 9,
-                      backgroundColor: c.surface2,
-                      borderWidth: 1,
-                      borderColor: c.border,
-                      color: c.foreground,
-                      fontSize: 14,
-                    }}
-                  />
-                </View>
-
-                <View style={{ gap: 6 }}>
-                  <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Родительский каталог</Text>
-                  <TextInput
-                    value={parentPath}
-                    onChangeText={setParentPath}
-                    placeholder="~/repos"
-                    placeholderTextColor={c.foregroundMuted}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    style={{
-                      paddingHorizontal: 12,
-                      paddingVertical: 10,
-                      borderRadius: 9,
-                      backgroundColor: c.surface2,
-                      borderWidth: 1,
-                      borderColor: c.border,
-                      color: c.foreground,
-                      fontSize: 14,
-                    }}
-                  />
-                </View>
-
-                <View
-                  style={{
-                    padding: 10,
-                    borderRadius: 10,
-                    backgroundColor: c.surface2,
-                    borderWidth: 1,
-                    borderColor: c.border,
-                  }}
-                >
-                  <SettingsSwitch
-                    label="Инициализировать Git-репозиторий"
-                    hint="Выполнить git init в созданной папке"
-                    value={initGit}
-                    onValueChange={setInitGit}
-                  />
-                </View>
-
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={addingProject || !newFolderName.trim()}
-                  onPress={() => void handleSubmitAddProject()}
-                  style={({ pressed }) => ({
-                    paddingVertical: 13,
-                    borderRadius: 10,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    backgroundColor: c.accent,
-                    opacity: addingProject || !newFolderName.trim() ? 0.45 : pressed ? 0.85 : 1,
-                  })}
-                >
-                  <Text style={{ color: "#FFFFFF", fontSize: 15, fontWeight: "700" }}>
-                    {addingProject ? "Создание..." : "Создать и добавить проект"}
-                  </Text>
-                </Pressable>
-              </View>
-            ) : null}
-
-            {addMode === "clone" ? (
-              <View style={{ gap: 12 }}>
-                <View style={{ gap: 6 }}>
-                  <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>
-                    URL репозитория (SSH, HTTPS или owner/repo с GitHub)
-                  </Text>
-                  <TextInput
-                    value={cloneRepoUrl}
-                    onChangeText={setCloneRepoUrl}
-                    placeholder="git@github.com:org/repo.git или owner/repo"
-                    placeholderTextColor={c.foregroundMuted}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    style={{
-                      paddingHorizontal: 12,
-                      paddingVertical: 10,
-                      borderRadius: 9,
-                      backgroundColor: c.surface2,
-                      borderWidth: 1,
-                      borderColor: c.border,
-                      color: c.foreground,
-                      fontSize: 14,
-                    }}
-                  />
-                </View>
-
-                <View style={{ gap: 6 }}>
-                  <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>
-                    Имя папки (необязательно - определится из URL)
-                  </Text>
-                  <TextInput
-                    value={newFolderName}
-                    onChangeText={setNewFolderName}
-                    placeholder="repo"
-                    placeholderTextColor={c.foregroundMuted}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    style={{
-                      paddingHorizontal: 12,
-                      paddingVertical: 10,
-                      borderRadius: 9,
-                      backgroundColor: c.surface2,
-                      borderWidth: 1,
-                      borderColor: c.border,
-                      color: c.foreground,
-                      fontSize: 14,
-                    }}
-                  />
-                </View>
-
-                <View style={{ gap: 6 }}>
-                  <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>Куда клонировать</Text>
-                  <TextInput
-                    value={parentPath}
-                    onChangeText={setParentPath}
-                    placeholder="~/repos"
-                    placeholderTextColor={c.foregroundMuted}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    style={{
-                      paddingHorizontal: 12,
-                      paddingVertical: 10,
-                      borderRadius: 9,
-                      backgroundColor: c.surface2,
-                      borderWidth: 1,
-                      borderColor: c.border,
-                      color: c.foreground,
-                      fontSize: 14,
-                    }}
-                  />
-                </View>
-
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={addingProject || !cloneRepoUrl.trim()}
-                  onPress={() => void handleSubmitAddProject()}
-                  style={({ pressed }) => ({
-                    paddingVertical: 13,
-                    borderRadius: 10,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    backgroundColor: c.accent,
-                    opacity: addingProject || !cloneRepoUrl.trim() ? 0.45 : pressed ? 0.85 : 1,
-                  })}
-                >
-                  <Text style={{ color: "#FFFFFF", fontSize: 15, fontWeight: "700" }}>
-                    {addingProject ? "Клонирование..." : "Склонировать и добавить"}
-                  </Text>
-                </Pressable>
-              </View>
-            ) : null}
-          </View>
-        </HqModal.Content>
-      </HqModal>
-
       {/* Модальное окно настроек проекта */}
       <HqModal theme={theme}
         title="Настройки проекта"
@@ -4418,15 +4149,28 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
       {newArea ? (
         <NewSessionWindow
           theme={theme}
-          key={newAreaTarget?.id ?? newArea.projectId}
-          title="Новая область"
+          key={newArea.pickProject ? "new-session" : newAreaTarget?.id ?? newArea.projectId}
+          title={newArea.pickProject ? "Новая сессия" : "Новая область"}
+          top={newArea.pickProject ? (
+            <View style={{ gap: 16 }}>
+              <ProjectPicker theme={theme} value={newArea.projectId}
+                disabled={Boolean(creatingId || addingProject || newArea.addedRootPath)}
+                options={visibleGroups.map((group) => ({ value: group.id, label: group.name }))}
+                onChange={selectNewAreaProject} />
+              {creatingProject ? (
+                <NewProjectFields theme={theme} draft={projectDraft} onChange={setProjectDraft} defaultParent={parentPath}
+                  disabled={Boolean(creatingId || addingProject)} onBrowse={() => setReposOpen(true)} />
+              ) : null}
+            </View>
+          ) : undefined}
+          secondary={creatingProject ? { label: "Только добавить проект", onPress: () => void addProjectOnly() } : undefined}
           naming={creationNaming(newArea.firstTab === "session" ? "agent" : "terminal")}
           open
           onClose={() => setNewArea(null)}
           kind={newArea.firstTab === "session" ? "agent" : "terminal"}
           onKindChange={changeCreationKind}
           kindLocked={Boolean(newArea.workspaceId)}
-          target={{
+          target={creatingProject ? undefined : {
             value: newArea.targetWorkspaceId ?? null,
             options: (newAreaGroup?.chats ?? []).map((chat) => ({
               value: chat.id,
@@ -4524,10 +4268,12 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           onModelChange={changeAgentModel}
           agentOptions={{ ...creationOptions, onModeChange: setModeId, onThinkingChange: setThinkingOptionId, loading: !newAgentModels.length }}
           folder={newAreaTarget ? newAreaTarget.workspaceDirectory : newAreaFolder}
-          busy={Boolean(creatingId) || Object.values(creatingAreaIds).some(Boolean) || Boolean(creatingTerminalId)}
+          busy={Boolean(creatingId) || addingProject || Object.values(creatingAreaIds).some(Boolean) || Boolean(creatingTerminalId)}
           submitLabel={newAreaTarget
             ? newArea.firstTab === "session" ? "Создать агента" : "Создать терминал"
-            : newArea.workspaceId ? "Создать терминал" : "Создать область"}
+            : newArea.workspaceId ? "Создать терминал"
+            : creatingProject ? newArea.firstTab === "session" ? "Добавить проект и создать агента" : "Добавить проект и создать терминал"
+            : "Создать область"}
           submitAgentLabel={newAreaTarget ? "Создать агента с выбранной моделью" : undefined}
           onSubmit={() => {
             if (!newAreaTarget) void createNewArea();
@@ -4536,6 +4282,49 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           }}
         />
       ) : null}
+
+      {/* Готовые репозитории: вложенное окно по запросу из «Новой сессии» */}
+      <HqModal theme={theme} narrow title="Готовые репозитории" open={reposOpen} onOpenChange={(open) => { if (!open) setReposOpen(false); }}>
+        <HqModal.Content>
+          <View style={{ gap: 10 }}>
+            {candidates.length > 5 ? (
+              <View style={{ height: 40, justifyContent: "center", paddingHorizontal: 12, borderRadius: 9, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface2 }}>
+                <TextInput accessibilityLabel="Поиск репозитория" value={candidateFilter} onChangeText={setCandidateFilter}
+                  placeholder="Поиск по названию папки" placeholderTextColor={c.foregroundMuted} autoCapitalize="none" autoCorrect={false}
+                  style={{ padding: 0, outlineWidth: 0, color: c.foreground, fontSize: 14 }} />
+              </View>
+            ) : null}
+            {filteredCandidates.length ? (
+              <View style={{ borderRadius: 11, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface2, padding: 4, gap: 2 }}>
+                {filteredCandidates.slice(0, 40).map((dir) => (
+                  <Pressable
+                    key={dir.path}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Выбрать папку ${dir.name}`}
+                    onPress={() => {
+                      setProjectDraft((draft) => ({ ...draft, source: "existing", path: dir.path }));
+                      setReposOpen(false);
+                    }}
+                    style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 10, paddingVertical: 8,
+                      borderRadius: 8, backgroundColor: pressed || projectDraft.path === dir.path ? c.surface1 : undefined })}
+                  >
+                    <Icon name={dir.isGit ? "GitBranch" : "Folder"} size={15} color={dir.isGit ? c.accent : c.foregroundMuted} />
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 14, fontWeight: "500" }}>{dir.name}</Text>
+                      <Text numberOfLines={1} style={{ color: c.foregroundMuted, fontSize: 11 }}>{dir.path}</Text>
+                    </View>
+                    {projectDraft.path === dir.path ? <Icon name="Check" size={16} color={c.accent} /> : null}
+                  </Pressable>
+                ))}
+              </View>
+            ) : (
+              <Text style={{ color: c.foregroundMuted, fontSize: 13 }}>
+                {candidates.length ? "Ничего не найдено" : `В ${parentPath} нет папок, которые еще не добавлены`}
+              </Text>
+            )}
+          </View>
+        </HqModal.Content>
+      </HqModal>
 
       <ActionSheet
         title="Действия области"

@@ -294,6 +294,12 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await projectName.fill("Renamed project");
           await button("Принять название").click();
           await button("Принять название").waitFor({ state: "hidden" });
+          // Переименование доходит до демона теста; пустое имя возвращает имя папки для следующих шагов.
+          await button("Настройки проекта Renamed project").waitFor();
+          await projectName.click();
+          await projectName.fill("");
+          await button("Принять название").click();
+          await button("Настройки проекта source").waitFor();
           await button("Закрепить проект").click();
           await button("Открепить проект").waitFor();
           await until(async () => (await stored()).some(meta => meta.pinned === true), "pin saved at once");

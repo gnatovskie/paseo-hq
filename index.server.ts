@@ -1,4 +1,5 @@
 import { PluginSyncService } from "./server/plugin-sync.server";
+import { daemonListen } from "./server/daemon-endpoint.server";
 import v8 from "node:v8";
 v8.setFlagsFromString("--no-maglev");
 
@@ -429,9 +430,10 @@ async function withDaemonClient<T>(fn: (client: LowLevelDaemonClient) => Promise
   const mod = (await import(pathToFileURL(sdkPath).href)) as {
     DaemonClient: new (cfg: Record<string, unknown>) => LowLevelDaemonClient;
   };
-  const password = (await readFile(join(homedir(), ".config", "paseo", "daemon-password"), "utf8")).trim();
+  const password = await readFile(join(homedir(), ".config", "paseo", "daemon-password"), "utf8")
+    .then((value) => value.trim() || undefined, () => undefined);
   const client = new mod.DaemonClient({
-    url: "ws://127.0.0.1:6767/ws",
+    url: `ws://${await daemonListen(paseoHome)}/ws`,
     clientId: "paseo-hq",
     clientType: "cli",
     password,

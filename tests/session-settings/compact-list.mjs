@@ -155,7 +155,8 @@ test("sidebar sessions view and search", async (t) => {
           await button("Открыть агента Second fixture chat").waitFor();
           assert.deepEqual(await rowNames(), ["Открыть агента Second fixture chat"]);
           await capture("compact-tree-search");
-          await search.press("Escape");
+          await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Поиск в сайдбаре", null, { timeout: 3000 });
+          await page.keyboard.press("Escape");
           await search.waitFor({ state: "hidden" });
           assert.equal(await areaToggle.getAttribute("aria-expanded"), "false");
 
