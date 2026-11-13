@@ -133,7 +133,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
         const archive = page.getByRole("switch", { name: "Архивировать исходную область", exact: true });
         const history = page.getByRole("switch", { name: "Перенести историю последнего агента", exact: true });
         const draft = page.getByPlaceholder("Новая область", { exact: true });
-        const areaContents = page.getByText("Сессии", { exact: true });
+        const areaContents = page.getByRole("dialog").getByText("Сессии", { exact: true });
         const settingsHeading = page.getByText("Настройки области", { exact: true });
         const iconPicker = page.getByText("Иконка области", { exact: true });
         const closeSettings = async () => {
@@ -228,14 +228,14 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           ]);
           await page.getByText("Start chatting with this agent...", { exact: true }).filter({ visible: true }).first().waitFor();
           await agentName.waitFor({ state: "hidden" });
-          assert.equal(await page.getByText("Сессии", { exact: true }).count(), 0, "opening chat closes the parent area sheet too");
+          assert.equal(await page.getByRole("dialog").getByText("Сессии", { exact: true }).count(), 0, "opening chat closes the parent area sheet too");
           await enterSidebar();
           await openArea();
           await button("Меню агента Fixture chat").click();
           await agentName.waitFor();
           await button("Закрыть").last().click();
           await agentName.waitFor({ state: "hidden" });
-          assert.equal(await page.getByText("Сессии", { exact: true }).count(), 1, "area sheet stays open under the closed session sheet");
+          assert.equal(await page.getByRole("dialog").getByText("Сессии", { exact: true }).count(), 1, "area sheet stays open under the closed session sheet");
           await button("Меню терминала Fixture terminal").click();
           const terminalName = page.getByRole("textbox", { name: "Название терминала", exact: true });
           await terminalName.waitFor();
@@ -255,7 +255,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           await button("Закрыть").last().click();
           await page.getByText("Модель нового агента", { exact: true }).waitFor({ state: "hidden" });
           await button("Закрыть").last().click();
-          await page.getByText("Сессии", { exact: true }).waitFor({ state: "hidden" });
+          await page.getByRole("dialog").getByText("Сессии", { exact: true }).waitFor({ state: "hidden" });
           if (await areaToggle.getAttribute("aria-expanded") !== "true") await areaToggle.click();
           await sidebarSession.waitFor();
           await page.getByLabel(/^Ветка области .+/).first().waitFor();

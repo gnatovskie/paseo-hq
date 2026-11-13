@@ -1035,6 +1035,7 @@ export default function contribute(server: PluginServerContext) {
       avatar,
       hidden,
       hiddenSections,
+      showTerminalsInSessions,
       pinned,
       sessionTitleModel,
       sessionsSortMode,
@@ -1091,6 +1092,7 @@ export default function contribute(server: PluginServerContext) {
           areasSortBy: "prompt",
           sessionOrder: [],
           hiddenSections: [],
+          showTerminalsInSessions: true,
         };
         const next: ProjectMeta = { ...prev };
 
@@ -1109,6 +1111,7 @@ export default function contribute(server: PluginServerContext) {
         }
 
         if (hiddenSections !== undefined) next.hiddenSections = hiddenSections;
+        if (showTerminalsInSessions !== undefined) next.showTerminalsInSessions = showTerminalsInSessions;
         if (hidden !== undefined) {
           next.hidden = hidden;
         }

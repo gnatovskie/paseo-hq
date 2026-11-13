@@ -132,7 +132,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
         const archive = page.getByRole("switch", { name: "Архивировать исходную область", exact: true });
         const history = page.getByRole("switch", { name: "Перенести историю последнего агента", exact: true });
         const draft = page.getByPlaceholder("Новая область", { exact: true });
-        const areaContents = page.getByText("Сессии", { exact: true });
+        const areaContents = page.getByRole("dialog").getByText("Сессии", { exact: true });
         const settingsHeading = page.getByText("Настройки области", { exact: true });
         const iconPicker = page.getByText("Иконка области", { exact: true });
         const closeSettings = async () => {
@@ -175,7 +175,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           assert.equal(await input.evaluate(element => element.selectionStart), 0);
           const updated = "🧠 Area name";
           await input.fill(updated);
-          await page.getByText("Сессии", { exact: true }).click();
+          await page.getByRole("dialog").getByText("Сессии", { exact: true }).click();
           await page.waitForFunction(async ({ id, expected }) => {
             const button = document.querySelector(`[aria-label="Сессии области ${expected}"]`);
             return Boolean(button);
@@ -183,7 +183,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
           assert.equal((await workspaceHandle.refresh()).title, updated);
           await input.click();
           await input.fill(title);
-          await page.getByText("Сессии", { exact: true }).click();
+          await page.getByRole("dialog").getByText("Сессии", { exact: true }).click();
           await page.waitForFunction(expected => Boolean(document.querySelector(`[aria-label="Сессии области ${expected}"]`)), title);
           assert.equal((await workspaceHandle.refresh()).title, title);
           await button("Закрыть").last().click();

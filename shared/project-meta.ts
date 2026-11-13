@@ -6,6 +6,8 @@ export const projectMetaSchema = z.object({
   avatarBg: z.string().nullable().default(null),
   hidden: z.boolean().default(false),
   hiddenSections: z.array(z.enum(["areas", "pools"])).default([]),
+  // Терминалы в режиме «Сессии» сайдбара.
+  showTerminalsInSessions: z.boolean().default(true),
   pinned: z.boolean().default(false),
   pinnedAt: z.number().default(0),
   priority: z.number().finite().default(10),

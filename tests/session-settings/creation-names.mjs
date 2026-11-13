@@ -163,7 +163,7 @@ test("HQ area and session controls in compact and desktop Paseo", async (t) => {
         const archive = page.getByRole("switch", { name: "Архивировать исходную область", exact: true });
         const history = page.getByRole("switch", { name: "Перенести историю последнего агента", exact: true });
         const draft = page.getByPlaceholder("Новая область", { exact: true });
-        const areaContents = page.getByText("Сессии", { exact: true });
+        const areaContents = page.getByRole("dialog").getByText("Сессии", { exact: true });
         const settingsHeading = page.getByText("Настройки области", { exact: true });
         const iconPicker = page.getByText("Иконка области", { exact: true });
         const closeSettings = async () => {

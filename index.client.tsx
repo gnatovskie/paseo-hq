@@ -61,6 +61,7 @@ import { projectAgentConfig } from "./shared/project-agent-config";
 import { compareProjectOrder } from "./shared/project-order";
 import { findFinalReply } from "./shared/reply-time";
 import { groupAreaAgents, compareAreaOrder } from "./shared/area-agents";
+import { agentActivity, matchesSearch, orderFlatSessions, searchArea, searchTerms, type FlatSessionKey, type SidebarMode } from "./shared/sidebar-search";
 import { GENERATOR_TITLE, titleModelOptions } from "./shared/title-models";
 import { useActiveSession } from "./client/active-session.client";
 import { ProviderLogo } from "./client/provider-logo.client";
@@ -124,6 +125,7 @@ const DEFAULT_META: ProjectMeta = {
   areasSortBy: "prompt",
   sessionOrder: [],
   hiddenSections: [],
+  showTerminalsInSessions: true,
 };
 
 type AddProjectMode = "existing" | "create" | "clone";
@@ -960,6 +962,76 @@ function TerminalRow({ terminal, label, onOpen, onMenu, disabled, theme, nested 
       {pinned ? <Icon name="Pin" size={12} color={c.accent} /> : null}
       <ChatActionButton
         label={`Меню терминала ${label}`}
+        icon="MoreHorizontal"
+        quiet
+        disabled={disabled}
+        onPress={onMenu}
+        theme={theme}
+      />
+    </View>
+  );
+}
+
+// Режим сайдбара хранится на устройстве: телефон и компьютер не переключают друг друга.
+const SIDEBAR_MODE_KEY = "paseo-hq.sidebar-mode";
+let memorySidebarMode: SidebarMode = "projects";
+
+function readSidebarMode(): SidebarMode {
+  try {
+    const stored = globalThis.localStorage?.getItem(SIDEBAR_MODE_KEY);
+    if (stored === "projects" || stored === "sessions") return stored;
+  } catch {}
+  return memorySidebarMode;
+}
+
+function writeSidebarMode(mode: SidebarMode) {
+  memorySidebarMode = mode;
+  try {
+    globalThis.localStorage?.setItem(SIDEBAR_MODE_KEY, mode);
+  } catch {}
+}
+
+type FlatSession = FlatSessionKey & { title: string; place: string }
+  & ({ kind: "agent"; entry: AgentEntry } | { kind: "terminal"; terminal: PaseoTerminal });
+
+// Строка режима «Сессии»: крупный статус, название, под ним проект и область, справа меню.
+function FlatSessionRow({ kind, title, place, status, pinned, selected, disabled, onOpen, onMenu, theme }: {
+  kind: "agent" | "terminal";
+  title: string;
+  place: string;
+  status: React.ReactNode;
+  pinned: boolean;
+  selected: boolean;
+  disabled?: boolean;
+  onOpen: () => void;
+  onMenu: () => void;
+  theme: PluginTheme;
+}) {
+  const c = theme.colors;
+  const noun = kind === "agent" ? "агента" : "терминал";
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 2, borderRadius: 9, backgroundColor: selected ? c.surface2 : undefined }}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Открыть ${noun} ${title}`}
+        accessibilityState={{ selected }}
+        aria-selected={selected}
+        onPress={onOpen}
+        style={({ pressed }) => ({
+          flex: 1, minWidth: 0, minHeight: 50, flexDirection: "row", alignItems: "center", gap: 10,
+          paddingLeft: 8, paddingRight: 4, paddingVertical: 6, borderRadius: 9,
+          backgroundColor: pressed ? c.surface2 : undefined,
+        })}
+      >
+        <View style={{ width: 22, alignItems: "center", justifyContent: "center" }}>{status}</View>
+        <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+          <Text numberOfLines={1} style={{ color: c.foreground, fontSize: 14, lineHeight: 19, fontWeight: selected ? "600" : "500" }}>{title}</Text>
+          <Text numberOfLines={1} accessibilityLabel={`Проект и область: ${place}`} style={{ color: c.foregroundMuted, fontSize: 11, lineHeight: 15 }}>{place}</Text>
+        </View>
+      </Pressable>
+      {pinned ? <Icon name="Pin" size={12} color={c.accent} /> : null}
+      <ChatActionButton
+        label={`Меню ${kind === "agent" ? "агента" : "терминала"} ${title}`}
         icon="MoreHorizontal"
         quiet
         disabled={disabled}
@@ -2390,6 +2462,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     customName?: string | null;
     avatar?: AvatarUpdate;
     hiddenSections?: ("areas" | "pools")[];
+    showTerminalsInSessions?: boolean;
     hidden?: boolean;
     sessionsSortMode?: "auto" | "manual";
     sessionOrder?: string[];
@@ -2967,6 +3040,67 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
     };
   }, [isWeb, collapsed]);
 
+  const [sidebarMode, setSidebarModeState] = useState<SidebarMode>(readSidebarMode);
+  const setSidebarMode = (mode: SidebarMode) => {
+    writeSidebarMode(mode);
+    setSidebarModeState(mode);
+  };
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const terms = useMemo(() => (searchOpen ? searchTerms(searchQuery) : []), [searchOpen, searchQuery]);
+  const closeSearch = () => {
+    setSearchOpen(false);
+    setSearchQuery("");
+  };
+
+  // Поиск в режиме «Проекты»: подходящие проекты и области раскрываются только на время поиска,
+  // сохраненное раскрытие не меняется. Область, найденная по названию, показывает все сессии.
+  const searchView = useMemo(() => {
+    if (!terms.length) return null;
+    const areas: Record<string, { areaMatched: boolean; ids: Set<string> }> = {};
+    const groups: ProjectGroup[] = [];
+    for (const group of visibleGroups) {
+      const project = `${group.name} ${group.displayName}`;
+      const chats = group.meta.hiddenSections.includes("areas") ? [] : group.chats.filter((chat) => {
+        const sessions = orderAreaSessions(agentsByWorkspace.get(chat.id) ?? [], terminals.filter((t) => t.workspaceId === chat.id), {});
+        const found = searchArea(terms, project, { title: chatTitle(chat, latestAgentByWorkspace[chat.id]), sessions },
+          (session) => session.kind === "agent" ? agentTitle(session.entry.agent) : terminalLabel(session.terminal));
+        if (found) areas[chat.id] = { areaMatched: found.areaMatched, ids: new Set(found.sessions.map((session) => session.id)) };
+        return Boolean(found);
+      });
+      if (chats.length || matchesSearch(terms, project)) groups.push({ ...group, chats });
+    }
+    return { groups, areas };
+    // terminalLabel читает serverState.terminalNames
+  }, [terms, visibleGroups, agentsByWorkspace, terminals, latestAgentByWorkspace, serverState.terminalNames]);
+
+  // Режим «Сессии»: все агенты и, по настройке проекта, терминалы одним списком.
+  const flatSessions = useMemo(() => {
+    if (sidebarMode !== "sessions") return [];
+    const items: FlatSession[] = [];
+    for (const group of visibleGroups) {
+      if (group.meta.hiddenSections.includes("areas")) continue;
+      for (const chat of group.chats) {
+        const area = chatTitle(chat, latestAgentByWorkspace[chat.id]);
+        const place = `${group.name} · ${area}`;
+        const fits = (title: string) => matchesSearch(terms, group.name, group.displayName, area, title);
+        for (const entry of agentsByWorkspace.get(chat.id) ?? []) {
+          const title = agentTitle(entry.agent);
+          if (fits(title)) items.push({ kind: "agent", id: entry.agent.id, entry, title, place, activity: agentActivity(entry.agent), index: items.length });
+        }
+        if (!group.meta.showTerminalsInSessions) continue;
+        for (const terminal of terminals) {
+          if (terminal.workspaceId !== chat.id) continue;
+          const title = terminalLabel(terminal);
+          if (fits(title)) items.push({ kind: "terminal", id: terminal.id, terminal, title, place, activity: 0, index: items.length });
+        }
+      }
+    }
+    return orderFlatSessions(items, serverState.pinnedSessions);
+  }, [sidebarMode, terms, visibleGroups, agentsByWorkspace, terminals, latestAgentByWorkspace, serverState.terminalNames, serverState.pinnedSessions]);
+
+  const toolbarHeight = layout.compact ? 34 : 28;
+
   return (
     <View ref={rootRef} style={{ marginVertical: 4, paddingHorizontal: 10, gap: 8 }}>
       {/* Полноразмерный заголовок Проекты + кнопка настроек панели + кнопка добавления нового проекта */}
@@ -3135,24 +3269,6 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           <Icon name="SlidersHorizontal" size={14} color={c.foregroundMuted} />
         </Pressable>
 
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Добавить проект"
-          onPress={() => void openAddProjectModal()}
-          style={({ pressed }) => ({
-            flex: 1,
-            height: layout.compact ? 34 : 28,
-            borderRadius: 8,
-            alignItems: "center",
-            justifyContent: "center",
-            backgroundColor: c.surface2,
-            borderWidth: 1,
-            borderColor: c.border,
-            opacity: pressed ? 0.75 : 1,
-          })}
-        >
-          <Icon name="FolderPlus" size={15} color={c.accent} />
-        </Pressable>
       </View>
 
       {/* Компактная полоска нагрузки хоста (CPU, ОЗУ, сеть, диск) с всплывающей шторкой */}
@@ -3162,6 +3278,92 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           openPopover={openPopover}
           enabled={serverState.showHostMetrics}
         />
+      ) : null}
+
+      {/* Инструменты списка: режим «Проекты» или «Сессии», поиск и добавление проекта */}
+      {!collapsed ? (
+        <View style={{ gap: 6, paddingHorizontal: 2 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: layout.compact ? 5 : 6 }}>
+            <View
+              accessibilityRole="tablist"
+              accessibilityLabel="Вид списка"
+              style={{ flex: 1, minWidth: 0, flexDirection: "row", gap: 2, padding: 2, height: toolbarHeight,
+                borderRadius: 8, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface2 }}
+            >
+              {([{ key: "projects", label: "Проекты", icon: "FolderTree" }, { key: "sessions", label: "Сессии", icon: "List" }] as const).map((mode) => {
+                const active = sidebarMode === mode.key;
+                return (
+                  <Pressable
+                    key={mode.key}
+                    accessibilityRole="tab"
+                    accessibilityLabel={`Вид ${mode.label}`}
+                    accessibilityState={{ selected: active }}
+                    aria-selected={active}
+                    onPress={() => setSidebarMode(mode.key)}
+                    style={({ pressed }) => ({
+                      flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5,
+                      borderRadius: 6, backgroundColor: active ? c.surface1 : undefined, opacity: pressed ? 0.75 : 1,
+                    })}
+                  >
+                    <Icon name={mode.icon} size={13} color={active ? c.foreground : c.foregroundMuted} />
+                    <Text numberOfLines={1} style={{ color: active ? c.foreground : c.foregroundMuted, fontSize: 12, fontWeight: active ? "600" : "400" }}>
+                      {mode.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Поиск по проектам, областям и сессиям"
+              aria-expanded={searchOpen}
+              onPress={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
+              style={({ pressed }) => ({
+                width: toolbarHeight + 6, height: toolbarHeight, borderRadius: 8, alignItems: "center", justifyContent: "center",
+                backgroundColor: searchOpen ? c.surface1 : c.surface2, borderWidth: 1, borderColor: searchOpen ? c.accent : c.border,
+                opacity: pressed ? 0.75 : 1,
+              })}
+            >
+              <Icon name="Search" size={14} color={searchOpen ? c.accent : c.foregroundMuted} />
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Добавить проект"
+              onPress={() => void openAddProjectModal()}
+              style={({ pressed }) => ({
+                width: toolbarHeight + 6, height: toolbarHeight, borderRadius: 8, alignItems: "center", justifyContent: "center",
+                backgroundColor: c.surface2, borderWidth: 1, borderColor: c.border, opacity: pressed ? 0.75 : 1,
+              })}
+            >
+              <Icon name="FolderPlus" size={15} color={c.accent} />
+            </Pressable>
+          </View>
+          {searchOpen ? (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, height: layout.compact ? 38 : 32, paddingLeft: 9, paddingRight: 4,
+              borderRadius: 8, borderWidth: 1, borderColor: c.accent, backgroundColor: c.surface1 }}>
+              <Icon name="Search" size={13} color={c.foregroundMuted} />
+              <TextInput
+                autoFocus
+                accessibilityLabel="Поиск в сайдбаре"
+                placeholder="Проект, область или сессия"
+                placeholderTextColor={c.foregroundMuted}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                onKeyPress={(event) => {
+                  if (event.nativeEvent.key === "Escape") closeSearch();
+                }}
+                autoCorrect={false}
+                autoCapitalize="none"
+                returnKeyType="search"
+                style={{ flex: 1, minWidth: 0, padding: 0, outlineWidth: 0, color: c.foreground, fontSize: 13 }}
+              />
+              <Pressable accessibilityRole="button" accessibilityLabel="Закрыть поиск" hitSlop={6} onPress={closeSearch}
+                style={({ pressed }) => ({ width: 26, height: 26, borderRadius: 6, alignItems: "center", justifyContent: "center", backgroundColor: pressed ? c.surface2 : undefined })}>
+                <Icon name="X" size={14} color={c.foregroundMuted} />
+              </Pressable>
+            </View>
+          ) : null}
+        </View>
       ) : null}
 
       {/* Раскрывающийся список проектов и областей */}
@@ -3180,13 +3382,48 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
           showsVerticalScrollIndicator={true}
           keyboardShouldPersistTaps="handled"
         >
-          {visibleGroups.map((group, idx) => {
-            const isOpen = isProjectOpen(group.id, idx === 0);
+          {sidebarMode === "sessions" ? (
+            <View style={{ padding: 4, gap: 2, borderRadius: 11, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface1 }}>
+              {flatSessions.map((session) => {
+                const selected = activeSession === `${session.kind}_${session.id}`;
+                return (
+                  <FlatSessionRow
+                    key={session.id}
+                    kind={session.kind}
+                    title={session.title}
+                    place={session.place}
+                    status={session.kind === "agent" ? (
+                      <View accessible accessibilityLabel={`Статус агента: ${SESSION_STATUS_LABEL[deriveAgentBucket(session.entry.agent)]}`}>
+                        <SessionStatusIndicator bucket={deriveAgentBucket(session.entry.agent)} theme={theme} platform={layout.platform} size={20} />
+                      </View>
+                    ) : <Icon name="Terminal" size={18} color={c.foregroundMuted} />}
+                    pinned={Boolean(serverState.pinnedSessions[session.id])}
+                    selected={selected}
+                    disabled={chatMutationPending}
+                    onOpen={() => (session.kind === "agent" ? void jumpToAgent(session.id) : openAreaTerminal(session.terminal))}
+                    onMenu={() => (session.kind === "agent" ? openAgentMenu(session.id) : openTerminalMenu(session.id))}
+                    theme={theme}
+                  />
+                );
+              })}
+              {!flatSessions.length ? (
+                <Text style={{ padding: 10, color: c.foregroundMuted, fontSize: 12 }}>
+                  {terms.length ? "Ничего не найдено" : "Нет открытых сессий"}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
+          {sidebarMode === "projects" && searchView && !searchView.groups.length ? (
+            <Text style={{ padding: 10, color: c.foregroundMuted, fontSize: 12 }}>Ничего не найдено</Text>
+          ) : null}
+          {(sidebarMode === "projects" ? searchView?.groups ?? visibleGroups : []).map((group, idx) => {
+            const isOpen = searchView ? true : isProjectOpen(group.id, idx === 0);
             const busy = creatingId === group.id;
             const sections = ([{ key: "areas", label: "Области" }, { key: "pools", label: "Пулы" }] as const)
               .filter(tab => !group.meta.hiddenSections.includes(tab.key));
-            const section = sections.find(tab => tab.key === projectSections[group.id])?.key ?? sections[0]?.key;
-            const showAll = Boolean(expandedAllChats[group.id]);
+            const section = searchView && sections.some(tab => tab.key === "areas") ? "areas"
+              : sections.find(tab => tab.key === projectSections[group.id])?.key ?? sections[0]?.key;
+            const showAll = Boolean(searchView) || Boolean(expandedAllChats[group.id]);
             const displayedChats = showAll ? group.chats : group.chats.slice(0, 8);
             const moreCount = group.chats.length - displayedChats.length;
 
@@ -3280,9 +3517,11 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                     {displayedChats.map((chat) => {
                       const isPinned = Boolean(serverState.pinnedSessions[chat.id]);
                       const title = chatTitle(chat, latestAgentByWorkspace[chat.id]);
-                      const expanded = Boolean(expandedAreaIds[chat.id]);
-                      const sessions = agentsByWorkspace.get(chat.id) ?? [];
-                      const areaTerminals = terminals.filter((terminal) => terminal.workspaceId === chat.id);
+                      const found = searchView?.areas[chat.id];
+                      const narrowed = found && !found.areaMatched ? found.ids : null;
+                      const expanded = Boolean(narrowed) || Boolean(expandedAreaIds[chat.id]);
+                      const sessions = (agentsByWorkspace.get(chat.id) ?? []).filter((entry) => !narrowed || narrowed.has(entry.agent.id));
+                      const areaTerminals = terminals.filter((terminal) => terminal.workspaceId === chat.id && (!narrowed || narrowed.has(terminal.id)));
 
                       return (
                         <View key={chat.id}>
@@ -3407,7 +3646,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                           Показать еще {moreCount}
                         </Text>
                       </Pressable>
-                    ) : showAll && group.chats.length > 8 ? (
+                    ) : showAll && !searchView && group.chats.length > 8 ? (
                       <Pressable
                         accessibilityRole="button"
                         onPress={() =>
@@ -3952,6 +4191,16 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                         : [...editingGroup.meta.hiddenSections, projectSettingsTab] });
                     }}
                   />
+                  {projectSettingsTab === "areas" ? (
+                    <SettingsSwitch
+                      label="Показывать терминалы в виде «Сессии»"
+                      value={editingGroup.meta.showTerminalsInSessions}
+                      onValueChange={(showTerminalsInSessions) => {
+                        if (savingProject) return;
+                        void saveProjectPatch({ showTerminalsInSessions });
+                      }}
+                    />
+                  ) : null}
                   {projectSettingsTab === "areas" ? <SortBasisPicker theme={theme} disabled={savingProject}
                     value={editingGroup.meta.sessionsSortMode === "manual" ? "created" : editingGroup.meta.areasSortBy}
                     onChange={areasSortBy => { void saveProjectPatch({ areasSortBy, sessionsSortMode: "auto" }); }}
