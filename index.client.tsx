@@ -1513,7 +1513,7 @@ function AreaBranchBadge({ branch, path, kind, theme }: { branch: string; path: 
   </>;
 }
 
-function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover, navigation }: PluginSidebarItemProps) {
+function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover }: PluginSidebarItemProps) {
   const paseo = usePaseo();
   const toast = useToast();
   const activeSession = useActiveSession();
@@ -2687,18 +2687,10 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover,
 
   const handleForkAgent = async (target: "tab" | "workspace") => {
     if (!agentMenuChat || chatMutationPending) return;
-    // Optional extension: older Paseo clients cannot prepare native fork drafts.
-    const fork = (navigation as (typeof navigation & {
-      forkAgent?: (input: { agentId: string; target: "tab" | "workspace" }) => Promise<void>;
-    }))?.forkAgent;
-    if (!fork) {
-      toast.error("Для форка из Штаба обновите клиент Paseo с поддержкой navigation.forkAgent");
-      return;
-    }
     setSavingChat(true);
     try {
       await handleRenameAgent();
-      await fork({ agentId: agentMenuChat.id, target });
+      openScreen({ screenId: "jump", params: { agentId: agentMenuChat.id, fork: target, t: String(Date.now()) } });
       setAgentMenuId(null);
       setEditingChatId(null);
     } catch (error) {
@@ -4998,9 +4990,10 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover,
   );
 }
 
-function JumpBridgeScreen({ navigation, params }: PluginScreenProps) {
+function JumpBridgeScreen({ navigation, params, theme }: PluginScreenProps) {
+  const [error, setError] = useState<string | null>(null);
   const handledRef = useRef<string | null>(null);
-  const { agentId, jump: workspaceId, t } = params;
+  const { agentId, jump: workspaceId, t, fork } = params;
 
   useEffect(() => {
     const targetId = agentId || workspaceId;
@@ -5008,11 +5001,28 @@ function JumpBridgeScreen({ navigation, params }: PluginScreenProps) {
     const key = `${agentId ? "agent" : "workspace"}:${targetId}:${t ?? ""}`;
     if (handledRef.current === key) return;
     handledRef.current = key;
-    if (agentId) navigation.openAgent({ agentId });
+    if (agentId && (fork === "tab" || fork === "workspace")) {
+      const forkAgent = (navigation as typeof navigation & {
+        forkAgent?: (input: { agentId: string; target: "tab" | "workspace" }) => Promise<void>;
+      }).forkAgent;
+      if (!forkAgent) {
+        setError("Для форка из Штаба обновите клиент Paseo с поддержкой navigation.forkAgent");
+        return;
+      }
+      void forkAgent({ agentId, target: fork }).catch(error => {
+        setError(error instanceof Error ? error.message : "Не удалось создать форк");
+      });
+    } else if (agentId) navigation.openAgent({ agentId });
     else navigation.openWorkspace({ workspaceId: targetId });
-  }, [agentId, workspaceId, t, navigation]);
+  }, [agentId, workspaceId, t, fork, navigation]);
 
-  return <View />;
+  return error ? <View style={{ padding: 20, gap: 16 }}>
+    <Text style={{ color: theme.colors.foreground }}>{error}</Text>
+    <Pressable accessibilityRole="button" accessibilityLabel="Вернуться к чату"
+      onPress={() => { if (agentId) navigation?.openAgent({ agentId }); }}>
+      <Text style={{ color: theme.colors.foreground }}>Вернуться к чату</Text>
+    </Pressable>
+  </View> : <View />;
 }
 
 export default function contribute(client: PluginClientContext) {
