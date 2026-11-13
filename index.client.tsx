@@ -1513,7 +1513,7 @@ function AreaBranchBadge({ branch, path, kind, theme }: { branch: string; path: 
   </>;
 }
 
-function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover }: PluginSidebarItemProps) {
+function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover, navigation }: PluginSidebarItemProps) {
   const paseo = usePaseo();
   const toast = useToast();
   const activeSession = useActiveSession();
@@ -1679,6 +1679,7 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   const [areaSettings, setAreaSettings] = useState<z.infer<typeof areaSettingsRpc.output> | null>(null);
   const [areaSettingsError, setAreaSettingsError] = useState<string | null>(null);
   const [suggestingTitle, setSuggestingTitle] = useState(false);
+  const [showForkChoices, setShowForkChoices] = useState(false);
   const [agentMenuId, setAgentMenuId] = useState<string | null>(null);
   const closingAgentIds = useRef(new Set<string>());
   const [draftAgentTitle, setDraftAgentTitle] = useState<string | null>(null);
@@ -2677,10 +2678,34 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
   };
 
   const openAgentMenu = (agentId: string) => {
+    setShowForkChoices(false);
     setDraftAgentTitle(null);
     savedAgentTitle.current = null;
     setConfirmClosingSession(false);
     setAgentMenuId(agentId);
+  };
+
+  const handleForkAgent = async (target: "tab" | "workspace") => {
+    if (!agentMenuChat || chatMutationPending) return;
+    // Optional extension: older Paseo clients cannot prepare native fork drafts.
+    const fork = (navigation as (typeof navigation & {
+      forkAgent?: (input: { agentId: string; target: "tab" | "workspace" }) => Promise<void>;
+    }))?.forkAgent;
+    if (!fork) {
+      toast.error("Для форка из Штаба обновите клиент Paseo с поддержкой navigation.forkAgent");
+      return;
+    }
+    setSavingChat(true);
+    try {
+      await handleRenameAgent();
+      await fork({ agentId: agentMenuChat.id, target });
+      setAgentMenuId(null);
+      setEditingChatId(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Не удалось создать форк");
+    } finally {
+      setSavingChat(false);
+    }
   };
 
   const handleAgentMenuAction = async (action: "reload" | "close") => {
@@ -4643,6 +4668,29 @@ function SidebarEmbeddedProjects({ theme, layout, host, openScreen, openPopover 
                 agentLink={`paseo:///h/${host.id || "local"}/agent/${agentMenuChat.id}`}
                 path={agentMenuChat.cwd || agentMenuWorkspace?.workspaceDirectory || "Папка недоступна"}
                 branch={agentMenuChat.workspaceId ? areaBranches[agentMenuChat.workspaceId] : undefined} /> : null}
+              {!confirmClosingSession ? (
+                <View style={{ gap: 6 }}>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Форк сессии"
+                    disabled={chatMutationPending} onPress={() => setShowForkChoices(value => !value)}
+                    style={({ pressed }) => ({ minHeight: 42, paddingHorizontal: 14, borderRadius: 9,
+                      flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+                      backgroundColor: c.surface2, opacity: chatMutationPending ? 0.5 : pressed ? 0.8 : 1 })}>
+                    <Icon name="GitFork" size={16} color={c.foreground} />
+                    <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" }}>Форк сессии</Text>
+                  </Pressable>
+                  {showForkChoices ? ([
+                    ["tab", "В той же папке и ветке"],
+                    ["workspace", "В новой области (worktree)"],
+                  ] as const).map(([target, label]) => (
+                    <Pressable key={target} accessibilityRole="button" accessibilityLabel={label}
+                      disabled={chatMutationPending} onPress={() => void handleForkAgent(target)}
+                      style={({ pressed }) => ({ minHeight: 42, padding: 10, borderRadius: 9,
+                        borderWidth: 1, borderColor: c.border, opacity: chatMutationPending ? 0.5 : pressed ? 0.8 : 1 })}>
+                      <Text style={{ color: c.foreground, fontSize: 13 }}>{label}</Text>
+                    </Pressable>
+                  )) : null}
+                </View>
+              ) : null}
               {!confirmClosingSession ? (
                 <Pressable accessibilityRole="button" accessibilityLabel="Открыть чат"
                   disabled={chatMutationPending}
