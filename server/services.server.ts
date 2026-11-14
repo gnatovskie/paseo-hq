@@ -14,17 +14,22 @@ export function status(p: Record<string, string>, scheduled: boolean): string {
   return "Остановлена";
 }
 
-export async function readServices(): Promise<{ rows: ServiceRow[] }> {
-  const currentCatalog = loadCatalog();
-  const serviceKeys = Object.keys(currentCatalog);
-  if (serviceKeys.length === 0) {
-    return { rows: [] };
-  }
+/** Catalog keys prefixed with "user:" are queried via `systemctl --user`. */
+export const USER_PREFIX = "user:";
+
+async function readScope(
+  catalog: Record<string, [string, string]>,
+  keys: string[],
+  user: boolean,
+): Promise<ServiceRow[]> {
+  if (keys.length === 0) return [];
+  const scopeArgs = user ? ["--user"] : [];
+  const units = keys.map((k) => (user ? k.slice(USER_PREFIX.length) : k));
 
   try {
     const { stdout: timersText } = await exec(
       "systemctl",
-      ["list-timers", "--all", "--no-pager", "--output=json"],
+      [...scopeArgs, "list-timers", "--all", "--no-pager", "--output=json"],
       { timeout: 8000, maxBuffer: 1024 * 1024 }
     ).catch(() => ({ stdout: "[]" }));
 
@@ -39,8 +44,9 @@ export async function readServices(): Promise<{ rows: ServiceRow[] }> {
     const { stdout } = await exec(
       "systemctl",
       [
+        ...scopeArgs,
         "show",
-        ...serviceKeys,
+        ...units,
         "-p",
         "Id,LoadState,ActiveState,SubState,Result,ExecMainStartTimestamp,ActiveEnterTimestamp",
       ],
@@ -56,11 +62,12 @@ export async function readServices(): Promise<{ rows: ServiceRow[] }> {
           return [l.slice(0, i), l.slice(i + 1)];
         })
       );
-      const entry = currentCatalog[p.Id];
+      const key = user ? USER_PREFIX + p.Id : p.Id;
+      const entry = catalog[key];
       if (!entry || p.LoadState === "not-found") continue;
       const isScheduled = scheduled.has(p.Id);
       rows.push({
-        id: p.Id,
+        id: key,
         name: entry[0],
         description: entry[1],
         kind: isScheduled ? "По расписанию" : "Постоянная",
@@ -68,9 +75,22 @@ export async function readServices(): Promise<{ rows: ServiceRow[] }> {
         status: status(p, isScheduled),
       });
     }
-    return { rows };
+    return rows;
   } catch {
-    // If systemctl is not available (macOS, container without systemd), return empty
-    return { rows: [] };
+    // systemctl unavailable (macOS, container without systemd, no user manager): this scope is empty
+    return [];
   }
+}
+
+export async function readServices(): Promise<{ rows: ServiceRow[] }> {
+  const currentCatalog = loadCatalog();
+  const keys = Object.keys(currentCatalog);
+  const systemKeys = keys.filter((k) => !k.startsWith(USER_PREFIX));
+  const userKeys = keys.filter((k) => k.startsWith(USER_PREFIX));
+  // Scopes are independent: a failure in one must not hide the other.
+  const [system, user] = await Promise.all([
+    readScope(currentCatalog, systemKeys, false),
+    readScope(currentCatalog, userKeys, true),
+  ]);
+  return { rows: [...system, ...user] };
 }
